@@ -7,7 +7,7 @@ type Pos = (usize, usize);
 type WorldManagerMailbox =  mpsc::Receiver<(WorldManagerMessage, Actor)>;
 type PlayerManagerMailbox =  mpsc::Receiver<(PlayerManagerMessage, Actor)>;
 type TaskManagerMailbox =  mpsc::Receiver<(TaskManagerMessage, Actor)>;
-type Entity =  mpsc::Receiver<(EntityMessage, Actor)>;
+type EntityMailbox =  mpsc::Receiver<(EntityMessage, Actor)>;
 
 
 
