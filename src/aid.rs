@@ -1,9 +1,13 @@
-use std::{sync::mpsc, thread};
+use std::{
+    hash::{Hash, Hasher},
+    sync::mpsc,
+    thread,
+};
 
 // actor identifier
 #[derive(Clone)]
 pub struct AID<T> {
-    pub tid: thread::ThreadId,
+    tid: thread::ThreadId,
     channel: mpsc::Sender<T>,
 }
 
@@ -26,13 +30,28 @@ impl<T> AID<T> {
                 f(aid, reciever)
             }
         });
-        AID {
+        return AID {
             tid: handle.thread().id(),
             channel: sender,
-        }
+        };
     }
 
     pub fn send(&self, t: T) -> Result<(), mpsc::SendError<T>> {
-        self.channel.send(t)
+        return self.channel.send(t);
+    }
+}
+
+// two AIDs are equal iff their TIDs are equal
+impl<T> PartialEq for AID<T> {
+    fn eq(&self, aid: &AID<T>) -> bool {
+        return self.tid == aid.tid;
+    }
+}
+impl<T> Eq for AID<T> {}
+
+// hash AID to same value as its TID
+impl<T> Hash for AID<T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.tid.hash(state);
     }
 }
