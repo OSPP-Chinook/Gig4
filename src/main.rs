@@ -1,7 +1,7 @@
 mod aid;
 
 mod messages;
-mod world_state_manager;
+mod world_manager;
 
 fn main() {
     println!("Hello, world!");

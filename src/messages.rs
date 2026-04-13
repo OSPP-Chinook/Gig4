@@ -1,21 +1,18 @@
-use std::sync::mpsc;
+use crate::aid::AID;
 
-struct Actor {}
-struct Task {}
-type Pos = (usize, usize);
+pub type Task = ();
+pub type Pos = (usize, usize);
 
-type WorldManagerMailbox = mpsc::Receiver<(WorldManagerMessage, Actor)>;
-type PlayerManagerMailbox = mpsc::Receiver<(PlayerManagerMessage, Actor)>;
-type TaskManagerMailbox = mpsc::Receiver<(TaskManagerMessage, Actor)>;
-type EntityMailbox = mpsc::Receiver<(EntityMessage, Actor)>;
-
+#[derive(Clone)]
 pub enum WorldManagerMessage {
-    Move(Pos),
-    TileInfo(Pos),
-    KillMe,
-    GetDisplay,
+    Stop, // is only necessary if there are circular AIDs (which there probably will be)
+    Move(Pos, AID<EntityMessage>),
+    KillMe(AID<EntityMessage>),
+    TileInfo(Pos, AID<PlayerManagerMessage>),
+    GetDisplay(AID<PlayerManagerMessage>),
 }
 
+#[derive(Clone)]
 pub enum EntityMessage {
     Task(Task),
     KillYourself,
@@ -23,6 +20,10 @@ pub enum EntityMessage {
     Err,
 }
 
-pub enum PlayerManagerMessage {}
+#[derive(Clone)]
+pub enum PlayerManagerMessage {
+    TODO,
+}
 
+#[derive(Clone)]
 pub enum TaskManagerMessage {}

@@ -1,0 +1,70 @@
+use std::{collections::HashMap, sync::mpsc::Receiver};
+
+use crate::{
+    aid::AID,
+    messages::{EntityMessage, PlayerManagerMessage, Pos, WorldManagerMessage},
+};
+
+const WIDTH: usize = 16;
+const HEIGHT: usize = 16;
+
+enum Tile {
+    Empty,
+    Entity(AID<EntityMessage>),
+}
+
+fn display(grid: &[[Tile; WIDTH]; HEIGHT]) -> String {
+    "TODO".to_string()
+}
+
+fn gettile(grid: &mut [[Tile; WIDTH]; HEIGHT], pos: Pos) -> Option<&mut Tile> {
+    grid.get_mut(pos.0)?.get_mut(pos.1)
+}
+
+pub fn main(_this: AID<WorldManagerMessage>, mailbox: Receiver<WorldManagerMessage>) {
+    let mut grid: [[Tile; WIDTH]; HEIGHT] =
+        std::array::from_fn(|_| std::array::from_fn(|_| Tile::Empty));
+    let mut entity_lookup: HashMap<AID<EntityMessage>, Pos> = HashMap::new();
+
+    for msg in mailbox {
+        match msg {
+            WorldManagerMessage::Stop => break,
+            WorldManagerMessage::Move(pos, aid) => {
+                // check if pos in bounds
+                if let Some(tile) = gettile(&mut grid, pos) {
+                    // check if pos empty
+                    if let Tile::Empty = *tile {
+                        *tile = Tile::Entity(aid.clone());
+                        entity_lookup.insert(aid.clone(), pos);
+                        let _ = aid.send(EntityMessage::Ok);
+                    } else {
+                        let _ = aid.send(EntityMessage::Err);
+                    }
+                } else {
+                    let _ = aid.send(EntityMessage::Err);
+                }
+            }
+            WorldManagerMessage::TileInfo(pos, aid) => {
+                if let Some(tile) = gettile(&mut grid, pos) {
+                    // TODO: send tile
+                    let _ = aid.send(PlayerManagerMessage::TODO);
+                } else {
+                    // TODO: send Err
+                    let _ = aid.send(PlayerManagerMessage::TODO);
+                }
+            }
+            WorldManagerMessage::KillMe(aid) => {
+                if let Some(pos) = entity_lookup.remove(&aid) {
+                    if let Some(tile) = gettile(&mut grid, pos) {
+                        *tile = Tile::Empty;
+                    }
+                }
+                // no response necessary
+            }
+            WorldManagerMessage::GetDisplay(aid) => {
+                // TODO: send display(&grid)
+                let _ = aid.send(PlayerManagerMessage::TODO);
+            }
+        }
+    }
+}
