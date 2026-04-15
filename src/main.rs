@@ -4,6 +4,8 @@ mod entity;
 mod building;
 mod messages;
 mod item;
+mod recipe;
+
 mod world_manager;
 mod player_manager;
 
