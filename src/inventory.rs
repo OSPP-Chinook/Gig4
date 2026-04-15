@@ -12,6 +12,7 @@ pub struct Inventory {
     items: (String, usize), // Resources are stored as (String, usize) where String is name of resource and usize is count
 }
 
+#[derive(Clone)]
 pub enum InventoryMessage {
     // The following are sent by owner (entity)
     Increase,
@@ -66,6 +67,8 @@ pub mod inventory {
                 InventoryMessage::MoveTo(other_inventory) => 
                     move_to(inventory.clone(), other_inventory),
             };
+
+            print_inv(&inventory, String::from("Inventory"));
         }
     }
 
@@ -141,9 +144,9 @@ pub mod inventory {
     }
 
     // For debugging as of now
-    fn print_inv(this_items: &Arc<Mutex<(String, usize)>>, name: String) {
-        let contents: MutexGuard<'_, (String, usize)> = this_items.lock().unwrap();
+    fn print_inv(this_items: &Arc<Mutex<Inventory>>, name: String) {
+        let contents: MutexGuard<'_, Inventory> = this_items.lock().unwrap();
 
-        println!("{0} - {1}", name, (*contents).1);
+        println!("{0}: {1} - {2}/{3}", name, (*contents).items.0, (*contents).items.1, (*contents).max);
     }
 }
