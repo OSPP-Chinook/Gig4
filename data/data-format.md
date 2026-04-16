@@ -12,8 +12,8 @@ Item list specifications are used, among other things, to represent the followin
 
 An item list is specified in JSON as an array of objects (records) with these fields:
 
-- `id`: The identifier of the item required.
-- `count`: The count of instances of that item required.
+- `id`: The identifier of the item.
+- `count`: The count of instances of that item.
 
 ## Buildings
 Buildings' data are represented with the following fields:
