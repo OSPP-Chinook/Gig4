@@ -1,15 +1,30 @@
-use std::{
-    sync::Mutex,
-    sync::Arc,
-};
-
 use crate::{
     aid::AID, 
 };
 
 pub struct Inventory {
+    aid: AID<InventoryMessage>,
     max: usize,
     items: (String, usize), // Resources are stored as (String, usize) where String is name of resource and usize is count
+}
+
+impl Inventory {
+    fn construct(aid: AID<InventoryMessage>) -> Self {
+        return Inventory { aid, max: 10, items: (String::from("Mutexium"), 0) };
+    }
+
+    fn is_empty(&self) -> bool {
+        return self.items.1 == 0;
+    }
+
+    fn is_full(&self) -> bool {
+        return self.items.1 == self.max;
+    }
+
+    // For debugging as of now
+    fn print_inv(&self, name: String) {
+        println!("{0}: {1} - {2}/{3}", name, self.items.0, self.items.1, self.max);
+    }
 }
 
 #[derive(Clone)]
@@ -21,14 +36,11 @@ pub enum InventoryMessage {
     Kill,
 
     // The following are sent by another inventory
-    MoveTo(Arc<Mutex<Inventory>>),  
+    GiveMeItem(AID<InventoryMessage>),                  // SHOULD ONLY BE CALLED USING TakeFrom MESSAGE
+    ReceiveItem(Result<(String, usize), &'static str>), // SHOULD ONLY BE CALLED USING GiveMeItem MESSAGE
 }
 
 pub mod inventory {
-    use std::{
-        sync::{Arc, Mutex, MutexGuard}
-    };
-
     use crate::{
         aid::AID, 
         inventory::{Inventory, InventoryMessage}
@@ -40,35 +52,30 @@ pub mod inventory {
         return AID::new(inventory_loop);
     }
 
-    /// Constructs the inventory
-    /// 
-    /// NOTE: Could be moved to be a method of inventory if that is desired
-    fn construct_inventory() -> Arc<Mutex<Inventory>> {
-        return Arc::new(Mutex::new(Inventory { 
-                                            max: 10,
-                                            items: (String::from("Mutexium"), 0),
-                                        }));
-    }
-
     fn inventory_loop(
-            _aid: AID<InventoryMessage>, 
+            aid: AID<InventoryMessage>, 
             mailbox: std::sync::mpsc::Receiver<InventoryMessage>
         ){
-        let inventory: Arc<Mutex<Inventory>> = construct_inventory();
+        let mut inventory: Inventory = Inventory::construct(aid);
+        let mut transfer_in_process: bool = false; 
 
         loop {
             match mailbox.recv().unwrap() { // Recv blocks the thread until a message is recieved which seems right for this
-                InventoryMessage::Increase => increase(inventory.clone()),
-                InventoryMessage::Decrease => decrease(inventory.clone()),
+                InventoryMessage::Increase => increase(&mut inventory),
+                InventoryMessage::Decrease => decrease(&mut inventory),
                 InventoryMessage::TakeFrom(other) => 
-                    take_from(inventory.clone(), other),
-                InventoryMessage::Kill => return,
+                    take_from(&inventory, other, &mut transfer_in_process),
+                InventoryMessage::Kill => return, 
 
-                InventoryMessage::MoveTo(other_inventory) => 
-                    move_to(inventory.clone(), other_inventory),
+                InventoryMessage::GiveMeItem(sender) => 
+                    give_me_item(&mut inventory, sender, &mut transfer_in_process),
+                InventoryMessage::ReceiveItem(result) => {
+                    receive_item(&mut inventory, result);
+                    transfer_in_process = false;
+                }
             };
 
-            print_inv(&inventory, String::from("Inventory"));
+            inventory.print_inv(String::from("Inventory"));
         }
     }
 
@@ -76,14 +83,13 @@ pub mod inventory {
     /// 
     /// # Arguments
     /// 
-    /// * 'inventory' - Atomic Reference Counter to the inventory to increase
-    fn increase(inventory: Arc<Mutex<Inventory>>) {
-        if is_full(inventory.clone()) {
+    /// * 'inventory' - Mutable reference to the inventory to increase
+    fn increase(inventory: &mut Inventory) {
+        if inventory.is_full() {
             return; // Error or something
         }
 
-        let mut contents: MutexGuard<'_, Inventory> = inventory.lock().unwrap(); 
-        (*contents).items.1 += 1;
+        inventory.items.1 += 1;
 
         return; // Success or something
     }
@@ -92,61 +98,78 @@ pub mod inventory {
     /// 
     /// # Arguments
     /// 
-    /// * 'inventory' - Atomic Reference Counter to the inventory to increase
-    fn decrease(inventory: Arc<Mutex<Inventory>>) {
-        if is_empty(inventory.clone()) {
+    /// * 'inventory' - Mutable reference to the inventory to decrease
+    fn decrease(inventory: &mut Inventory) {
+        if inventory.is_empty() {
             return; // Error or something
         }
 
-        let mut contents: MutexGuard<'_, Inventory> = inventory.lock().unwrap(); 
-        (*contents).items.1 -= 1;
+        inventory.items.1 -= 1;
 
         return; // Success or something
     }
 
-    /// Moves an item from 'from to 'to'. 
+    /// Asks the other inventory to perform the give_me_item function with 
+    /// this inventorys AID as 'sender' parameter
     /// 
     /// # Arguments
     /// 
-    /// * 'from' - Atomic Reference Counter to inventory to move the item from
-    /// * 'to' - Atomic Reference Counter to inventory to move item to
-    fn move_to(from: Arc<Mutex<Inventory>>, to: Arc<Mutex<Inventory>>) {
-        if is_empty(from.clone()) || is_full(to.clone()) {
-            return; // ERROR or something
+    /// * 'inventory'            - Reference to the inventory to move item to 
+    /// * 'aid'                  - AID of the inventory to take from
+    /// * 'transfer_in_progress' - Bool that is true if there is already a transfer in progress, else false
+    fn take_from(
+        inventory: &Inventory, 
+        aid: AID<InventoryMessage>, 
+        transfer_in_progress: &mut bool
+    ) {
+        if *transfer_in_progress || inventory.is_full() {
+            return; // Should send an error or whatever
         }
 
-        decrease(from.clone());
-        increase(to.clone());
-
-        return; // Success or something
+        *transfer_in_progress = true;
+        _ = aid.send(InventoryMessage::GiveMeItem(inventory.aid.clone())); // Should handle Result in some way
     }
 
-    /// Asks the other inventory to perform the move_to function with 
-    /// this inventory as 'to' parameter
+    /// Checks if this inventory can give item and sends a result containing either a tuple containing
+    /// what item and quantity, or an error containing a string explaining what went wrong.
     /// 
     /// # Arguments
     /// 
-    /// * 'inventory' - Atomic Reference Counter to calling inventory 
-    /// * 'aid' - AID of the inventory to take from
-    fn take_from(inventory: Arc<Mutex<Inventory>>, aid: AID<InventoryMessage>) {
-        _ = aid.send(InventoryMessage::MoveTo(inventory)); // Should handle Result in some way
+    /// * 'inventory'            - Mutable reference to this inventory
+    /// * 'sender'               - AID of the requesting inventory
+    /// * 'transfer_in_progress' - Bool that is true if there is already a transfer in progress, else false
+    fn give_me_item(
+        inventory: &mut Inventory, 
+        sender: AID<InventoryMessage>, 
+        transfer_in_progress: &mut bool
+    ) {
+        if *transfer_in_progress {
+            _ = sender.send(InventoryMessage::ReceiveItem(Result::Err("I'm busy!"))); // Sends an error; TODO: Should handle Result in some way
+            return;
+        }
+
+        if inventory.is_empty() {
+            _ = sender.send(InventoryMessage::ReceiveItem(Result::Err("I'm empty!"))); // Sends an error; TODO: Should handle Result in some way
+            return;
+        }
+
+
+        inventory.items.1 -= 1;
+        _ = sender.send(InventoryMessage::ReceiveItem(Result::Ok((inventory.items.0.clone(), 1)))); // Sends a tuple containing what item it is and how many it moved; TODO: Should handle Result in some way
     }
 
-
-    // Non message functions
-    fn is_empty(inventory: Arc<Mutex<Inventory>>) -> bool { // Could be a method of Inventory
-        return (*inventory.lock().unwrap()).items.1 == 0;
-    }
-
-    fn is_full(inventory: Arc<Mutex<Inventory>>) -> bool { // Could be a method of Inventory
-        let unlocked_inv: &Inventory = &(*inventory.lock().unwrap());
-        return unlocked_inv.items.1 == unlocked_inv.max;
-    }
-
-    // For debugging as of now
-    fn print_inv(this_items: &Arc<Mutex<Inventory>>, name: String) {
-        let contents: MutexGuard<'_, Inventory> = this_items.lock().unwrap();
-
-        println!("{0}: {1} - {2}/{3}", name, (*contents).items.0, (*contents).items.1, (*contents).max);
+    /// Gets the result from a GiveMeItem message and add the item to this inventory, or prints the
+    /// error message if GiveMeItem failed.
+    /// 
+    /// # Arguments
+    /// 
+    /// * 'inventory' - Mutable reference to this inventory
+    /// * 'result'    - A result containing either a tuple of what item was moved and the quantity, 
+    ///                 or the error message as a str
+    fn receive_item(inventory: &mut Inventory, result: Result<(String, usize), &'static str>) {
+        match result {
+            Ok(item) => { inventory.items.1 += item.1; }, // This is a placeholder
+            Err(msg) => { println!("{}", msg) } // should probably do something else
+        };
     }
 }
