@@ -2,7 +2,7 @@ use crate::{
     aid::AID, 
 };
 
-pub struct Inventory {
+struct Inventory {
     aid: AID<InventoryMessage>,
     max: usize,
     items: (String, usize), // Resources are stored as (String, usize) where String is name of resource and usize is count
