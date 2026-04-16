@@ -1,0 +1,19 @@
+[
+    {
+        "id": "ore",
+        "name": "Metal Ore",
+        "description": "Raw metal ore. You're likely to want to smelt this."
+    },
+
+    {
+        "id": "ingot",
+        "name": "Metal Ingot",
+        "description": "Metal that has been smelted and poured into ingots. It still needs to be worked before it can be used in making end-products."
+    },
+
+    {
+        "id": "worker",
+        "name": "Worker",
+        "description": "Workers carry items around according to your requests. They're your only way of moving items between buildings, so you may need to deploy more of them as you scale your production."
+    }
+]
