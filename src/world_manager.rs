@@ -2,11 +2,22 @@ use std::{collections::HashMap, sync::mpsc::Receiver};
 
 use crate::{
     aid::AID,
-    messages::{EntityMessage, PlayerManagerMessage, Pos, WorldManagerMessage},
+    messages::{EntityMessage, PlayerManagerMessage},
 };
 
 const WIDTH: usize = 16;
 const HEIGHT: usize = 16;
+
+pub type Pos = (usize, usize);
+
+#[derive(Clone)]
+pub enum WorldManagerMessage {
+    Stop, // is only necessary if there are circular AIDs (which there probably will be)
+    Move(Pos, AID<EntityMessage>),
+    KillMe(AID<EntityMessage>),
+    TileInfo(Pos, AID<PlayerManagerMessage>),
+    GetDisplay(AID<PlayerManagerMessage>),
+}
 
 enum Tile {
     Empty,
@@ -14,11 +25,11 @@ enum Tile {
 }
 
 fn display(grid: &[[Tile; WIDTH]; HEIGHT]) -> String {
-    "TODO".to_string()
+    return "TODO".to_string();
 }
 
-fn gettile(grid: &mut [[Tile; WIDTH]; HEIGHT], pos: Pos) -> Option<&mut Tile> {
-    grid.get_mut(pos.0)?.get_mut(pos.1)
+fn get_tile(grid: &mut [[Tile; WIDTH]; HEIGHT], pos: Pos) -> Option<&mut Tile> {
+    return grid.get_mut(pos.1)?.get_mut(pos.0);
 }
 
 pub fn main(_this: AID<WorldManagerMessage>, mailbox: Receiver<WorldManagerMessage>) {
@@ -31,7 +42,7 @@ pub fn main(_this: AID<WorldManagerMessage>, mailbox: Receiver<WorldManagerMessa
             WorldManagerMessage::Stop => break,
             WorldManagerMessage::Move(pos, aid) => {
                 // check if pos in bounds
-                if let Some(tile) = gettile(&mut grid, pos) {
+                if let Some(tile) = get_tile(&mut grid, pos) {
                     // check if pos empty
                     if let Tile::Empty = *tile {
                         *tile = Tile::Entity(aid.clone());
@@ -45,7 +56,7 @@ pub fn main(_this: AID<WorldManagerMessage>, mailbox: Receiver<WorldManagerMessa
                 }
             }
             WorldManagerMessage::TileInfo(pos, aid) => {
-                if let Some(tile) = gettile(&mut grid, pos) {
+                if let Some(tile) = get_tile(&mut grid, pos) {
                     // TODO: send tile
                     let _ = aid.send(PlayerManagerMessage::TODO);
                 } else {
@@ -55,7 +66,7 @@ pub fn main(_this: AID<WorldManagerMessage>, mailbox: Receiver<WorldManagerMessa
             }
             WorldManagerMessage::KillMe(aid) => {
                 if let Some(pos) = entity_lookup.remove(&aid) {
-                    if let Some(tile) = gettile(&mut grid, pos) {
+                    if let Some(tile) = get_tile(&mut grid, pos) {
                         *tile = Tile::Empty;
                     }
                 }
