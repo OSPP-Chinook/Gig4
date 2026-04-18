@@ -61,10 +61,18 @@ impl Entity {
     }
 
     fn handle_task(&mut self, task: Task) {
-        let new_pos = (self.current_pos.0 + 1, self.current_pos.1 +1);
-        self.pending_move = Some(new_pos);
-        let _ = self
-            .world
-            .send(WorldManagerMessage::Move(new_pos, self.self_aid.clone()));
+        match task {
+            Task::MoveTo(pos) => {
+                self.pending_move = Some(pos);
+
+                let _ = self
+                    .world
+                    .send(WorldManagerMessage::Move(pos, self.self_aid.clone()));
+            }
+
+            Task::Idle => {
+                //gör inget
+            }
+        }
     }
 }

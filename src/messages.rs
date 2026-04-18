@@ -1,6 +1,15 @@
 use crate::aid::AID;
+use crate::world_manager::Pos;
 
-pub type Task = ();
+
+#[derive(Clone)]
+pub enum Task{
+    MoveTo(Pos),
+    Idle,
+    // senare:
+    // Gather,
+    // Deliver
+}
 
 #[derive(Clone)]
 pub enum EntityMessage {
