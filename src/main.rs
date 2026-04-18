@@ -1,8 +1,6 @@
 mod aid;
 mod entity;
 mod messages;
-
-mod messages;
 mod world_manager;
 
 fn main() {

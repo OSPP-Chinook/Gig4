@@ -1,12 +1,13 @@
 use crate::aid::AID;
-use crate::messages::{EntityMessage, Task, EntityMailbox};
-use crate::world_manager::{WorldManagerMessage, Pos};
-use crate::task_manager::TaskManagerMessage;
+use crate::messages::{EntityMessage, PlayerManagerMessage, Task, TaskManagerMessage};
+use crate::world_manager::{Pos, WorldManagerMessage};
+use std::sync::mpsc::Receiver;
 
 pub struct Entity {
     world: AID<WorldManagerMessage>,
     task: AID<TaskManagerMessage>,
-    pos: Pos,
+    current_pos: Pos,
+    pending_move: Option<Pos>,
     self_aid: AID<EntityMessage>,
 }
 
@@ -18,38 +19,52 @@ impl Entity {
     ) -> AID<EntityMessage> {
         AID::new(move |aid, mailbox| {
             let mut entity = Entity {
-                world,
-                task,
-                pos: start_pos,
+                world: world,
+                task: task,
+                current_pos: start_pos,
+                pending_move: None,
                 self_aid: aid.clone(),
             };
+
             entity.run(mailbox);
         })
     }
 
-    fn run(&mut self, mailbox: EntityMailbox) {
-        for (msg, _sender_actor) in mailbox {
+    fn run(&mut self, mailbox: Receiver<EntityMessage>) {
+        for msg in mailbox {
             match msg {
                 EntityMessage::Task(task) => {
                     self.handle_task(task);
                 }
+
                 EntityMessage::KillYourself => {
-                    let _ = self.world.send(WorldManagerMessage::KillMe(self.self_aid.clone()));
+                    self.world
+                        .send(WorldManagerMessage::KillMe(self.self_aid.clone()));
                     break;
                 }
+
                 EntityMessage::Ok => {
-                    // world manager godkände flytten
-                    // uppdatera position här om du vill
+                    //world manager godkände flyyten
+                    //uppdatera entitys pos ! exempel self.pos = (1,6);
+                    if let Some(pos) = self.pending_move.take() {
+                        self.current_pos = pos;
+                    }
                 }
+
                 EntityMessage::Err => {
-                    // world manager nekade flytten
+                    // world manager neckade flytten
+                    // ingen ändring i pos
+                    self.pending_move = None;
                 }
             }
         }
     }
 
-    fn handle_task(&mut self, _task: Task) {
-        let new_pos = (self.pos.0 + 1, self.pos.1);
-        let _ = self.world.send(WorldManagerMessage::Move(new_pos, self.self_aid.clone()));
+    fn handle_task(&mut self, task: Task) {
+        let new_pos = (self.current_pos.0 + 1, self.current_pos.1 +1);
+        self.pending_move = Some(new_pos);
+        let _ = self
+            .world
+            .send(WorldManagerMessage::Move(new_pos, self.self_aid.clone()));
     }
 }
