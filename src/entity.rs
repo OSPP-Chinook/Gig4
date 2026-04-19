@@ -3,12 +3,24 @@ use crate::messages::{EntityMessage, Task, TaskManagerMessage};
 use crate::world_manager::{Pos, WorldManagerMessage};
 use std::sync::mpsc::Receiver;
 
+
+/// Ren logik- och state för en entity.
+/// 
+/// EntityCore ansvarar för:
+/// - att hålla nuvarande position (`current_pos`)
+/// - att lagra en väntande flytt (`pending_move`)
+/// - att behandla inkommande tasks
+/// - att uppdatera state baserat på Ok/Err från WorldManager
+///
+/// Innehåller ingen actor‑logik.  
+/// Används av `Entity` som den faktiska logikdelen.
 pub struct EntityCore {
     current_pos: Pos,
     pending_move: Option<Pos>,
 }
 
 impl EntityCore {
+    // skapar en EntityCore  med given start position
     pub fn new(start_pos: Pos) -> EntityCore {
         EntityCore {
             current_pos: start_pos,
@@ -16,6 +28,8 @@ impl EntityCore {
         }
     }
 
+    /// Behandlar en Task och returnerar eventuell Move-position
+    /// som Entity-aktorn ska skicka till WorldManager.
     pub fn apply_task(&mut self, task: Task)-> Option<Pos> {
         match task {
             Task::MoveTo(pos) => {
@@ -26,21 +40,36 @@ impl EntityCore {
             Task::Idle => None
         }
     }
-
+    /// Anropas när WorldManager godkänner en flytt.
+    /// Uppdaterar current_pos och tömmer pending_move.
     pub fn apply_ok(&mut self) {
         if let Some(pos) = self.pending_move.take() {
             self.current_pos = pos;
         }
     }
-
+    /// Anropas när WorldManager nekar en flytt.
+    /// Tömmer pending_move utan att ändra current_pos.
     pub fn apply_err(&mut self) {
         self.pending_move = None;
     }
 }
+
+
+/// Actor som representerar en Entity i världen.
+/// 
+/// Entity ansvarar för:
+/// - att ta emot `EntityMessage`
+/// - att vidarebefordra tasks till `EntityCore`
+/// - att skicka `WorldManagerMessage::Move` när core signalerar en flytt
+/// - att uppdatera core-state baserat på Ok/Err från WorldManager
+///
+/// All logik ligger i `EntityCore`.  
+/// Entity själv hanterar endast actor‑beteende och message‑flow.
 pub struct Entity {
     core: EntityCore,
     world_aid: AID<WorldManagerMessage>,
     task_aid: AID<TaskManagerMessage>,
+    // senare task_id: AID<inventoryMesseges>
     self_aid: AID<EntityMessage>,
 }
 
