@@ -3,11 +3,9 @@ use std::{sync::mpsc::Receiver, thread, time::Duration};
 use crate::{
     aid::AID,
     messages::{EntityMessage, WorldManagerMessage},
-    recipe::Recipe,
 };
 
 const MACHINE_TICK_SPEED: Duration = Duration::from_secs(1);
-
 
 enum Item {} //Temporary
 
@@ -17,7 +15,6 @@ pub struct Recipe {
     output: Vec<(Item, usize)>,
     pub recipe_time: usize, //recipe time in machine "cycles"/ticks
 }
-
 
 struct Building {
     world_aid: AID<WorldManagerMessage>,
