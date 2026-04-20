@@ -1,9 +1,6 @@
 use std::{sync::mpsc::Receiver, thread, time::Duration};
 
-use crate::{
-    aid::AID,
-    messages::{EntityMessage, WorldManagerMessage},
-};
+use crate::{aid::AID, messages::EntityMessage, world_manager::WorldManagerMessage};
 
 const MACHINE_TICK_SPEED: Duration = Duration::from_secs(1);
 
@@ -28,7 +25,7 @@ impl Building {
         return AID::new(move |aid, mailbox| {
             let mut building = Building {
                 world_aid: world,
-                self_aid: aid,
+                self_aid: aid.clone(),
                 mailbox: mailbox,
             };
             building.run();
@@ -44,7 +41,9 @@ impl Building {
             while let Ok(msg) = self.mailbox.try_recv() {
                 match msg {
                     EntityMessage::KillYourself => {
-                        let _ = self.world_aid.send(WorldManagerMessage::KillMe); //should send its AID
+                        let _ = self
+                            .world_aid
+                            .send(WorldManagerMessage::KillMe(self.self_aid.clone()));
                         break 'outer;
                     }
                     EntityMessage::Ok => {
@@ -76,5 +75,17 @@ impl Building {
             }
             thread::sleep(MACHINE_TICK_SPEED);
         }
+    }
+}
+
+
+mod tests {
+    use super::*;
+
+    #[test]
+    fn create_building() {
+        let world: AID<WorldManagerMessage> = AID::new(|_, _| ());
+        let building = Building::new(world);
+        let _ = building.send(EntityMessage::KillYourself);
     }
 }
