@@ -47,12 +47,12 @@ impl Building {
                         break 'outer;
                     }
                     EntityMessage::Ok => {
-                        waiting = false;
                         if let Some(recipe) = &active_recipe
                             && waiting
                         {
                             current_process = Some(recipe.recipe_time);
                         }
+                        waiting = false;
                     }
                     EntityMessage::Err => waiting = false,
                     EntityMessage::Task(task) => continue, //Update task
@@ -77,7 +77,6 @@ impl Building {
         }
     }
 }
-
 
 mod tests {
     use super::*;
