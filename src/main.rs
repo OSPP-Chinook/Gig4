@@ -1,7 +1,6 @@
 mod aid;
-mod messages;
 mod building;
-mod recipe;
+mod messages;
 
 mod world_manager;
 
