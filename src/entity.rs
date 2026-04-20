@@ -69,7 +69,7 @@ pub struct Entity {
     core: EntityCore,
     world_aid: AID<WorldManagerMessage>,
     task_aid: AID<TaskManagerMessage>,
-    // senare task_id: AID<inventoryMesseges>
+    //inventory: AID<inventoryMesseges>
     mailbox: AID<EntityMessage>,
 }
 
