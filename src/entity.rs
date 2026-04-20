@@ -14,14 +14,14 @@ use std::sync::mpsc::Receiver;
 ///
 /// Innehåller ingen actor‑logik.  
 /// Används av `Entity` som den faktiska logikdelen.
-pub struct EntityCore {
+struct EntityCore {
     current_pos: Pos,
     pending_move: Option<Pos>,
 }
 
 impl EntityCore {
     // skapar en EntityCore  med given start position
-    pub fn new(start_pos: Pos) -> EntityCore {
+    fn new(start_pos: Pos) -> EntityCore {
         EntityCore {
             current_pos: start_pos,
             pending_move: None,
@@ -30,7 +30,7 @@ impl EntityCore {
 
     /// Behandlar en Task och returnerar eventuell Move-position
     /// som Entity-aktorn ska skicka till WorldManager.
-    pub fn apply_task(&mut self, task: Task)-> Option<Pos> {
+    fn apply_task(&mut self, task: Task)-> Option<Pos> {
         match task {
             Task::MoveTo(pos) => {
                 self.pending_move = Some(pos);
@@ -42,14 +42,14 @@ impl EntityCore {
     }
     /// Anropas när WorldManager godkänner en flytt.
     /// Uppdaterar current_pos och tömmer pending_move.
-    pub fn apply_ok(&mut self) {
+    fn apply_ok(&mut self) {
         if let Some(pos) = self.pending_move.take() {
             self.current_pos = pos;
         }
     }
     /// Anropas när WorldManager nekar en flytt.
     /// Tömmer pending_move utan att ändra current_pos.
-    pub fn apply_err(&mut self) {
+    fn apply_err(&mut self) {
         self.pending_move = None;
     }
 }
