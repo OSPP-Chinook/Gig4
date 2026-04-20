@@ -1,8 +1,13 @@
 use std::{sync::mpsc::Receiver, thread, time::Duration};
 
-use crate::{aid::AID, messages::EntityMessage, world_manager::WorldManagerMessage};
+use crate::{
+    aid::AID,
+    messages::EntityMessage,
+    world_manager::WorldManagerMessage
+};
 
 const MACHINE_TICK_SPEED: Duration = Duration::from_secs(1);
+
 
 enum Item {} //Temporary
 
