@@ -1,0 +1,9 @@
+[
+    {
+        "id": "mutexium",
+        "name": "Mutexium",
+        "category": "raw-nonmetal",
+        "description": "It seems as though only one entity can hold this piece of raw mutexium at any one time. How did you get your hands on this?",
+        "stackLimit": 256
+    }
+]
