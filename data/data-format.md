@@ -29,6 +29,8 @@ Buildings' data are represented with the following fields:
     - `xSize`: The building's size in the $x$-dimension, in tile lengths.
     - `ySize`: The building's size in the $y$-dimension, in tile lengths.
 - `inventorySize`: The size of the building's inventory in slots. Each slot can only hold one kind of item at a time. <!-- Buildings do not have a mass limit. (Mass is not currently implemented.)-->
+- `productionRules`: An array of [production rule](#production-rules) IDs that this building supports.
+- `productionSpeed`: A positive number that indicates how many times nominal speed the building produces at. If a building's `productionSpeed` is $2$ and it's producing under a rule that nominally takes $120$ seconds, that production instead takes $\frac{120}{2}=60$ seconds.
 
 ## Items
 Items' data are represented by the following fields:
@@ -64,3 +66,11 @@ Categories are some of the simplest `gig4` data asset entries, with only three s
     "description": "Workers carry items around according to your requests. They're your only way of moving items between buildings, so you may need to deploy more of them as you scale your production."
 }
 ```
+
+## Production rules:
+A simple production rule has the following fields:
+
+- `id`: A string that serves as a unique identifier for this rule.
+- `inputs`: A [list](#item-list-specifications) of input items for this rule.
+- `outputs`: A [list](#item-list-specifications) of output items for this rule.
+- `time`: The time the rule nominally takes. Higher-tier buildings may actually take less time to process this rule due to having inherent speed multipliers.
