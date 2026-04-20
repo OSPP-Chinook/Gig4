@@ -70,7 +70,7 @@ pub struct Entity {
     world_aid: AID<WorldManagerMessage>,
     task_aid: AID<TaskManagerMessage>,
     // senare task_id: AID<inventoryMesseges>
-    self_aid: AID<EntityMessage>,
+    mailbox: AID<EntityMessage>,
 }
 
 impl Entity {
@@ -84,7 +84,7 @@ impl Entity {
                 core: EntityCore::new(start_pos),
                 world_aid: world,
                 task_aid: task,
-                self_aid: aid.clone(),
+                mailbox: aid.clone(),
             };
 
             entity.run(mailbox);
@@ -98,14 +98,14 @@ impl Entity {
                     
                     if let Some(pos) = self.core.apply_task(task) {
                         
-                        let _ = self.world_aid.send(WorldManagerMessage::Move(pos, self.self_aid.clone()));
+                        let _ = self.world_aid.send(WorldManagerMessage::Move(pos, self.mailbox.clone()));
                     }
                 }
 
                 EntityMessage::KillYourself => {
                     let _ = self
                         .world_aid
-                        .send(WorldManagerMessage::KillMe(self.self_aid.clone()));
+                        .send(WorldManagerMessage::KillMe(self.mailbox.clone()));
                     break;
                 }
 
@@ -171,6 +171,7 @@ mod tests {
         core.apply_task(task);
         core.apply_err();
 
+        
         assert_eq!(core.current_pos, start_pos);
         assert_eq!(core.pending_move,None);
 
