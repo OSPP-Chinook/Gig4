@@ -8,7 +8,6 @@ use crate::{
 
 const MACHINE_TICK_SPEED: Duration = Duration::from_secs(1);
 
-
 enum Item {} //Temporary
 
 //Definition for recipe, should probably be defined somewhere else
