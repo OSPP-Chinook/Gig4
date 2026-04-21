@@ -5,10 +5,20 @@ use crate::world_manager::Pos;
 #[derive(Clone)]
 pub enum Task{
     MoveTo(Pos),
-    Idle,
     // senare:
-    // Gather,
-    // Deliver
+    //TakeFrom{
+        //inventory : AID<InventoryMessage>
+        //item : Item,
+        //amount: usize
+    //},
+    //GiveTo{
+
+        //inventory: AID<InventoryMessage>,
+        //item: Item,
+        //amount: usize
+
+    //},
+    Idle,
 }
 
 #[derive(Clone)]
