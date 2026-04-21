@@ -40,8 +40,8 @@ impl Item {
 #[derive(Clone)]
 pub enum InventoryMessage {
     // The following are sent by owner (entity)
-    Give((Item, usize)),
-    Take((Item, usize)),
+    Add((Item, usize)),
+    Remove((Item, usize)),
     TakeFrom(AID<InventoryMessage>, (Item, usize)), 
     GiveTo(AID<InventoryMessage>, (Item, usize)),
     Kill,
@@ -77,7 +77,7 @@ impl Inventory {
     }
 
     fn take(&mut self, (item, count): (Item, usize)) -> bool {
-        if self.too_few_items((item, count)) {
+        if self.has_too_few_items((item, count)) {
             return false;
         }
 
@@ -86,7 +86,7 @@ impl Inventory {
         return true;
     }
 
-    fn too_few_items(&self, (item, count): (Item, usize)) -> bool {
+    fn has_too_few_items(&self, (item, count): (Item, usize)) -> bool {
         return self.items.get(&item).unwrap().0 < count;
     }
 
@@ -129,8 +129,8 @@ pub mod inventory {
 
         loop {
             match mailbox.recv().unwrap() {
-                InventoryMessage::Give(item) => give(&mut inventory, item),
-                InventoryMessage::Take(item) => take(&mut inventory, item),
+                InventoryMessage::Add(item) => add(&mut inventory, item),
+                InventoryMessage::Remove(item) => remove(&mut inventory, item),
                 InventoryMessage::TakeFrom(other, items) => 
                     take_from(&inventory, other, items, &mut transfer_in_process),
                 InventoryMessage::GiveTo(other, items) => 
@@ -159,7 +159,7 @@ pub mod inventory {
     /// 
     /// * 'inventory' - Mutable reference to the inventory to increase
     /// * 'item'      - Tuple of Item and amount to take
-    fn give(inventory: &mut Inventory, item: (Item, usize)) {
+    fn add(inventory: &mut Inventory, item: (Item, usize)) {
         // FIXME: INVENTORIES ARE INFINITE FOR FIRST DEMO
         inventory.give(item);
 
@@ -172,7 +172,7 @@ pub mod inventory {
     /// 
     /// * 'inventory' - Mutable reference to the inventory to take from
     /// * 'item'      - Tuple of Item and amount to take
-    fn take(inventory: &mut Inventory, item: (Item, usize)) {
+    fn remove(inventory: &mut Inventory, item: (Item, usize)) {
         inventory.take(item);
         
         return; // Success or something
@@ -230,7 +230,7 @@ pub mod inventory {
             return;
         }
 
-        if inventory.too_few_items(item) {
+        if inventory.has_too_few_items(item) {
             _ = sender.send(InventoryMessage::GiveMeItemResult(Result::Err("I'm empty!"))); // Sends an error; TODO: Should handle Result in some way
             return;
         }

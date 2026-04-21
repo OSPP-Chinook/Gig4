@@ -30,7 +30,6 @@ impl<T> AID<T> {
                 f(aid, reciever)
             }
         });
-        
         return AID {
             tid: handle.thread().id(),
             channel: sender,
