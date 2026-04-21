@@ -1,6 +1,7 @@
 use crate::{
     aid::AID,
-    messages::{PlayerManagerMessage, TaskManagerMessage, WorldManagerMessage},
+    messages::{PlayerManagerMessage, TaskManagerMessage},
+    world_manager::{self, WorldManagerMessage},
 };
 
 pub struct GameManager {
@@ -11,7 +12,7 @@ pub struct GameManager {
 
 impl GameManager {
     pub fn new() -> Self {
-        let world = AID::new(|_, _| {});
+        let world = AID::new(world_manager::main);
         let task = AID::new(|_, _| {});
         let player = AID::new(|_, _| {});
 
