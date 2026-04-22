@@ -8,7 +8,7 @@ Below are some definitions of terms that are used in the descriptions of content
 
 Item list specifications are used, among other things, to represent the following:
 - The costs of [buildings](#buildings).
-- The input and output items of [production rules](#production-rules).
+- The input and output items of [recipes](#recipes).
 
 An item list is specified in JSON as an array of objects (records) with these fields:
 
@@ -29,8 +29,8 @@ Buildings' data are represented with the following fields:
     - `xSize`: The building's size in the $x$-dimension, in tile lengths.
     - `ySize`: The building's size in the $y$-dimension, in tile lengths.
 - `inventorySize`: The size of the building's inventory in slots. Each slot can only hold one kind of item at a time. <!-- Buildings do not have a mass limit. (Mass is not currently implemented.)-->
-- `productionRules`: An array of [production rule](#production-rules) IDs that this building supports.
-- `productionSpeed`: A positive number that indicates how many times nominal speed the building produces at. If a building's `productionSpeed` is $2$ and it's producing under a rule that nominally takes $120$ seconds, that production instead takes $\frac{120}{2}=60$ seconds.
+- `productionRules`: An array of [recipe](#recipes-production-rules) (production rule) IDs that this building can follow.
+- `productionSpeed`: A positive number that indicates how many times nominal speed the building produces at. If a building's `productionSpeed` is $2$ and it's processing a recipe that nominally takes $120$ seconds, that production instead takes $\frac{120}{2}=60$ seconds.
 
 ## Items
 Items' data are represented by the following fields:
@@ -67,10 +67,12 @@ Categories are some of the simplest `gig4` data asset entries, with only three s
 }
 ```
 
-## Production rules:
-A simple production rule has the following fields:
+## Recipes (production rules):
+A simple recipe has the following fields:
 
 - `id`: A string that serves as a unique identifier for this rule.
 - `inputs`: A [list](#item-list-specifications) of input items for this rule.
 - `outputs`: A [list](#item-list-specifications) of output items for this rule.
 - `time`: The time the rule nominally takes. Higher-tier buildings may actually take less time to process this rule due to having inherent speed multipliers.
+
+Other recipe types (wildcard items, etc.) are currently not supported.
