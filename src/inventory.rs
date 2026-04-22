@@ -7,13 +7,16 @@ use crate::{
 #[derive(Clone, Copy)]
 pub enum Item {
     Mutexium,
+    Semaphorite,
 }
 
 impl PartialEq for Item {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (Item::Mutexium, Item::Mutexium) => return true
-        }
+            (Item::Mutexium, Item::Mutexium) => return true,
+            (Item::Semaphorite, Item::Semaphorite) => return true,
+            _ => return false,
+        };
     }
 }
 
@@ -25,6 +28,9 @@ impl Hash for Item {
             Item::Mutexium => {
                 state.write_u8(1);
             }
+            Item::Semaphorite => {
+                state.write_u8(1);
+            }
         }
     }
 }
@@ -33,6 +39,7 @@ impl Item {
     fn to_str(&self) -> &str {
         match self {
             Item::Mutexium => return "Mutexium",
+            Item::Semaphorite => return "Semaphorite",
         };
     }
 }
@@ -44,27 +51,36 @@ pub enum InventoryMessage {
     Remove((Item, usize)),
     TakeFrom(AID<InventoryMessage>, (Item, usize)), 
     GiveTo(AID<InventoryMessage>, (Item, usize)),
+    PrintInventory(String),
     Kill,
 
     // The following are sent by another inventory
     GiveMeItems(AID<InventoryMessage>, (Item, usize)),      // From TakeFrom 
-    GiveMeItemResult(Result<(Item, usize), &'static str>),  // From GiveMeItem
+    GiveMeItemResult(Result<(Item, usize), &'static str>),  // From GiveMeItems
     TakeMyItems(AID<InventoryMessage>, (Item, usize)),      // From GiveTo
-    TakeMyItemsResult(Result<(Item, usize), &'static str>), // From TakeMyItem
+    TakeMyItemsResult(Result<(Item, usize), &'static str>), // From TakeMyItems
 }
 
 
 struct Inventory {
     aid: AID<InventoryMessage>,
-    max: usize,
-    waiting: Vec<AID<InventoryMessage>>,
+    max: usize,                           // ???
+    waiting: Vec<AID<InventoryMessage>>,  // TODO: Not needed for minimum viable product
     items: HashMap<Item, (usize, usize)>, // Key: Name of item -> Value: (count, max).
 }
 
 impl Inventory {
     fn construct(aid: AID<InventoryMessage>) -> Self {
-        let mut inventory = Inventory { aid, max: 10, waiting: Vec::new(), items: HashMap::new() };
+        let mut inventory = Inventory { 
+            aid, 
+            max: 10, 
+            waiting: Vec::new(), 
+            items: HashMap::new() 
+        };
+
         inventory.items.insert(Item::Mutexium, (0, 0));
+        inventory.items.insert(Item::Semaphorite, (0, 0));
+        
         return inventory;
     }
     
@@ -90,16 +106,16 @@ impl Inventory {
         return self.items.get(&item).unwrap().0 < count;
     }
 
-    // fn is_full(&self) -> bool {
-    //     return self.items.1 == self.max; // FIX: not needed for minimal viable product
-    // }
+    fn is_full(&self) -> bool {
+        return false; // FIX: not needed for minimal viable product
+    }
 
     // For debugging as of now
     fn print_inv(&self, name: String) {
-        println!("{0}:\n", name);
+        println!("{0}:", name);
         
         for (key, value) in &self.items {
-            println!("      {0} - {1}/{2}\n", key.to_str(), value.0, value.1);
+            println!("      {0} - {1}/{2}", key.to_str(), value.0, value.1);
         }
     }
 }
@@ -135,6 +151,7 @@ pub mod inventory {
                     take_from(&inventory, other, items, &mut transfer_in_process),
                 InventoryMessage::GiveTo(other, items) => 
                     give_to(&inventory, other, items, &mut transfer_in_process),
+                InventoryMessage::PrintInventory(name   ) => inventory.print_inv(name),
                 InventoryMessage::Kill => return, 
 
                 InventoryMessage::GiveMeItems(sender, item) => 
@@ -144,12 +161,10 @@ pub mod inventory {
                     transfer_in_process = false;
                 }
                 InventoryMessage::TakeMyItems(sender, item) => 
-                    take_my_items(&inventory, sender, item, &mut transfer_in_process),
+                    take_my_items(&mut inventory, sender, item, &mut transfer_in_process),
                 InventoryMessage::TakeMyItemsResult(result) => 
                     take_my_items_result(&mut inventory, result),
-            };
-
-            inventory.print_inv(String::from("Inventory"));
+            };            
         }
     }
 
@@ -178,7 +193,7 @@ pub mod inventory {
         return; // Success or something
     }
 
-    /// Asks the other inventory to perform the give_me_item function with 
+    /// Asks the other inventory to perform the give_me_items function with 
     /// this inventorys AID as 'sender' parameter
     /// 
     /// # Arguments
@@ -201,13 +216,27 @@ pub mod inventory {
         _ = aid.send(InventoryMessage::GiveMeItems(inventory.aid.clone(), item)); // Should handle Result in some way
     }
 
+    /// Asks the other inventory to perform the take_my_items function with 
+    /// this inventorys AID as 'sender' parameter
+    /// 
+    /// # Arguments
+    /// 
+    /// * 'inventory'            - Reference to the inventory to move item from 
+    /// * 'aid'                  - AID of the inventory to give to
+    /// * 'items'                - Tuple of Item and amount to give
+    /// * 'transfer_in_progress' - Bool that is true if there is already a transfer in progress, else false
     fn give_to(
         inventory: &Inventory, 
         aid: AID<InventoryMessage>, 
         item: (Item, usize),
         transfer_in_progress: &mut bool
     ) {
+        if *transfer_in_progress /*|| inventory.is_full() */ {
+            return; // Should send an error or whatever
+        }
 
+        *transfer_in_progress = true;
+        _ = aid.send(InventoryMessage::TakeMyItems(inventory.aid.clone(), item));
     }
 
     /// Checks if this inventory can give item and sends a result containing either a tuple containing
@@ -217,7 +246,7 @@ pub mod inventory {
     /// 
     /// * 'inventory'            - Mutable reference to this inventory
     /// * 'sender'               - AID of the requesting inventory
-    /// * 'items'                - Tuple of Item and amount to take
+    /// * 'items'                - Tuple of Item and amount to give
     /// * 'transfer_in_progress' - Bool that is true if there is already a transfer in progress, else false
     fn give_me_items(
         inventory: &mut Inventory, 
@@ -248,26 +277,59 @@ pub mod inventory {
     /// * 'inventory' - Mutable reference to this inventory
     /// * 'result'    - A result containing either a tuple of what item was moved and the quantity, 
     ///                 or the error message as a str
-    fn give_me_items_result(inventory: &mut Inventory, result: Result<(Item, usize), &'static str>) {
+    fn give_me_items_result(
+        inventory: &mut Inventory, 
+        result: Result<(Item, usize), &'static str>
+    ) {
         match result {
             Ok(item) => { inventory.give(item) },
             Err(msg) => { println!("{}", msg) }    // should probably do something else
         };
     }
 
+    /// Checks if this inventory can take the items and sends a result containing either a tuple 
+    /// containing what item and quantity it took, or an error containing a string explaining what 
+    /// went wrong.
+    /// 
+    /// # Arguments
+    /// 
+    /// * 'inventory'            - Mutable reference to this inventory
+    /// * 'sender'               - AID of the requesting inventory
+    /// * 'items'                - Tuple of Item and amount to get
+    /// * 'transfer_in_progress' - Bool that is true if there is already a transfer in progress, else false
     fn take_my_items(
-        inventory: &Inventory, 
+        inventory: &mut Inventory, 
         sender: AID<InventoryMessage>, 
         items: (Item, usize), 
         transfer_in_progress: &mut bool
     ) {
+        if *transfer_in_progress {
+            _ = sender.send(InventoryMessage::TakeMyItemsResult(Result::Err("I'm busy!")));
+        }
 
+        if inventory.is_full() { // FIXME: this wont happen as is_full is not implemented
+            _ = sender.send(InventoryMessage::TakeMyItemsResult(Result::Err("I'm full!"))); // Sends an error; TODO: Should handle Result in some way
+        } 
+
+        inventory.give(items);
+        _ = sender.send(InventoryMessage::TakeMyItemsResult(Result::Ok(items)));
     }
 
+    /// Gets the result from a TakeMyItems message and removes the items from this inventory, or prints the
+    /// error message if TakeMyItems failed.
+    /// 
+    /// # Arguments
+    /// 
+    /// * 'inventory' - Mutable reference to this inventory
+    /// * 'result'    - A result containing either a tuple of what item was moved and the quantity, 
+    ///                 or the error message as a str
     fn take_my_items_result(
         inventory: &mut Inventory, 
         result: Result<(Item, usize), &'static str>
     ) {
-
+        match result {
+            Ok(item) => { _ = inventory.take(item) },
+            Err(msg) => { println!("{}", msg) }    // should probably do something else
+        };
     }
 }

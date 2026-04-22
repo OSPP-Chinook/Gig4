@@ -3,6 +3,9 @@ mod aid;
 mod messages;
 mod world_manager;
 
+use core::time;
+use std::thread::sleep;
+
 use inventory::{
     Item,
     InventoryMessage,
@@ -14,14 +17,42 @@ fn main() {
 }
 
 fn test_inventory() {
-    let inventory_aid: aid::AID<InventoryMessage> = inventory::inventory::init();
-    let inventory_aid2: aid::AID<InventoryMessage> = inventory::inventory::init();
+    let worker_aid: aid::AID<InventoryMessage> = inventory::inventory::init();
+    let factory_aid1: aid::AID<InventoryMessage> = inventory::inventory::init();
+    let factory_aid2: aid::AID<InventoryMessage> = inventory::inventory::init();
 
-    _ = inventory_aid.send(InventoryMessage::Add((Item::Mutexium, 9))); // Adds 9 Mutexium to inventory 1
+    println!("Creating mutexium in factory 1");
+    _ = factory_aid1.send(InventoryMessage::Add((Item::Mutexium, 9))); // Factory 1 produces 9 mutexium
+    // sleep(time::Duration::from_millis(500));
+    
+    // print_system_status(worker_aid.clone(), factory_aid1.clone(), factory_aid2.clone());
 
-    println!("Moving from inventory 1 to 2");
+    println!("Taking 8 mutexium from factory 1 to worker");
+    _ = worker_aid.send(InventoryMessage::TakeFrom(factory_aid1.clone(), (Item::Mutexium, 8))); // Worker takes 8 Mutexium from factory 1
+    // sleep(time::Duration::from_millis(500));
 
-    _ = inventory_aid2.send(InventoryMessage::TakeFrom(inventory_aid.clone(), (Item::Mutexium, 8))); // Take 8 Mutexium from inventory 1
+    // print_system_status(worker_aid.clone(), factory_aid1.clone(), factory_aid2.clone());
+
+    println!("Giving 8 mutexium from worker to factory 2");
+    _ = worker_aid.send(InventoryMessage::GiveTo(factory_aid2.clone(), (Item::Mutexium, 8))); // Worker gives 8 Mutexium to factory 2
+    // sleep(time::Duration::from_millis(500));
+
+    print_system_status(worker_aid.clone(), factory_aid1.clone(), factory_aid2.clone());
 
     loop {};
+}
+
+fn print_system_status(
+    worker_aid: aid::AID<InventoryMessage>, 
+    factory_aid1: aid::AID<InventoryMessage>,
+    factory_aid2: aid::AID<InventoryMessage>,
+) {
+    _ = worker_aid.send(InventoryMessage::PrintInventory(String::from("Worker")));
+    sleep(time::Duration::from_millis(500));
+
+    _ = factory_aid1.send(InventoryMessage::PrintInventory(String::from("Factory 1")));
+    sleep(time::Duration::from_millis(500));
+
+    _ = factory_aid2.send(InventoryMessage::PrintInventory(String::from("Factory 2")));
+    sleep(time::Duration::from_millis(500));
 }
