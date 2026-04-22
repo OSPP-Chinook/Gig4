@@ -5,5 +5,37 @@
         "category": "raw-nonmetal",
         "description": "It seems as though only one entity can hold this piece of raw mutexium at any one time. How did you get your hands on this?",
         "stackLimit": 256
+    },
+
+    {
+        "id": "iron-ore",
+        "name": "Iron Ore",
+        "category": "ore",
+        "description": "Raw and impure iron. It needs to be refined at a smelter before it can be worked.",
+        "stackLimit": 256
+    },
+
+    {
+        "id": "iron-ingot",
+        "name": "Iron Ingot",
+        "category": "ingot",
+        "description": "A refined and workable iron ingot. It can be made into many different things.",
+        "stackLimit": 64
+    },
+
+    {
+        "id": "steel-ingot",
+        "name": "Steel Ingot",
+        "category": "ingot",
+        "description": "An alloy of iron and carbon that is more resistant than pure iron.",
+        "stackLimit": 64
+    },
+
+    {
+        "id": "coal",
+        "name": "Coal",
+        "category": "raw-nonmetal",
+        "description": "A hunk of raw carbon. Add this to iron to make it stronger.",
+        "stackLimit": 256
     }
 ]
