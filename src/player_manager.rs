@@ -23,7 +23,8 @@ pub fn render_loop() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn render(frame: &mut Frame) {
-    let world_array: [[u32; WIDTH]; HEIGHT] = [[0; WIDTH]; HEIGHT];
+    let mut world_array: [[u32; WIDTH]; HEIGHT] = [[0; WIDTH]; HEIGHT];
+    world_array[2][2] = 1;
 
     let world_area = frame.area().centered(
                 Length((WIDTH * 2 + 2) as u16),
@@ -34,15 +35,26 @@ fn render(frame: &mut Frame) {
 
     frame.render_widget(Block::new().borders(Borders::ALL).title("World"), world_area);
 
+    // Vectors av HEIGHT eller WIDTH stycken constraints, alla lika stora som TILE_SIZE
     let row_constraints = (0..HEIGHT).map(|_| Constraint::Length(TILE_SIZE as u16));
     let col_constraints = (0..WIDTH).map(|_| Constraint::Length(TILE_SIZE as u16));
+
+    // Split up horizontal and vertical layouts after the rows and columns
     let horizontal = Layout::horizontal(col_constraints);
     let vertical = Layout::vertical(row_constraints);
 
-    let cells = grid.layout_vec(&vertical).into_iter().flat_map(|row| row.layout_vec(&horizontal));
+    // Gör en 2d array av cells
+    let rows: Vec<Rect> = grid.layout_vec(&vertical);
+    let grid_array: Vec<Vec<Rect>> = rows.iter().map(|row: &Rect| row.layout_vec(&horizontal)).collect();
 
-    for (i, cell) in cells.enumerate() {
-        let square = Paragraph::new("╔╗\n╚╝").wrap(Wrap{trim:true});
-        frame.render_widget(square, cell);
+    // TODO: Det här är lätt att förstå men kan vara RUSTigare
+    for (row, y) in grid_array.iter().zip(0..HEIGHT) {
+        for (cell, x) in row.iter().zip(0..WIDTH) {
+            // TODO: world_array kommer ersättas med messages till world manager?
+            if world_array[y][x] == 1 {
+                let square = Paragraph::new("╔╗\n╚╝").red();
+                frame.render_widget(square, *cell);
+            }
+        }
     }
 }
