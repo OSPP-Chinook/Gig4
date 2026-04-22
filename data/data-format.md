@@ -40,7 +40,7 @@ Items' data are represented by the following fields:
 - `category`: The `id` of the item's category. For workers, this is always the string `"worker"`.
 - `description`: The item's description.
 <!-- - (unimplemented) `mass`: The mass of one instance of the item, in kilograms. -->
-- `stackLimit`: The item's stack size limit. Past this number, multiple slots are necessary to hold all of the items.
+- `stackLimit`: The item's stack size limit. Past this number, multiple buildings or workers are needed to hold the items.
 <!-- - `value`: The item's value. This is used in scoring. -->
 
 ### Workers
