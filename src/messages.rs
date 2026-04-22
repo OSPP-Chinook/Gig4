@@ -1,39 +1,7 @@
 use crate::aid::AID;
 
-use crate::inventory::InventoryMessage;
-use crate::item::Item;
-use crate::world_manager::{Pos, Tile, WorldGrid};
-
-#[derive(Clone)]
-pub enum Task {
-    MoveTo(Pos),
-
-    AddItem {
-        item: Item,
-        amount: usize,
-    },
-
-    RemoveItem {
-        item: Item,
-        amount: usize,
-    },
-
-    TakeFrom {
-        from: AID<InventoryMessage>,
-        item: Item,
-        amount: usize,
-    },
-
-    GiveTo {
-        to: AID<InventoryMessage>,
-        item: Item,
-        amount: usize,
-    },
-
-    PrintInventory(String),
-
-    Idle,
-}
+use crate::task_manager::Task;
+use crate::world_manager::{WorldGrid, Pos, Tile};
 
 #[derive(Clone)]
 pub enum EntityMessage {
