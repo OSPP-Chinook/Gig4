@@ -1,12 +1,11 @@
 use crate::aid::AID;
+use crate::inventory::{InventoryMessage, inventory};
 use crate::messages::{EntityMessage, Task, TaskManagerMessage};
 use crate::world_manager::{Pos, WorldManagerMessage};
-use crate::inventory::{inventory, InventoryMessage};
 use std::sync::mpsc::Receiver;
 
-
 /// Ren logik- och state för en entity.
-/// 
+///
 /// EntityCore ansvarar för:
 /// - att hålla nuvarande position (`current_pos`)
 /// - att lagra en väntande flytt (`pending_move`)
@@ -31,14 +30,20 @@ impl EntityCore {
 
     /// Behandlar en Task och returnerar eventuell Move-position
     /// som Entity-aktorn ska skicka till WorldManager.
-    fn apply_task(&mut self, task: Task)-> Option<Pos> {
+    fn apply_task(&mut self, task: Task) -> Option<Pos> {
         match task {
             Task::MoveTo(pos) => {
                 self.pending_move = Some(pos);
                 Some(pos)
             }
 
-            Task::Idle => None
+            Task::AddItem { item, amount } => None,
+            Task::RemoveItem { item, amount } => None,
+            Task::TakeFrom { from, item, amount } => None,
+            Task::GiveTo { to, item, amount } => None,
+            Task::PrintInventory(_) => None,
+
+            Task::Idle => None,
         }
     }
     /// Anropas när WorldManager godkänner en flytt.
@@ -55,9 +60,8 @@ impl EntityCore {
     }
 }
 
-
 /// Actor som representerar en Entity i världen.
-/// 
+///
 /// Entity ansvarar för:
 /// - att ta emot `EntityMessage`
 /// - att vidarebefordra tasks till `EntityCore`
@@ -96,13 +100,44 @@ impl Entity {
     fn run(&mut self, mailbox: Receiver<EntityMessage>) {
         for msg in mailbox {
             match msg {
-                EntityMessage::Task(task) => {
-                    
-                    if let Some(pos) = self.core.apply_task(task) {
-                        
-                        let _ = self.world_aid.send(WorldManagerMessage::Move(pos, self.mailbox.clone()));
+                EntityMessage::Task(task) => 
+                match task {
+                    Task::MoveTo(pos) => {
+                        if let Some(pos) = self.core.apply_task(task) {
+                            let _ = self
+                                .world_aid
+                                .send(WorldManagerMessage::Move(pos, self.mailbox.clone()));
+                        }
                     }
-                }
+
+                    Task::AddItem { item, amount } => {
+                        let _ = self.inventory.send(InventoryMessage::Add((item, amount)));
+                    }
+
+                    Task::RemoveItem { item, amount } => {
+                        let _ = self
+                            .inventory
+                            .send(InventoryMessage::Remove((item, amount)));
+                    }
+
+                    Task::TakeFrom { from, item, amount } => {
+                        let _ = self
+                            .inventory
+                            .send(InventoryMessage::TakeFrom(from, (item, amount)));
+                    }
+
+                    Task::GiveTo { to, item, amount } => {
+                        let _ = self
+                            .inventory
+                            .send(InventoryMessage::GiveTo(to, (item, amount)));
+                    }
+
+                    Task::PrintInventory(name) => {
+                        let _ = self.inventory.send(InventoryMessage::PrintInventory(name));
+                    }
+
+                    Task::Idle => {}
+                },
 
                 EntityMessage::KillYourself => {
                     let _ = self
@@ -131,51 +166,43 @@ impl Entity {
 mod tests {
     use super::*;
 
-
     #[test]
     fn apply_task() {
-        
-        let start_pos = (1,1);
+        let start_pos = (1, 1);
         let mut core = EntityCore::new(start_pos);
 
-        let new_pos = (10,10);
+        let new_pos = (10, 10);
         let task = Task::MoveTo(new_pos);
 
         assert_eq!(core.apply_task(task), Some(new_pos));
         assert_eq!(core.pending_move, Some(new_pos));
-
     }
 
     #[test]
-    fn apply_ok(){
-
-        let start_pos = (1,1);
+    fn apply_ok() {
+        let start_pos = (1, 1);
         let mut core = EntityCore::new(start_pos);
 
-        let new_pos = (20,20);
+        let new_pos = (20, 20);
         let task = Task::MoveTo(new_pos);
         core.apply_task(task);
         core.apply_ok();
         assert_eq!(core.current_pos, new_pos);
-
     }
 
     #[test]
     fn apply_err() {
-        
-        let start_pos = (1,1);
+        let start_pos = (1, 1);
         let mut core = EntityCore::new(start_pos);
 
-        let new_pos = (3,8);
+        let new_pos = (3, 8);
 
         let task = Task::MoveTo(new_pos);
 
         core.apply_task(task);
         core.apply_err();
 
-        
         assert_eq!(core.current_pos, start_pos);
-        assert_eq!(core.pending_move,None);
-
+        assert_eq!(core.pending_move, None);
     }
 }
