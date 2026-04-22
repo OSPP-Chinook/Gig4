@@ -1,12 +1,10 @@
-use ratatui::macros::vertical;
 use ratatui::style::Stylize;
-use ratatui::widgets::{Block, Borders, Paragraph, Wrap, Widget};
+use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::layout::Constraint::Length;
 use ratatui::Frame;
 use ratatui::crossterm::event;
-use ratatui::layout::{Constraint, Direction, Layout, Margin, Rect};
-use ratatui::buffer::Buffer;
-use crossterm::event::{KeyCode, KeyEventKind};
+use ratatui::layout::{Constraint, Layout, Margin, Rect};
+use crossterm::event::{KeyCode};
 
 
 // Temporary values for world size and stuff while integration isn't working
