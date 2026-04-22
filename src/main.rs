@@ -22,24 +22,15 @@ fn test_inventory() {
     let factory_aid2: aid::AID<InventoryMessage> = inventory::inventory::init();
 
     println!("Creating mutexium in factory 1");
-    _ = factory_aid1.send(InventoryMessage::Add((Item::Mutexium, 9))); // Factory 1 produces 9 mutexium
-    // sleep(time::Duration::from_millis(500));
+    _ = factory_aid1.send(InventoryMessage::Add((Item::Mutexium, 8))); // Factory 1 produces 8 mutexium
     
-    // print_system_status(worker_aid.clone(), factory_aid1.clone(), factory_aid2.clone());
-
     println!("Taking 8 mutexium from factory 1 to worker");
     _ = worker_aid.send(InventoryMessage::TakeFrom(factory_aid1.clone(), (Item::Mutexium, 8))); // Worker takes 8 Mutexium from factory 1
-    // sleep(time::Duration::from_millis(500));
-
-    // print_system_status(worker_aid.clone(), factory_aid1.clone(), factory_aid2.clone());
 
     println!("Giving 8 mutexium from worker to factory 2");
     _ = worker_aid.send(InventoryMessage::GiveTo(factory_aid2.clone(), (Item::Mutexium, 8))); // Worker gives 8 Mutexium to factory 2
-    // sleep(time::Duration::from_millis(500));
 
     print_system_status(worker_aid.clone(), factory_aid1.clone(), factory_aid2.clone());
-
-    loop {};
 }
 
 fn print_system_status(

@@ -208,9 +208,9 @@ pub mod inventory {
         item: (Item, usize),
         transfer_in_progress: &mut bool
     ) {
-        if *transfer_in_progress /*|| inventory.is_full() */ {
-            return; // Should send an error or whatever
-        }
+        // if *transfer_in_progress /*|| inventory.is_full() */ {
+        //     return; // Should send an error or whatever
+        // }
 
         *transfer_in_progress = true;
         _ = aid.send(InventoryMessage::GiveMeItems(inventory.aid.clone(), item)); // Should handle Result in some way
@@ -231,9 +231,9 @@ pub mod inventory {
         item: (Item, usize),
         transfer_in_progress: &mut bool
     ) {
-        if *transfer_in_progress /*|| inventory.is_full() */ {
-            return; // Should send an error or whatever
-        }
+        // if *transfer_in_progress /*|| inventory.is_full() */ {
+        //     return; // Should send an error or whatever
+        // }
 
         *transfer_in_progress = true;
         _ = aid.send(InventoryMessage::TakeMyItems(inventory.aid.clone(), item));
@@ -254,10 +254,10 @@ pub mod inventory {
         item: (Item, usize),
         transfer_in_progress: &mut bool
     ) {
-        if *transfer_in_progress {
-            _ = sender.send(InventoryMessage::GiveMeItemResult(Result::Err("I'm busy!"))); // Sends an error; TODO: Should handle Result in some way
-            return;
-        }
+        // if *transfer_in_progress {
+        //     _ = sender.send(InventoryMessage::GiveMeItemResult(Result::Err("I'm busy!"))); // Sends an error; TODO: Should handle Result in some way
+        //     return;
+        // }
 
         if inventory.has_too_few_items(item) {
             _ = sender.send(InventoryMessage::GiveMeItemResult(Result::Err("I'm empty!"))); // Sends an error; TODO: Should handle Result in some way
@@ -303,9 +303,9 @@ pub mod inventory {
         items: (Item, usize), 
         transfer_in_progress: &mut bool
     ) {
-        if *transfer_in_progress {
-            _ = sender.send(InventoryMessage::TakeMyItemsResult(Result::Err("I'm busy!")));
-        }
+        // if *transfer_in_progress {
+        //     _ = sender.send(InventoryMessage::TakeMyItemsResult(Result::Err("I'm busy!")));
+        // }
 
         if inventory.is_full() { // FIXME: this wont happen as is_full is not implemented
             _ = sender.send(InventoryMessage::TakeMyItemsResult(Result::Err("I'm full!"))); // Sends an error; TODO: Should handle Result in some way
