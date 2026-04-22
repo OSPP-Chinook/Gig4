@@ -403,6 +403,7 @@ dependencies = [
 name = "gig4"
 version = "0.1.0"
 dependencies = [
+ "crossterm",
  "ratatui",
 ]
 
