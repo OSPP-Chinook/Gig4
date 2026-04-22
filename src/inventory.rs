@@ -1,52 +1,13 @@
-use std::{collections::HashMap, hash::Hash};
+use std::{collections::HashMap};
 
 use crate::{
     aid::AID, 
+    item::Item
 };
-
-#[derive(Clone, Copy)]
-pub enum Item {
-    Mutexium,
-    Semaphorite,
-}
-
-impl PartialEq for Item {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Item::Mutexium, Item::Mutexium) => return true,
-            (Item::Semaphorite, Item::Semaphorite) => return true,
-            _ => return false,
-        };
-    }
-}
-
-impl Eq for Item { }
-
-impl Hash for Item {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        match self {
-            Item::Mutexium => {
-                state.write_u8(1);
-            }
-            Item::Semaphorite => {
-                state.write_u8(1);
-            }
-        }
-    }
-}
-
-impl Item {
-    fn to_str(&self) -> &str {
-        match self {
-            Item::Mutexium => return "Mutexium",
-            Item::Semaphorite => return "Semaphorite",
-        };
-    }
-}
 
 #[derive(Clone)]
 pub enum InventoryMessage {
-    // The following are sent by owner (entity)
+    // The following are sent by owner (entity) (public)
     Add((Item, usize)),
     Remove((Item, usize)),
     TakeFrom(AID<InventoryMessage>, (Item, usize)), 
@@ -54,7 +15,7 @@ pub enum InventoryMessage {
     PrintInventory(String),
     Kill,
 
-    // The following are sent by another inventory
+    // The following are sent by another inventory (private)
     GiveMeItems(AID<InventoryMessage>, (Item, usize)),      // From TakeFrom 
     GiveMeItemResult(Result<(Item, usize), &'static str>),  // From GiveMeItems
     TakeMyItems(AID<InventoryMessage>, (Item, usize)),      // From GiveTo
@@ -79,7 +40,6 @@ impl Inventory {
         };
 
         inventory.items.insert(Item::Mutexium, (0, 0));
-        inventory.items.insert(Item::Semaphorite, (0, 0));
         
         return inventory;
     }
@@ -87,7 +47,7 @@ impl Inventory {
     fn give(&mut self, (item, count): (Item, usize)) {
         // if is_full() or whatever return false
 
-        self.items.entry(item).or_insert((count, 0)).0 += count;
+        self.items.entry(item).or_insert((0, 0)).0 += count;
 
         return  /* true */;
     }
@@ -141,27 +101,27 @@ pub mod inventory {
             mailbox: std::sync::mpsc::Receiver<InventoryMessage>
         ){
         let mut inventory: Inventory = Inventory::construct(aid);
-        let mut transfer_in_process: bool = false; 
+        // let mut transfer_in_process: bool = false; 
 
         loop {
             match mailbox.recv().unwrap() {
                 InventoryMessage::Add(item) => add(&mut inventory, item),
                 InventoryMessage::Remove(item) => remove(&mut inventory, item),
                 InventoryMessage::TakeFrom(other, items) => 
-                    take_from(&inventory, other, items, &mut transfer_in_process),
+                    take_from(&inventory, other, items, /*&mut transfer_in_process*/),
                 InventoryMessage::GiveTo(other, items) => 
-                    give_to(&inventory, other, items, &mut transfer_in_process),
+                    give_to(&inventory, other, items, /*&mut transfer_in_process*/),
                 InventoryMessage::PrintInventory(name   ) => inventory.print_inv(name),
                 InventoryMessage::Kill => return, 
 
                 InventoryMessage::GiveMeItems(sender, item) => 
-                    give_me_items(&mut inventory, sender, item, &mut transfer_in_process),
+                    give_me_items(&mut inventory, sender, item, /*&mut transfer_in_process*/),
                 InventoryMessage::GiveMeItemResult(result) => {
                     give_me_items_result(&mut inventory, result);
-                    transfer_in_process = false;
+                    // transfer_in_process = false;
                 }
                 InventoryMessage::TakeMyItems(sender, item) => 
-                    take_my_items(&mut inventory, sender, item, &mut transfer_in_process),
+                    take_my_items(&mut inventory, sender, item, /*&mut transfer_in_process*/),
                 InventoryMessage::TakeMyItemsResult(result) => 
                     take_my_items_result(&mut inventory, result),
             };            
@@ -206,13 +166,13 @@ pub mod inventory {
         inventory: &Inventory, 
         aid: AID<InventoryMessage>, 
         item: (Item, usize),
-        transfer_in_progress: &mut bool
+        // transfer_in_progress: &mut bool
     ) {
         // if *transfer_in_progress /*|| inventory.is_full() */ {
         //     return; // Should send an error or whatever
         // }
 
-        *transfer_in_progress = true;
+        // *transfer_in_progress = true;
         _ = aid.send(InventoryMessage::GiveMeItems(inventory.aid.clone(), item)); // Should handle Result in some way
     }
 
@@ -229,13 +189,13 @@ pub mod inventory {
         inventory: &Inventory, 
         aid: AID<InventoryMessage>, 
         item: (Item, usize),
-        transfer_in_progress: &mut bool
+        // transfer_in_progress: &mut bool
     ) {
         // if *transfer_in_progress /*|| inventory.is_full() */ {
         //     return; // Should send an error or whatever
         // }
 
-        *transfer_in_progress = true;
+        // *transfer_in_progress = true;
         _ = aid.send(InventoryMessage::TakeMyItems(inventory.aid.clone(), item));
     }
 
@@ -252,7 +212,7 @@ pub mod inventory {
         inventory: &mut Inventory, 
         sender: AID<InventoryMessage>, 
         item: (Item, usize),
-        transfer_in_progress: &mut bool
+        // transfer_in_progress: &mut bool
     ) {
         // if *transfer_in_progress {
         //     _ = sender.send(InventoryMessage::GiveMeItemResult(Result::Err("I'm busy!"))); // Sends an error; TODO: Should handle Result in some way
@@ -301,7 +261,7 @@ pub mod inventory {
         inventory: &mut Inventory, 
         sender: AID<InventoryMessage>, 
         items: (Item, usize), 
-        transfer_in_progress: &mut bool
+        // transfer_in_progress: &mut bool
     ) {
         // if *transfer_in_progress {
         //     _ = sender.send(InventoryMessage::TakeMyItemsResult(Result::Err("I'm busy!")));

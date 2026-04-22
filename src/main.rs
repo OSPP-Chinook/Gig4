@@ -1,15 +1,17 @@
 mod inventory;
 mod aid;
 mod messages;
+mod item;
 mod world_manager;
 
 use core::time;
 use std::thread::sleep;
 
 use inventory::{
-    Item,
     InventoryMessage,
 };
+
+use item::Item;
 
 fn main() {
     println!("Hello, world!");
@@ -22,13 +24,13 @@ fn test_inventory() {
     let factory_aid2: aid::AID<InventoryMessage> = inventory::inventory::init();
 
     println!("Creating mutexium in factory 1");
-    _ = factory_aid1.send(InventoryMessage::Add((Item::Mutexium, 8))); // Factory 1 produces 8 mutexium
+    _ = factory_aid1.send(InventoryMessage::Add((Item::Semaphorite, 8))); // Factory 1 produces 8 mutexium
     
     println!("Taking 8 mutexium from factory 1 to worker");
-    _ = worker_aid.send(InventoryMessage::TakeFrom(factory_aid1.clone(), (Item::Mutexium, 8))); // Worker takes 8 Mutexium from factory 1
+    _ = worker_aid.send(InventoryMessage::TakeFrom(factory_aid1.clone(), (Item::Semaphorite, 8))); // Worker takes 8 Mutexium from factory 1
 
     println!("Giving 8 mutexium from worker to factory 2");
-    _ = worker_aid.send(InventoryMessage::GiveTo(factory_aid2.clone(), (Item::Mutexium, 8))); // Worker gives 8 Mutexium to factory 2
+    _ = worker_aid.send(InventoryMessage::GiveTo(factory_aid2.clone(), (Item::Semaphorite, 8))); // Worker gives 8 Mutexium to factory 2
 
     print_system_status(worker_aid.clone(), factory_aid1.clone(), factory_aid2.clone());
 }
