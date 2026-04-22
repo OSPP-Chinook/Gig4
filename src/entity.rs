@@ -2,6 +2,7 @@ use crate::aid::AID;
 use crate::inventory::{InventoryMessage, inventory};
 use crate::messages::{EntityMessage, Task, TaskManagerMessage};
 use crate::world_manager::{Pos, WorldManagerMessage};
+use std::io::BufRead;
 use std::sync::mpsc::Receiver;
 
 /// Ren logik- och state för en entity.
@@ -17,6 +18,7 @@ use std::sync::mpsc::Receiver;
 struct EntityCore {
     current_pos: Pos,
     pending_move: Option<Pos>,
+    is_busy: bool,
 }
 
 impl EntityCore {
@@ -25,6 +27,7 @@ impl EntityCore {
         EntityCore {
             current_pos: start_pos,
             pending_move: None,
+            is_busy: false,
         }
     }
 
@@ -34,14 +37,30 @@ impl EntityCore {
         match task {
             Task::MoveTo(pos) => {
                 self.pending_move = Some(pos);
+                self.is_busy = true;
                 Some(pos)
             }
 
-            Task::AddItem { item, amount } => None,
-            Task::RemoveItem { item, amount } => None,
-            Task::TakeFrom { from, item, amount } => None,
-            Task::GiveTo { to, item, amount } => None,
-            Task::PrintInventory(_) => None,
+            Task::AddItem { item, amount } => {
+                self.is_busy = true;
+                None
+            }
+            Task::RemoveItem { item, amount } => {
+                self.is_busy = true;
+                None
+            }
+            Task::TakeFrom { from, item, amount } => {
+                self.is_busy = true;
+                None
+            }
+            Task::GiveTo { to, item, amount } => {
+                self.is_busy = true;
+                None
+            }
+            Task::PrintInventory(_) => {
+                self.is_busy = true;
+                None
+            }
 
             Task::Idle => None,
         }
@@ -51,6 +70,7 @@ impl EntityCore {
     fn apply_ok(&mut self) {
         if let Some(pos) = self.pending_move.take() {
             self.current_pos = pos;
+            self.is_busy = false;
         }
     }
     /// Anropas när WorldManager nekar en flytt.
@@ -100,8 +120,7 @@ impl Entity {
     fn run(&mut self, mailbox: Receiver<EntityMessage>) {
         for msg in mailbox {
             match msg {
-                EntityMessage::Task(task) => 
-                match task {
+                EntityMessage::Task(task) => match task {
                     Task::MoveTo(pos) => {
                         if let Some(pos) = self.core.apply_task(task) {
                             let _ = self
@@ -150,12 +169,14 @@ impl Entity {
                     //world manager godkände flyyten
                     //uppdatera EntityCore-> cunnrent_pos
                     self.core.apply_ok();
+                    self.core.is_busy = false;
                 }
 
                 EntityMessage::Err => {
                     // world manager neckade flytten
                     // ingen ändring i pos
                     self.core.apply_err();
+                    self.core.is_busy = false;
                 }
             }
         }
