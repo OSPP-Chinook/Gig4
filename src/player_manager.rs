@@ -6,6 +6,7 @@ use ratatui::Frame;
 use ratatui::crossterm::event;
 use ratatui::layout::{Constraint, Direction, Layout, Margin, Rect};
 use ratatui::buffer::Buffer;
+use crossterm::event::{KeyCode, KeyEventKind};
 
 
 // Temporary values for world size and stuff while integration isn't working
@@ -16,8 +17,14 @@ const TILE_SIZE: usize = 2;
 pub fn render_loop() -> Result<(), Box<dyn std::error::Error>> {
     ratatui::run(|terminal| loop {
         terminal.draw(render)?;
-        if event::read()?.is_key_press() {
-            break Ok(());
+
+        if let Some(key) = event::read()?.as_key_press_event() {
+            match key.code {
+                KeyCode::Char('q') => {
+                    break Ok(());
+                }
+                _ => {}
+            }
         }
     })
 }
