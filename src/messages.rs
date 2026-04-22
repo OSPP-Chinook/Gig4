@@ -1,23 +1,36 @@
 use crate::aid::AID;
+use crate::inventory::InventoryMessage;
+use crate::item::Item;
 use crate::world_manager::Pos;
 
-
 #[derive(Clone)]
-pub enum Task{
+pub enum Task {
     MoveTo(Pos),
-    // senare:
-    //TakeFrom{
-        //inventory : AID<InventoryMessage>
-        //item : Item,
-        //amount: usize
-    //},
-    //GiveTo{
 
-        //inventory: AID<InventoryMessage>,
-        //item: Item,
-        //amount: usize
+    AddItem {
+        item: Item,
+        amount: usize,
+    },
 
-    //},
+    RemoveItem {
+        item: Item,
+        amount: usize,
+    },
+
+    TakeFrom {
+        from: AID<InventoryMessage>,
+        item: Item,
+        amount: usize,
+    },
+
+    GiveTo {
+        to: AID<InventoryMessage>,
+        item: Item,
+        amount: usize,
+    },
+
+    PrintInventory(String),
+
     Idle,
 }
 
@@ -35,4 +48,6 @@ pub enum PlayerManagerMessage {
 }
 
 #[derive(Clone)]
-pub enum TaskManagerMessage {}
+pub enum TaskManagerMessage {
+    AssignTask(Task),
+}

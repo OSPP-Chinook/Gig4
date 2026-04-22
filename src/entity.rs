@@ -1,6 +1,7 @@
 use crate::aid::AID;
 use crate::messages::{EntityMessage, Task, TaskManagerMessage};
 use crate::world_manager::{Pos, WorldManagerMessage};
+use crate::inventory::{inventory, InventoryMessage};
 use std::sync::mpsc::Receiver;
 
 
@@ -69,7 +70,7 @@ pub struct Entity {
     core: EntityCore,
     world_aid: AID<WorldManagerMessage>,
     task_aid: AID<TaskManagerMessage>,
-    //inventory: AID<inventoryMesseges>
+    inventory: AID<InventoryMessage>,
     mailbox: AID<EntityMessage>,
 }
 
@@ -84,6 +85,7 @@ impl Entity {
                 core: EntityCore::new(start_pos),
                 world_aid: world,
                 task_aid: task,
+                inventory: inventory::init(),
                 mailbox: aid.clone(),
             };
 
