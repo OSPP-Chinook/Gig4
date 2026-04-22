@@ -1,6 +1,7 @@
 mod inventory;
 mod aid;
 mod entity;
+mod building;
 mod messages;
 mod item;
 mod world_manager;
