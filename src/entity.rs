@@ -2,7 +2,6 @@ use crate::aid::AID;
 use crate::inventory::{InventoryMessage, inventory};
 use crate::messages::{EntityMessage, Task, TaskManagerMessage};
 use crate::world_manager::{Pos, WorldManagerMessage};
-use std::io::BufRead;
 use std::sync::mpsc::Receiver;
 
 /// Ren logik- och state för en entity.
@@ -15,12 +14,14 @@ use std::sync::mpsc::Receiver;
 ///
 /// Innehåller ingen actor‑logik.  
 /// Används av `Entity` som den faktiska logikdelen.
+#[allow(dead_code)]
 struct EntityCore {
     current_pos: Pos,
     pending_move: Option<Pos>,
     is_busy: bool,
 }
 
+#[allow(dead_code)]
 impl EntityCore {
     // skapar en EntityCore  med given start position
     fn new(start_pos: Pos) -> EntityCore {
@@ -41,19 +42,19 @@ impl EntityCore {
                 Some(pos)
             }
 
-            Task::AddItem { item, amount } => {
+            Task::AddItem { .. } => {
                 self.is_busy = true;
                 None
             }
-            Task::RemoveItem { item, amount } => {
+            Task::RemoveItem { .. } => {
                 self.is_busy = true;
                 None
             }
-            Task::TakeFrom { from, item, amount } => {
+            Task::TakeFrom { .. } => {
                 self.is_busy = true;
                 None
             }
-            Task::GiveTo { to, item, amount } => {
+            Task::GiveTo { .. } => {
                 self.is_busy = true;
                 None
             }
@@ -105,23 +106,32 @@ impl Entity {
         start_pos: Pos,
     ) -> AID<EntityMessage> {
         AID::new(move |aid, mailbox| {
-            let mut entity = Entity {
-                core: EntityCore::new(start_pos),
-                world_aid: world,
-                task_aid: task,
-                inventory: inventory::init(),
-                mailbox: aid.clone(),
-            };
+            let mut entity = Entity::create(aid.clone(), world, task, start_pos);
 
             entity.run(mailbox);
         })
+    }
+
+    fn create(
+        mailbox: AID<EntityMessage>,
+        world: AID<WorldManagerMessage>,
+        task: AID<TaskManagerMessage>,
+        start_pos: Pos,
+    ) -> Self {
+        Entity {
+            core: EntityCore::new(start_pos),
+            world_aid: world,
+            task_aid: task,
+            inventory: inventory::init(),
+            mailbox: mailbox,
+        }
     }
 
     fn run(&mut self, mailbox: Receiver<EntityMessage>) {
         for msg in mailbox {
             match msg {
                 EntityMessage::Task(task) => match task {
-                    Task::MoveTo(pos) => {
+                    Task::MoveTo(_pos) => {
                         if let Some(pos) = self.core.apply_task(task) {
                             let _ = self
                                 .world_aid
@@ -185,6 +195,10 @@ impl Entity {
 
 #[cfg(test)]
 mod tests {
+    use std::future::poll_fn;
+
+    use crate::messages;
+
     use super::*;
 
     #[test]
@@ -225,5 +239,22 @@ mod tests {
 
         assert_eq!(core.current_pos, start_pos);
         assert_eq!(core.pending_move, None);
+    }
+
+    #[test]
+
+    fn is_bussy(){
+
+        let start_pos = (10,10);
+        let mut core  = EntityCore::new(start_pos);
+          assert_eq!(core.is_busy, false);
+
+        let new_pos = (20,20);
+        let task = messages::Task::MoveTo(new_pos);
+        core.apply_task(task);
+
+        assert_eq!(core.is_busy, true);
+
+
     }
 }
