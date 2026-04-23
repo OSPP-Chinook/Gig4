@@ -2,6 +2,7 @@ use crate::{
     aid::AID,
     messages::{PlayerManagerMessage, TaskManagerMessage},
     world_manager::{self, WorldManagerMessage},
+    building::Building,
 };
 
 pub struct GameManager {
@@ -28,6 +29,7 @@ impl GameManager {
     }
 
     fn demo(&self) {
-        todo!("Demo not yet implemented");
+        let building = Building::new(self.world.clone());
+        let _ = self.world.send(WorldManagerMessage::Move((0, 0), building));
     }
 }
