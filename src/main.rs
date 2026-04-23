@@ -14,24 +14,38 @@ use inventory::{
 
 use item::Item;
 
+use crate::messages::EntityMessage;
+
 fn main() {
     println!("Hello, world!");
     test_inventory();
 }
 
+fn do_nothing(aid: aid::AID<EntityMessage>, mailbox: std::sync::mpsc::Receiver<EntityMessage>) {
+    loop {};
+}
+
 fn test_inventory() {
+    let sender: aid::AID<EntityMessage> = aid::AID::new(do_nothing);
+
     let worker_aid: aid::AID<InventoryMessage> = inventory::inventory::init();
     let factory_aid1: aid::AID<InventoryMessage> = inventory::inventory::init();
     let factory_aid2: aid::AID<InventoryMessage> = inventory::inventory::init();
 
     println!("Creating mutexium in factory 1");
-    _ = factory_aid1.send(InventoryMessage::Add((Item::Semaphorite, 8))); // Factory 1 produces 8 mutexium
+    _ = factory_aid1.send( // Factory 1 produces 8 mutexium
+        InventoryMessage::Add(sender.clone(), (Item::Semaphorite, 8))
+    ); 
     
     println!("Taking 8 mutexium from factory 1 to worker");
-    _ = worker_aid.send(InventoryMessage::TakeFrom(factory_aid1.clone(), (Item::Semaphorite, 8))); // Worker takes 8 Mutexium from factory 1
+    _ = worker_aid.send( // Worker takes 8 Mutexium from factory 1
+        InventoryMessage::TakeFrom(sender.clone(), factory_aid1.clone(), (Item::Semaphorite, 8))
+    ); 
 
     println!("Giving 8 mutexium from worker to factory 2");
-    _ = worker_aid.send(InventoryMessage::GiveTo(factory_aid2.clone(), (Item::Semaphorite, 8))); // Worker gives 8 Mutexium to factory 2
+    _ = worker_aid.send( // Worker gives 8 Mutexium to factory 2
+        InventoryMessage::GiveTo(sender.clone(), factory_aid2.clone(), (Item::Semaphorite, 8))
+    ); 
 
     print_system_status(worker_aid.clone(), factory_aid1.clone(), factory_aid2.clone());
 }

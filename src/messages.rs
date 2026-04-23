@@ -8,6 +8,8 @@ pub enum EntityMessage {
     KillYourself,
     Ok,
     Err,
+    InventoryOk,
+    InventoryErr,
 }
 
 #[derive(Clone)]
