@@ -21,16 +21,16 @@ fn main() {
     test_inventory();
 }
 
-fn do_nothing(aid: aid::AID<EntityMessage>, mailbox: std::sync::mpsc::Receiver<EntityMessage>) {
+fn do_nothing(_aid: aid::AID<EntityMessage>, _mailbox: std::sync::mpsc::Receiver<EntityMessage>) {
     loop {};
 }
 
 fn test_inventory() {
     let sender: aid::AID<EntityMessage> = aid::AID::new(do_nothing);
 
-    let worker_aid: aid::AID<InventoryMessage> = inventory::inventory::init();
-    let factory_aid1: aid::AID<InventoryMessage> = inventory::inventory::init();
-    let factory_aid2: aid::AID<InventoryMessage> = inventory::inventory::init();
+    let worker_aid: aid::AID<InventoryMessage> = inventory::init();
+    let factory_aid1: aid::AID<InventoryMessage> = inventory::init();
+    let factory_aid2: aid::AID<InventoryMessage> = inventory::init();
 
     println!("Creating mutexium in factory 1");
     _ = factory_aid1.send( // Factory 1 produces 8 mutexium
