@@ -73,6 +73,6 @@ A simple recipe has the following fields:
 - `id`: A string that serves as a unique identifier for this rule.
 - `inputs`: A [list](#item-list-specifications) of input items for this rule.
 - `outputs`: A [list](#item-list-specifications) of output items for this rule.
-- `time`: The time the rule nominally takes. Higher-tier buildings may actually take less time to process this rule due to having inherent speed multipliers.
+- `time`: The time the rule nominally takes, in milliseconds ($\frac{1}{1000}$ of a second). Higher-tier buildings may actually take less time to process this rule due to having inherent speed multipliers.
 
 Other recipe types (wildcard items, etc.) are currently not supported.
