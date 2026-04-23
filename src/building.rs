@@ -62,17 +62,18 @@ impl Building {
                     EntityMessage::InventoryErr => waiting = false,
 
                     EntityMessage::Task(task) => continue, //Update task
-                    EntityMessage::Ok => {},
-                    EntityMessage::Err => {},
+                    EntityMessage::Ok => {}
+                    EntityMessage::Err => {}
                 }
             }
             if let Some(recipe) = &active_recipe
                 && current_process == None
                 && !waiting
             {
-                let _ = self
-                    .inventory
-                    .send(InventoryMessage::Remove(self.self_aid.clone(), recipe.input[0]));
+                let _ = self.inventory.send(InventoryMessage::Remove(
+                    self.self_aid.clone(),
+                    recipe.input[0],
+                ));
                 waiting = true;
             }
             if let Some(time_left) = current_process {
@@ -101,6 +102,4 @@ mod tests {
         let building = Building::new(world);
         let _ = building.send(EntityMessage::KillYourself);
     }
-
-    
 }
