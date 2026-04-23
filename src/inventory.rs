@@ -144,6 +144,7 @@ pub mod inventory {
     /// 
     /// # Arguments
     /// 
+    /// * 'sender'    - AID of entity that sent the Add message
     /// * 'inventory' - Mutable reference to the inventory to increase
     /// * 'item'      - Tuple of Item and amount to take
     fn add(sender: AID<EntityMessage>, inventory: &mut Inventory, item: (Item, usize)) {
@@ -156,6 +157,7 @@ pub mod inventory {
     /// 
     /// # Arguments
     /// 
+    /// * 'sender'    - AID of entity that sent the Remove message
     /// * 'inventory' - Mutable reference to the inventory to take from
     /// * 'item'      - Tuple of Item and amount to take
     fn remove(sender: AID<EntityMessage>, inventory: &mut Inventory, item: (Item, usize)) {
@@ -171,6 +173,7 @@ pub mod inventory {
     /// 
     /// # Arguments
     /// 
+    /// * 'sender'               - AID of entity that sent the TakeFrom message
     /// * 'inventory'            - Reference to the inventory to move item to 
     /// * 'aid'                  - AID of the inventory to take from
     /// * 'items'                - Tuple of Item and amount to take
@@ -195,6 +198,7 @@ pub mod inventory {
     /// 
     /// # Arguments
     /// 
+    /// * 'sender'               - AID of entity that sent the GiveTo message
     /// * 'inventory'            - Reference to the inventory to move item from 
     /// * 'aid'                  - AID of the inventory to give to
     /// * 'items'                - Tuple of Item and amount to give
@@ -219,6 +223,7 @@ pub mod inventory {
     /// 
     /// # Arguments
     /// 
+    /// * 'sender'               - AID of entity that sent the original TakeFrom message
     /// * 'inventory'            - Mutable reference to this inventory
     /// * 'sender'               - AID of the requesting inventory
     /// * 'items'                - Tuple of Item and amount to give
@@ -250,6 +255,7 @@ pub mod inventory {
     /// 
     /// # Arguments
     /// 
+    /// * 'sender'    - AID of entity that sent the original TakeFrom message
     /// * 'inventory' - Mutable reference to this inventory
     /// * 'result'    - A result containing either a tuple of what item was moved and the quantity, 
     ///                 or the error message as a str
@@ -276,6 +282,7 @@ pub mod inventory {
     /// 
     /// # Arguments
     /// 
+    /// * 'sender'               - AID of entity that sent the original GiveTo message
     /// * 'inventory'            - Mutable reference to this inventory
     /// * 'sender'               - AID of the requesting inventory
     /// * 'items'                - Tuple of Item and amount to get
@@ -304,6 +311,7 @@ pub mod inventory {
     /// 
     /// # Arguments
     /// 
+    /// * 'sender'    - AID of entity that sent the original GiveTo message
     /// * 'inventory' - Mutable reference to this inventory
     /// * 'result'    - A result containing either a tuple of what item was moved and the quantity, 
     ///                 or the error message as a str
