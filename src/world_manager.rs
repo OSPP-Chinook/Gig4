@@ -19,7 +19,7 @@ pub enum WorldManagerMessage {
     GetDisplay(AID<PlayerManagerMessage>),
 }
 
-enum Tile {
+pub enum Tile {
     Empty,
     Entity(AID<EntityMessage>),
 }
