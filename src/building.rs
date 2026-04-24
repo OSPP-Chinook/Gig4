@@ -56,8 +56,8 @@ impl Building {
                     }
                     EntityMessage::Err => waiting = false,
                     EntityMessage::Task(task) => continue, //Update task
-                    EntityMessage::InventoryOk => /* Something */ continue,
-                    EntityMessage::InventoryErr => /* Something */ continue,
+                    EntityMessage::InventoryOk => {},
+                    EntityMessage::InventoryErr => {},
                 }
             }
             if let Some(recipe) = &active_recipe

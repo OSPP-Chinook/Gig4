@@ -1,9 +1,12 @@
 mod inventory;
 mod aid;
+mod entity;
 mod building;
 mod messages;
 mod item;
 mod world_manager;
+mod player_manager;
+
 
 use core::time;
 use std::thread::sleep;
@@ -18,7 +21,9 @@ use crate::messages::EntityMessage;
 
 fn main() {
     println!("Hello, world!");
+    
     test_inventory();
+    let _ = player_manager::render_loop();
 }
 
 fn do_nothing(_aid: aid::AID<EntityMessage>, _mailbox: std::sync::mpsc::Receiver<EntityMessage>) {
