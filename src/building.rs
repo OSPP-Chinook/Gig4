@@ -2,13 +2,13 @@ use std::{sync::mpsc::Receiver, thread, time::Duration};
 
 use crate::{
     aid::AID,
+    inventory::{InventoryMessage, inventory},
+    item::Item,
     messages::EntityMessage,
-    world_manager::WorldManagerMessage
+    world_manager::WorldManagerMessage,
 };
 
 const MACHINE_TICK_SPEED: Duration = Duration::from_secs(1);
-
-enum Item {} //Temporary
 
 //Definition for recipe, should probably be defined somewhere else
 pub struct Recipe {
@@ -21,7 +21,7 @@ struct Building {
     world_aid: AID<WorldManagerMessage>,
     self_aid: AID<EntityMessage>,
     mailbox: Receiver<EntityMessage>,
-    //inventory: AID<InventoryMessage>
+    inventory: AID<InventoryMessage>,
 }
 
 impl Building {
@@ -31,6 +31,7 @@ impl Building {
                 world_aid: world,
                 self_aid: aid.clone(),
                 mailbox: mailbox,
+                inventory: inventory::init(),
             };
             building.run();
         });
@@ -68,13 +69,18 @@ impl Building {
                 && current_process == None
                 && !waiting
             {
-                //request recources in inventory
+                let _ = self
+                    .inventory
+                    .send(InventoryMessage::Remove(recipe.input[0]));
+                waiting = true;
             }
             if let Some(time_left) = current_process {
                 if time_left == 0 {
-                    //recipe done
-                    //insert output to inventory
-                    //continue maybe
+                    current_process = None;
+                    let _ = self.inventory.send(InventoryMessage::Add(
+                        active_recipe.as_ref().unwrap().output[0],
+                    ));
+                    continue;
                 } else {
                     current_process = Some(time_left - 1);
                 }
@@ -93,4 +99,6 @@ mod tests {
         let building = Building::new(world);
         let _ = building.send(EntityMessage::KillYourself);
     }
+
+    
 }
