@@ -56,7 +56,7 @@ pub fn main(_this: AID<WorldManagerMessage>, mailbox: Receiver<WorldManagerMessa
             WorldManagerMessage::TileInfo(pos, aid) => {
                 if let Some(tile) = get_tile(&mut grid, pos) {
                     // TODO: send tile
-                    let _ = aid.send(PlayerManagerMessage::ShowTileInfo(pos, (*tile).clone()));
+                    let _ = aid.send(PlayerManagerMessage::ShowTileInfo(pos, tile.clone()));
                 } else {
                     // TODO: send Err
                     let _ = aid.send(PlayerManagerMessage::TileNotFound(pos));
