@@ -60,7 +60,13 @@ pub struct Assets {
     pub recipes: HashMap<String, Recipe>,
 }
 
+/// All static game data loaded and initialized once at startup.
+/// Each collection is keyed by the id of the asset.
 impl Assets {
+    /// Loads all asset files.
+    /// 
+    /// # Errors
+    /// Returns an error if any file fails to load or parse.
     pub fn load(dir: &Path) -> Result<Self, AssetError> {
         Ok(Self {
             items: load_json(&dir.join("items.json"))?,
@@ -71,6 +77,7 @@ impl Assets {
     }
 }
 
+/// Loads a JSON file containing an array of T and deserializes it.
 fn load_json<T>(dir: &Path) -> Result<HashMap<String, T>, AssetError> 
 where T: for<'de> Deserialize<'de> + Identifiable {
     let asset = std::fs::read_to_string(dir)
@@ -84,6 +91,7 @@ where T: for<'de> Deserialize<'de> + Identifiable {
     Ok(hashmap)
 }
 
+/// Implemented by all asset types for keying them by ID generically.
 pub trait Identifiable {
     fn id(&self) -> &str;
 }
