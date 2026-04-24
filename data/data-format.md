@@ -28,7 +28,7 @@ Buildings' data are represented with the following fields:
 - `x_size`: The building's size in the $x$-dimension, in tile lengths.
 - `y_size`: The building's size in the $y$-dimension, in tile lengths.
 - `inventory_size`: The size of the building's inventory in slots. Each slot can only hold one kind of item at a time. <!-- Buildings do not have a mass limit. (Mass is not currently implemented.)-->
-- `production_rules`: An array of [recipe](#recipes-production-rules) (production rule) IDs that this building can follow.
+- `recipes`: An array of [recipe](#recipes) IDs that this building can make.
 - `production_speed`: A positive number that indicates how many times nominal speed the building produces at. If a building's `production_speed` is $2$ and it's processing a recipe that nominally takes $120$ seconds, that production instead takes $\frac{120}{2}=60$ seconds.
 
 ## Items
@@ -66,7 +66,7 @@ Categories are some of the simplest `gig4` data asset entries, with only three s
 }
 ```
 
-## Recipes (production rules):
+## Recipes:
 A simple recipe has the following fields:
 
 - `id`: A string that serves as a unique identifier for this rule.
