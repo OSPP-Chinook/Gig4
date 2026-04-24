@@ -135,7 +135,7 @@ impl Entity {
                         if let Some(pos) = self.core.apply_task(task) {
                             let _ = self
                                 .world_aid
-                                .send(WorldManagerMessage::Move(pos, self.mailbox.clone()));
+                                .send(WorldManagerMessage::Move(pos, self.self_aid.clone()));
                         }
                     }
 
@@ -171,7 +171,7 @@ impl Entity {
                 EntityMessage::KillYourself => {
                     let _ = self
                         .world_aid
-                        .send(WorldManagerMessage::KillMe(self.mailbox.clone()));
+                        .send(WorldManagerMessage::KillMe(self.self_aid.clone()));
                     break;
                 }
 
