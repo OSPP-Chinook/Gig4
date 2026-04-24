@@ -1,5 +1,5 @@
 use crate::aid::AID;
-use crate::inventory::{InventoryMessage, inventory};
+use crate::inventory::{InventoryMessage,self};
 use crate::messages::{EntityMessage, Task, TaskManagerMessage};
 use crate::world_manager::{Pos, WorldManagerMessage};
 use std::sync::mpsc::Receiver;
@@ -12,7 +12,7 @@ use std::sync::mpsc::Receiver;
 /// - att behandla inkommande tasks
 /// - att uppdatera state baserat på Ok/Err från WorldManager
 ///
-/// Innehåller ingen actor‑logik.  
+/// Innehåller ingen actor‑logik. 
 /// Används av `Entity` som den faktiska logikdelen.
 #[allow(dead_code)]
 struct EntityCore {
@@ -96,7 +96,7 @@ pub struct Entity {
     world_aid: AID<WorldManagerMessage>,
     task_aid: AID<TaskManagerMessage>,
     inventory: AID<InventoryMessage>,
-    mailbox: AID<EntityMessage>,
+    self_aid: AID<EntityMessage>,
 }
 
 impl Entity {
@@ -113,7 +113,7 @@ impl Entity {
     }
 
     fn create(
-        mailbox: AID<EntityMessage>,
+        self_aid: AID<EntityMessage>,
         world: AID<WorldManagerMessage>,
         task: AID<TaskManagerMessage>,
         start_pos: Pos,
@@ -123,7 +123,7 @@ impl Entity {
             world_aid: world,
             task_aid: task,
             inventory: inventory::init(),
-            mailbox: mailbox,
+            self_aid: self_aid,
         }
     }
 
@@ -135,30 +135,30 @@ impl Entity {
                         if let Some(pos) = self.core.apply_task(task) {
                             let _ = self
                                 .world_aid
-                                .send(WorldManagerMessage::Move(pos, self.mailbox.clone()));
+                                .send(WorldManagerMessage::Move(pos, self.self_aid.clone()));
                         }
                     }
 
                     Task::AddItem { item, amount } => {
-                        let _ = self.inventory.send(InventoryMessage::Add((item, amount)));
+                        let _ = self.inventory.send(InventoryMessage::Add(self.self_aid.clone(), (item,amount)));
                     }
 
                     Task::RemoveItem { item, amount } => {
                         let _ = self
                             .inventory
-                            .send(InventoryMessage::Remove((item, amount)));
+                            .send(InventoryMessage::Remove(self.self_aid.clone(), (item,amount)));
                     }
 
                     Task::TakeFrom { from, item, amount } => {
                         let _ = self
                             .inventory
-                            .send(InventoryMessage::TakeFrom(from, (item, amount)));
+                            .send(InventoryMessage::TakeFrom(self.self_aid.clone(), self.inventory.clone(), (item,amount)));
                     }
 
                     Task::GiveTo { to, item, amount } => {
                         let _ = self
                             .inventory
-                            .send(InventoryMessage::GiveTo(to, (item, amount)));
+                            .send(InventoryMessage::GiveTo(self.self_aid.clone(), self.inventory.clone(),(item,amount)));
                     }
 
                     Task::PrintInventory(name) => {
@@ -171,7 +171,7 @@ impl Entity {
                 EntityMessage::KillYourself => {
                     let _ = self
                         .world_aid
-                        .send(WorldManagerMessage::KillMe(self.mailbox.clone()));
+                        .send(WorldManagerMessage::KillMe(self.self_aid.clone()));
                     break;
                 }
 
