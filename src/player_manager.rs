@@ -1,10 +1,17 @@
+use std::sync::mpsc::Receiver;
+use std::time::Duration;
+
 use ratatui::style::Stylize;
 use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::layout::Constraint::Length;
 use ratatui::Frame;
-use ratatui::crossterm::event;
 use ratatui::layout::{Constraint, Layout, Margin, Rect};
-use crossterm::event::{KeyCode};
+use crossterm::event::{KeyCode, Event, KeyEventKind, read, poll};
+use crate::world_manager::{Tile, WorldManagerMessage};
+use crate::aid::AID;
+use crate::{
+    messages::PlayerManagerMessage,
+};
 
 
 // Temporary values for world size and stuff while integration isn't working
@@ -12,14 +19,38 @@ const WIDTH: usize = 20;
 const HEIGHT: usize = 10;
 const TILE_SIZE: usize = 2;
 
-pub fn render_loop() -> Result<(), Box<dyn std::error::Error>> {
+pub fn render_loop(
+    aid: AID<PlayerManagerMessage>,
+    mailbox: Receiver<PlayerManagerMessage>,
+    world: AID<WorldManagerMessage>,
+) -> Result<(), Box<dyn std::error::Error>> {
     ratatui::run(|terminal| loop {
-        terminal.draw(render)?;
+        let _ = world.send(WorldManagerMessage::GetDisplay(aid.clone()));
 
-        if let Some(key) = event::read()?.as_key_press_event() {
-            match key.code {
-                KeyCode::Char('q') => {
-                    break Ok(());
+        let mut world_array: [[Tile; WIDTH]; HEIGHT] =
+            std::array::from_fn(|_| std::array::from_fn(|_| Tile::Empty));
+
+        for msg in &mailbox {
+            match msg {
+                PlayerManagerMessage::TODO(arr) => {
+                    world_array = arr;
+                    let _ = world.send(WorldManagerMessage::GetDisplay(aid.clone()));
+                    break;
+                }
+            }
+        }
+
+        terminal.draw(|frame| render(frame, world_array))?;
+
+        if poll(Duration::from_secs(0))? {
+            match read()? {
+                Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
+                    match key_event.code {
+                        KeyCode::Char('q') => {
+                        break Ok(());
+                    }
+                    _ => {}
+                    }
                 }
                 _ => {}
             }
@@ -27,10 +58,9 @@ pub fn render_loop() -> Result<(), Box<dyn std::error::Error>> {
     })
 }
 
-fn render(frame: &mut Frame) {
-    let mut world_array: [[u32; WIDTH]; HEIGHT] = [[0; WIDTH]; HEIGHT];
-    world_array[2][2] = 1;
+pub type WorldArray = [[Tile; WIDTH]; HEIGHT];
 
+fn render(frame: &mut Frame, world_array: WorldArray) {
     let world_area = frame.area().centered(
                 Length((WIDTH * 2 + 2) as u16),
                 Length((HEIGHT * 2 + 2) as u16)
@@ -55,10 +85,18 @@ fn render(frame: &mut Frame) {
     // TODO: Det här är lätt att förstå men kan vara RUSTigare
     for (row, y) in grid_array.iter().zip(0..HEIGHT) {
         for (cell, x) in row.iter().zip(0..WIDTH) {
-            // TODO: world_array kommer ersättas med messages till world manager?
-            if world_array[y][x] == 1 {
-                let square = Paragraph::new("╔╗\n╚╝").red();
-                frame.render_widget(square, *cell);
+            let tile = &world_array[y][x];
+            // check if tile is empty
+            match tile {
+                Tile::Empty => {}
+                Tile::Worker(_) => {
+                    let square = Paragraph::new("╭╮\n╰╯").blue();
+                    frame.render_widget(square, *cell);
+                }
+                Tile::Building(_) => {
+                    let square = Paragraph::new("╔╗\n╚╝").red();
+                    frame.render_widget(square, *cell);
+                }
             }
         }
     }
