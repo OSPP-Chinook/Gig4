@@ -24,7 +24,9 @@ use crate::{game_manager::GameManager, messages::EntityMessage};
 fn main() {
     println!("Hello, world!");
     let gm = GameManager::new();
-    gm.run();
+    if let Ok(gm) = gm {
+        gm.run();
+    }
     //test_inventory();
 }
 
