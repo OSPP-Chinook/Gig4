@@ -21,7 +21,8 @@ pub enum WorldManagerMessage {
 
 pub enum Tile {
     Empty,
-    Entity(AID<EntityMessage>),
+    Worker(AID<EntityMessage>),
+    Building(AID<EntityMessage>),
 }
 
 fn display(grid: &[[Tile; WIDTH]; HEIGHT]) -> String {
