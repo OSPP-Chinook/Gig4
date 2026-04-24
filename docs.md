@@ -34,7 +34,7 @@ Följande meddelanden kan användas av ägaren för att kommunicera med inventor
 
 * ### ```PrintInventory(String)```
 
-    Ber inventoryt skriva ut allt innehåll. Meddelandet tar in en sträng som ska vara namnet på inventoryt så att man kan utskilja olika inventory printouts från varandra. Detta meddelande är i dagsläget endast tänk för debuggning.
+    Ber inventoryt skriva ut allt innehåll. Meddelandet tar in en sträng som ska vara namnet på inventoryt så att man kan urskilja olika inventory printouts från varandra. Detta meddelande är i dagsläget endast tänk för debuggning.
 
 * ### ```Kill```
 
@@ -56,7 +56,7 @@ Följande meddelanden är endast till för kommunikation mellan två inventories
 
 * ### ```TakeMyItemsResult(AID<EntityMessage>, Result<(Item, usize), &'static str>)```
 
-    Svarar på ett TakeMzyItems-meddelande genom att skicka ett Result som antingen inneehåller vilka items den kolla att den kan ta emot, eller en sträng som innehåller vad som gick fel.
+    Svarar på ett TakeMyItems-meddelande genom att skicka ett Result som antingen inneehåller vilka items den kolla att den kan ta emot, eller en sträng som innehåller vad som gick fel.
 
 ## AID
 AIDs (Actor Identifiers) är den grundläggande datastrukturen som ska användas för alla actors. 
