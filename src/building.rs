@@ -17,7 +17,7 @@ pub struct Recipe {
     pub recipe_time: usize, //recipe time in machine "cycles"/ticks
 }
 
-struct Building {
+pub struct Building {
     world_aid: AID<WorldManagerMessage>,
     self_aid: AID<EntityMessage>,
     mailbox: Receiver<EntityMessage>,
@@ -54,12 +54,21 @@ impl Building {
                     EntityMessage::InventoryOk => {
                         if let Some(recipe) = &active_recipe
                             && waiting
+                            && current_process == None
                         {
                             current_process = Some(recipe.recipe_time);
                         }
+                        if let Some(time) = &current_process
+                            && waiting
+                        {
+                            current_process = None;
+                        }
                         waiting = false;
                     }
-                    EntityMessage::InventoryErr => waiting = false,
+                    EntityMessage::InventoryErr => {
+                        current_process = None;
+                        waiting = false;
+                    }
 
                     EntityMessage::Task(task) => continue, //Update task
                     EntityMessage::Ok => {}
@@ -78,7 +87,6 @@ impl Building {
             }
             if let Some(time_left) = current_process {
                 if time_left == 0 {
-                    current_process = None;
                     let _ = self.inventory.send(InventoryMessage::Add(
                         self.self_aid.clone(),
                         active_recipe.as_ref().unwrap().output[0],
