@@ -46,7 +46,7 @@ pub fn main(_this: AID<WorldManagerMessage>, mailbox: Receiver<WorldManagerMessa
                 if let Some(tile) = get_tile(&mut grid, pos) {
                     // check if pos empty
                     if let Tile::Empty = *tile {
-                        *tile = Tile::Entity(aid.clone());
+                        *tile = Tile::Worker(aid.clone());
                         entity_lookup.insert(aid.clone(), pos);
                         let _ = aid.send(EntityMessage::Ok);
                     } else {
