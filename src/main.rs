@@ -2,6 +2,7 @@ mod inventory;
 mod aid;
 mod building;
 mod messages;
+mod assets;
 mod item;
 mod world_manager;
 mod player_manager;
