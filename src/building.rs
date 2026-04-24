@@ -51,7 +51,7 @@ impl Building {
                             .send(WorldManagerMessage::KillMe(self.self_aid.clone()));
                         break 'outer;
                     }
-                    EntityMessage::Ok => {
+                    EntityMessage::InventoryOk => {
                         if let Some(recipe) = &active_recipe
                             && waiting
                         {
@@ -59,10 +59,11 @@ impl Building {
                         }
                         waiting = false;
                     }
-                    EntityMessage::Err => waiting = false,
+                    EntityMessage::InventoryErr => waiting = false,
+
                     EntityMessage::Task(task) => continue, //Update task
-                    EntityMessage::InventoryOk => {},
-                    EntityMessage::InventoryErr => {},
+                    EntityMessage::Ok => {},
+                    EntityMessage::Err => {},
                 }
             }
             if let Some(recipe) = &active_recipe
@@ -71,13 +72,14 @@ impl Building {
             {
                 let _ = self
                     .inventory
-                    .send(InventoryMessage::Remove(recipe.input[0]));
+                    .send(InventoryMessage::Remove(self.self_aid.clone(), recipe.input[0]));
                 waiting = true;
             }
             if let Some(time_left) = current_process {
                 if time_left == 0 {
                     current_process = None;
                     let _ = self.inventory.send(InventoryMessage::Add(
+                        self.self_aid.clone(),
                         active_recipe.as_ref().unwrap().output[0],
                     ));
                     continue;
