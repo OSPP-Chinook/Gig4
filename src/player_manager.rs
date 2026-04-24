@@ -5,12 +5,9 @@ use ratatui::Frame;
 use ratatui::crossterm::event;
 use ratatui::layout::{Constraint, Layout, Margin, Rect};
 use crossterm::event::{KeyCode};
-use crate::world_manager::Tile;
+use crate::world_manager::{Tile, WIDTH, HEIGHT};
 
-
-// Temporary values for world size and stuff while integration isn't working
-const WIDTH: usize = 20;
-const HEIGHT: usize = 10;
+// Width and height of a tile on the screen in characters
 const TILE_SIZE: usize = 2;
 
 pub fn render_loop() -> Result<(), Box<dyn std::error::Error>> {
