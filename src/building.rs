@@ -2,7 +2,7 @@ use std::{sync::mpsc::Receiver, thread, time::Duration};
 
 use crate::{
     aid::AID,
-    inventory::{InventoryMessage, inventory},
+    inventory::{self, InventoryMessage},
     item::Item,
     messages::EntityMessage,
     world_manager::WorldManagerMessage,
