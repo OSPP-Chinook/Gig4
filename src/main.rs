@@ -1,10 +1,12 @@
 mod inventory;
 mod aid;
+mod entity;
 mod building;
 mod messages;
 mod item;
 mod world_manager;
 mod player_manager;
+
 
 use core::time;
 use std::thread::sleep;
@@ -17,6 +19,7 @@ use item::Item;
 
 fn main() {
     println!("Hello, world!");
+    
     test_inventory();
     let _ = player_manager::render_loop();
 }

@@ -1,6 +1,38 @@
 use crate::aid::AID;
+use crate::inventory::InventoryMessage;
+use crate::item::Item;
+use crate::world_manager::Pos;
 
-pub type Task = ();
+#[derive(Clone)]
+pub enum Task {
+    MoveTo(Pos),
+
+    AddItem {
+        item: Item,
+        amount: usize,
+    },
+
+    RemoveItem {
+        item: Item,
+        amount: usize,
+    },
+
+    TakeFrom {
+        from: AID<InventoryMessage>,
+        item: Item,
+        amount: usize,
+    },
+
+    GiveTo {
+        to: AID<InventoryMessage>,
+        item: Item,
+        amount: usize,
+    },
+
+    PrintInventory(String),
+
+    Idle,
+}
 
 #[derive(Clone)]
 pub enum EntityMessage {
@@ -8,6 +40,8 @@ pub enum EntityMessage {
     KillYourself,
     Ok,
     Err,
+    InventoryOk,
+    InventoryErr
 }
 
 #[derive(Clone)]
@@ -16,4 +50,6 @@ pub enum PlayerManagerMessage {
 }
 
 #[derive(Clone)]
-pub enum TaskManagerMessage {}
+pub enum TaskManagerMessage {
+    AssignTask(Task),
+}
