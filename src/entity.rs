@@ -188,6 +188,20 @@ impl Entity {
                     self.core.apply_err();
                     self.core.is_busy = false;
                 }
+
+                EntityMessage::InventoryOk =>{
+
+                    //tillfälligt lösning
+                    self.core.is_busy = false;
+                }
+
+
+                EntityMessage::InventoryErr =>{
+
+                    //tillfälligt lösning
+                    self.core.is_busy = false;
+
+                }
             }
         }
     }
@@ -195,7 +209,6 @@ impl Entity {
 
 #[cfg(test)]
 mod tests {
-    use std::future::poll_fn;
 
     use crate::messages;
 
@@ -243,18 +256,15 @@ mod tests {
 
     #[test]
 
-    fn is_bussy(){
+    fn is_bussy() {
+        let start_pos = (10, 10);
+        let mut core = EntityCore::new(start_pos);
+        assert_eq!(core.is_busy, false);
 
-        let start_pos = (10,10);
-        let mut core  = EntityCore::new(start_pos);
-          assert_eq!(core.is_busy, false);
-
-        let new_pos = (20,20);
+        let new_pos = (20, 20);
         let task = messages::Task::MoveTo(new_pos);
         core.apply_task(task);
 
         assert_eq!(core.is_busy, true);
-
-
     }
 }
