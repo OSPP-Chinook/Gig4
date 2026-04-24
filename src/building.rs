@@ -13,7 +13,7 @@ pub struct Recipe {
     pub recipe_time: usize, //recipe time in machine "cycles"/ticks
 }
 
-struct Building {
+pub struct Building {
     world_aid: AID<WorldManagerMessage>,
     self_aid: AID<EntityMessage>,
     mailbox: Receiver<EntityMessage>,
