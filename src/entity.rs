@@ -96,7 +96,7 @@ pub struct Entity {
     world_aid: AID<WorldManagerMessage>,
     task_aid: AID<TaskManagerMessage>,
     inventory: AID<InventoryMessage>,
-    mailbox: AID<EntityMessage>,
+    self_aid: AID<EntityMessage>,
 }
 
 impl Entity {
@@ -113,7 +113,7 @@ impl Entity {
     }
 
     fn create(
-        mailbox: AID<EntityMessage>,
+        self_aid: AID<EntityMessage>,
         world: AID<WorldManagerMessage>,
         task: AID<TaskManagerMessage>,
         start_pos: Pos,
@@ -123,7 +123,7 @@ impl Entity {
             world_aid: world,
             task_aid: task,
             inventory: inventory::init(),
-            mailbox: mailbox,
+            self_aid: self_aid,
         }
     }
 
