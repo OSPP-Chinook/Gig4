@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::mpsc::Receiver};
 
 use crate::{
     aid::AID,
-    messages::{EntityMessage, PlayerManagerMessage},
+    messages::{EntityMessage, PlayerManagerMessage}, player_manager::WorldArray,
 };
 
 pub const WIDTH: usize = 16;
@@ -31,7 +31,7 @@ fn get_tile(grid: &mut [[Tile; WIDTH]; HEIGHT], pos: Pos) -> Option<&mut Tile> {
 }
 
 pub fn main(_this: AID<WorldManagerMessage>, mailbox: Receiver<WorldManagerMessage>) {
-    let mut grid: [[Tile; WIDTH]; HEIGHT] =
+    let mut grid: WorldArray =
         std::array::from_fn(|_| std::array::from_fn(|_| Tile::Empty));
     let mut entity_lookup: HashMap<AID<EntityMessage>, Pos> = HashMap::new();
 
