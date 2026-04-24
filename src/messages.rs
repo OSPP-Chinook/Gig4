@@ -1,15 +1,11 @@
-<<<<<<< HEAD
 use crate::{
     aid::AID,
     player_manager::WorldArray,
 };
 
-=======
-use crate::aid::AID;
 use crate::inventory::InventoryMessage;
 use crate::item::Item;
 use crate::world_manager::Pos;
->>>>>>> origin/main
 
 #[derive(Clone)]
 pub enum Task {
@@ -54,7 +50,7 @@ pub enum EntityMessage {
 
 #[derive(Clone)]
 pub enum PlayerManagerMessage {
-    TODO,
+    TODO(WorldArray),
 }
 
 #[derive(Clone)]

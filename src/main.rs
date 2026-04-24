@@ -4,12 +4,7 @@ mod entity;
 mod building;
 mod messages;
 mod item;
-<<<<<<< HEAD
 mod game_manager;
-=======
-
-
->>>>>>> origin/main
 mod world_manager;
 mod player_manager;
 
@@ -23,13 +18,13 @@ use inventory::{
 
 use item::Item;
 
-use crate::messages::EntityMessage;
+use crate::{game_manager::GameManager, messages::EntityMessage};
 
 fn main() {
     println!("Hello, world!");
-    
-    test_inventory();
-    let _ = player_manager::render_loop();
+    let gm = GameManager::new();
+    gm.run();
+    //test_inventory();
 }
 
 fn do_nothing(_aid: aid::AID<EntityMessage>, _mailbox: std::sync::mpsc::Receiver<EntityMessage>) {

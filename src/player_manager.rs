@@ -1,3 +1,5 @@
+use std::sync::mpsc::Receiver;
+
 use ratatui::style::Stylize;
 use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::layout::Constraint::Length;
@@ -5,9 +7,9 @@ use ratatui::Frame;
 use ratatui::crossterm::event;
 use ratatui::layout::{Constraint, Layout, Margin, Rect};
 use crossterm::event::{KeyCode};
-use crate::world_manager::Tile;
-
-use crate {
+use crate::world_manager::{Tile, WorldManagerMessage};
+use crate::aid::AID;
+use crate::{
     messages::PlayerManagerMessage,
 };
 
@@ -23,16 +25,16 @@ pub fn render_loop(
     world: AID<WorldManagerMessage>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     ratatui::run(|terminal| loop {
-        let _ = world.send(WorldManagerMessage::GetDisplay);
+        let _ = world.send(WorldManagerMessage::GetDisplay(aid.clone()));
 
         let mut world_array: [[Tile; WIDTH]; HEIGHT] =
             std::array::from_fn(|_| std::array::from_fn(|_| Tile::Empty));
 
-        for msg in mailbox {
+        for msg in &mailbox {
             match msg {
                 PlayerManagerMessage::TODO(arr) => {
                     world_array = arr;
-                    let _ = world.send(WorldManagerMessage::GetDisplay);
+                    let _ = world.send(WorldManagerMessage::GetDisplay(aid.clone()));
                     break;
                 }
             }
