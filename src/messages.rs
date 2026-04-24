@@ -41,7 +41,7 @@ pub enum EntityMessage {
     Ok,
     Err,
     InventoryOk,
-    InventoryErr
+    InventoryErr,
 }
 
 #[derive(Clone)]
