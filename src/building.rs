@@ -1,10 +1,14 @@
 use std::{sync::mpsc::Receiver, thread, time::Duration};
 
-use crate::{aid::AID, messages::EntityMessage, world_manager::WorldManagerMessage};
+use crate::{
+    aid::AID,
+    inventory::{self, InventoryMessage},
+    item::Item,
+    messages::EntityMessage,
+    world_manager::WorldManagerMessage,
+};
 
 const MACHINE_TICK_SPEED: Duration = Duration::from_secs(1);
-
-enum Item {} //Temporary
 
 //Definition for recipe, should probably be defined somewhere else
 pub struct Recipe {
@@ -17,7 +21,7 @@ pub struct Building {
     world_aid: AID<WorldManagerMessage>,
     self_aid: AID<EntityMessage>,
     mailbox: Receiver<EntityMessage>,
-    //inventory: AID<InventoryMessage>
+    inventory: AID<InventoryMessage>,
 }
 
 impl Building {
@@ -27,6 +31,7 @@ impl Building {
                 world_aid: world,
                 self_aid: aid.clone(),
                 mailbox: mailbox,
+                inventory: inventory::init(),
             };
             building.run();
         });
@@ -46,29 +51,47 @@ impl Building {
                             .send(WorldManagerMessage::KillMe(self.self_aid.clone()));
                         break 'outer;
                     }
-                    EntityMessage::Ok => {
+                    EntityMessage::InventoryOk => {
                         if let Some(recipe) = &active_recipe
                             && waiting
+                            && current_process == None
                         {
                             current_process = Some(recipe.recipe_time);
                         }
+                        if let Some(time) = &current_process
+                            && waiting
+                        {
+                            current_process = None;
+                        }
                         waiting = false;
                     }
-                    EntityMessage::Err => waiting = false,
+                    EntityMessage::InventoryErr => {
+                        current_process = None;
+                        waiting = false;
+                    }
+
                     EntityMessage::Task(task) => continue, //Update task
+                    EntityMessage::Ok => {}
+                    EntityMessage::Err => {}
                 }
             }
             if let Some(recipe) = &active_recipe
                 && current_process == None
                 && !waiting
             {
-                //request recources in inventory
+                let _ = self.inventory.send(InventoryMessage::Remove(
+                    self.self_aid.clone(),
+                    recipe.input[0],
+                ));
+                waiting = true;
             }
             if let Some(time_left) = current_process {
                 if time_left == 0 {
-                    //recipe done
-                    //insert output to inventory
-                    //continue maybe
+                    let _ = self.inventory.send(InventoryMessage::Add(
+                        self.self_aid.clone(),
+                        active_recipe.as_ref().unwrap().output[0],
+                    ));
+                    continue;
                 } else {
                     current_process = Some(time_left - 1);
                 }

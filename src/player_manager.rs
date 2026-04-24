@@ -5,6 +5,7 @@ use ratatui::Frame;
 use ratatui::crossterm::event;
 use ratatui::layout::{Constraint, Layout, Margin, Rect};
 use crossterm::event::{KeyCode};
+use crate::world_manager::Tile;
 
 use crate {
     messages::PlayerManagerMessage,
@@ -77,10 +78,18 @@ fn render(frame: &mut Frame, world_array: WorldArray) {
     // TODO: Det här är lätt att förstå men kan vara RUSTigare
     for (row, y) in grid_array.iter().zip(0..HEIGHT) {
         for (cell, x) in row.iter().zip(0..WIDTH) {
-            // TODO: world_array kommer ersättas med messages till world manager?
-            if world_array[y][x] == 1 {
-                let square = Paragraph::new("╔╗\n╚╝").red();
-                frame.render_widget(square, *cell);
+            let tile = &world_array[y][x];
+            // check if tile is empty
+            match tile {
+                Tile::Empty => {}
+                Tile::Worker(_) => {
+                    let square = Paragraph::new("╭╮\n╰╯").blue();
+                    frame.render_widget(square, *cell);
+                }
+                Tile::Building(_) => {
+                    let square = Paragraph::new("╔╗\n╚╝").red();
+                    frame.render_widget(square, *cell);
+                }
             }
         }
     }
