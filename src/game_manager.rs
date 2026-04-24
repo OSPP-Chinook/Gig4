@@ -15,7 +15,10 @@ impl GameManager {
     pub fn new() -> Self {
         let world = AID::new(world_manager::main);
         let task = AID::new(|_, _| {});
-        let player = AID::new(|_, _| {});
+        let player = AID::new({
+            let world = world.clone();
+            move |aid, mailbox| world_manager::render_loop(aid, mailbox, world)
+        });
 
         Self { world, task, player }
     }
