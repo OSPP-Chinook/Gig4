@@ -1,12 +1,12 @@
 use std::sync::mpsc::Receiver;
+use std::time::Duration;
 
 use ratatui::style::Stylize;
 use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::layout::Constraint::Length;
 use ratatui::Frame;
-use ratatui::crossterm::event;
 use ratatui::layout::{Constraint, Layout, Margin, Rect};
-use crossterm::event::{KeyCode};
+use crossterm::event::{KeyCode, Event, KeyEventKind, read, poll};
 use crate::world_manager::{Tile, WorldManagerMessage};
 use crate::aid::AID;
 use crate::{
@@ -42,10 +42,15 @@ pub fn render_loop(
 
         terminal.draw(|frame| render(frame, world_array))?;
 
-        if let Some(key) = event::read()?.as_key_press_event() {
-            match key.code {
-                KeyCode::Char('q') => {
-                    break Ok(());
+        if poll(Duration::from_secs(0))? {
+            match read()? {
+                Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
+                    match key_event.code {
+                        KeyCode::Char('q') => {
+                        break Ok(());
+                    }
+                    _ => {}
+                    }
                 }
                 _ => {}
             }
