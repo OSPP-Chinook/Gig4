@@ -5,6 +5,7 @@ mod building;
 mod messages;
 mod item;
 mod world_manager;
+mod player_manager;
 
 
 use core::time;
@@ -20,6 +21,7 @@ fn main() {
     println!("Hello, world!");
     
     test_inventory();
+    let _ = player_manager::render_loop();
 }
 
 fn test_inventory() {
