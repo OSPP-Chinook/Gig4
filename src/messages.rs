@@ -59,4 +59,5 @@ pub enum PlayerManagerMessage {
 #[derive(Clone)]
 pub enum TaskManagerMessage {
     AssignTask(Task),
+    TaskDone(AID<EntityMessage>, Task),
 }
