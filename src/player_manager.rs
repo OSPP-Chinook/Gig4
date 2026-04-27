@@ -1,26 +1,56 @@
+use std::sync::mpsc::Receiver;
+use std::time::Duration;
+
 use ratatui::style::Stylize;
 use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::layout::Constraint::Length;
 use ratatui::Frame;
-use ratatui::crossterm::event;
 use ratatui::layout::{Constraint, Layout, Margin, Rect};
-use crossterm::event::{KeyCode};
-use crate::world_manager::Tile;
+use crossterm::event::{KeyCode, Event, KeyEventKind, read, poll};
+use crate::{
+    world_manager::{Tile, WorldManagerMessage,
+                    WIDTH, HEIGHT},
+    aid::AID,
+    messages::PlayerManagerMessage,
+};
 
-
-// Temporary values for world size and stuff while integration isn't working
-const WIDTH: usize = 20;
-const HEIGHT: usize = 10;
+// Width and height of a tile on the screen in characters
 const TILE_SIZE: usize = 2;
 
-pub fn render_loop() -> Result<(), Box<dyn std::error::Error>> {
+pub fn render_loop(
+    aid: AID<PlayerManagerMessage>,
+    mailbox: Receiver<PlayerManagerMessage>,
+    world: AID<WorldManagerMessage>,
+) -> Result<(), Box<dyn std::error::Error>> {
     ratatui::run(|terminal| loop {
-        terminal.draw(render)?;
+        let _ = world.send(WorldManagerMessage::GetDisplay(aid.clone()));
 
-        if let Some(key) = event::read()?.as_key_press_event() {
-            match key.code {
-                KeyCode::Char('q') => {
-                    break Ok(());
+        let mut world_array: [[Tile; WIDTH]; HEIGHT] =
+            std::array::from_fn(|_| std::array::from_fn(|_| Tile::Empty));
+
+        for msg in &mailbox {
+            match msg {
+                PlayerManagerMessage::WorldUpdate(arr) => {
+                    world_array = arr;
+                    let _ = world.send(WorldManagerMessage::GetDisplay(aid.clone()));
+                    break;
+                }
+                // TODO: Handle more message types
+                _ => {}
+            }
+        }
+
+        terminal.draw(|frame| render(frame, world_array))?;
+
+        if poll(Duration::from_secs(0))? {
+            match read()? {
+                Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
+                    match key_event.code {
+                        KeyCode::Char('q') => {
+                        break Ok(());
+                    }
+                    _ => {}
+                    }
                 }
                 _ => {}
             }
@@ -28,9 +58,9 @@ pub fn render_loop() -> Result<(), Box<dyn std::error::Error>> {
     })
 }
 
-fn render(frame: &mut Frame) {
-    let world_array: [[Tile; WIDTH]; HEIGHT] = std::array::from_fn(|_| std::array::from_fn(|_| Tile::Empty));
+pub type WorldArray = [[Tile; WIDTH]; HEIGHT];
 
+fn render(frame: &mut Frame, world_array: WorldArray) {
     let world_area = frame.area().centered(
                 Length((WIDTH * 2 + 2) as u16),
                 Length((HEIGHT * 2 + 2) as u16)

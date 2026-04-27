@@ -2,11 +2,11 @@ use std::{collections::HashMap, sync::mpsc::Receiver};
 
 use crate::{
     aid::AID,
-    messages::{EntityMessage, PlayerManagerMessage},
+    messages::{EntityMessage, PlayerManagerMessage}, player_manager::WorldArray,
 };
 
-const WIDTH: usize = 16;
-const HEIGHT: usize = 16;
+pub const WIDTH: usize = 16;
+pub const HEIGHT: usize = 16;
 
 pub type Pos = (usize, usize);
 
@@ -19,14 +19,11 @@ pub enum WorldManagerMessage {
     GetDisplay(AID<PlayerManagerMessage>),
 }
 
+#[derive(Clone)]
 pub enum Tile {
     Empty,
     Worker(AID<EntityMessage>),
     Building(AID<EntityMessage>),
-}
-
-fn display(grid: &[[Tile; WIDTH]; HEIGHT]) -> String {
-    return "TODO".to_string();
 }
 
 fn get_tile(grid: &mut [[Tile; WIDTH]; HEIGHT], pos: Pos) -> Option<&mut Tile> {
@@ -34,7 +31,7 @@ fn get_tile(grid: &mut [[Tile; WIDTH]; HEIGHT], pos: Pos) -> Option<&mut Tile> {
 }
 
 pub fn main(_this: AID<WorldManagerMessage>, mailbox: Receiver<WorldManagerMessage>) {
-    let mut grid: [[Tile; WIDTH]; HEIGHT] =
+    let mut grid: WorldArray =
         std::array::from_fn(|_| std::array::from_fn(|_| Tile::Empty));
     let mut entity_lookup: HashMap<AID<EntityMessage>, Pos> = HashMap::new();
 
@@ -46,7 +43,7 @@ pub fn main(_this: AID<WorldManagerMessage>, mailbox: Receiver<WorldManagerMessa
                 if let Some(tile) = get_tile(&mut grid, pos) {
                     // check if pos empty
                     if let Tile::Empty = *tile {
-                        *tile = Tile::Entity(aid.clone());
+                        *tile = Tile::Worker(aid.clone());
                         entity_lookup.insert(aid.clone(), pos);
                         let _ = aid.send(EntityMessage::Ok);
                     } else {
@@ -59,10 +56,10 @@ pub fn main(_this: AID<WorldManagerMessage>, mailbox: Receiver<WorldManagerMessa
             WorldManagerMessage::TileInfo(pos, aid) => {
                 if let Some(tile) = get_tile(&mut grid, pos) {
                     // TODO: send tile
-                    let _ = aid.send(PlayerManagerMessage::TODO);
+                    let _ = aid.send(PlayerManagerMessage::ShowTileInfo(pos, tile.clone()));
                 } else {
                     // TODO: send Err
-                    let _ = aid.send(PlayerManagerMessage::TODO);
+                    let _ = aid.send(PlayerManagerMessage::TileNotFound(pos));
                 }
             }
             WorldManagerMessage::KillMe(aid) => {
@@ -75,7 +72,7 @@ pub fn main(_this: AID<WorldManagerMessage>, mailbox: Receiver<WorldManagerMessa
             }
             WorldManagerMessage::GetDisplay(aid) => {
                 // TODO: send display(&grid)
-                let _ = aid.send(PlayerManagerMessage::TODO);
+                let _ = aid.send(PlayerManagerMessage::WorldUpdate(grid.clone()));
             }
         }
     }
