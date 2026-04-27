@@ -54,7 +54,7 @@ impl GameManager {
         ));
         let _ = self
             .world
-            .send(WorldManagerMessage::Move((10, 3), worker.clone()));
+            .send(WorldManagerMessage::PlaceWorker((10, 3), worker.clone()));
         thread::sleep(Duration::from_secs(1));
         let _ = worker.send(crate::messages::EntityMessage::Task(
             crate::messages::Task::MoveTo((14, 3)),
