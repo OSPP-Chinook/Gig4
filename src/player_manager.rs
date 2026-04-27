@@ -7,16 +7,14 @@ use ratatui::layout::Constraint::Length;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Margin, Rect};
 use crossterm::event::{KeyCode, Event, KeyEventKind, read, poll};
-use crate::world_manager::{Tile, WorldManagerMessage};
-use crate::aid::AID;
 use crate::{
+    world_manager::{Tile, WorldManagerMessage,
+                    WIDTH, HEIGHT},
+    aid::AID,
     messages::PlayerManagerMessage,
 };
 
-
-// Temporary values for world size and stuff while integration isn't working
-const WIDTH: usize = 20;
-const HEIGHT: usize = 10;
+// Width and height of a tile on the screen in characters
 const TILE_SIZE: usize = 2;
 
 pub fn render_loop(
@@ -32,11 +30,13 @@ pub fn render_loop(
 
         for msg in &mailbox {
             match msg {
-                PlayerManagerMessage::TODO(arr) => {
+                PlayerManagerMessage::WorldUpdate(arr) => {
                     world_array = arr;
                     let _ = world.send(WorldManagerMessage::GetDisplay(aid.clone()));
                     break;
                 }
+                // TODO: Handle more message types
+                _ => {}
             }
         }
 
