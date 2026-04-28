@@ -45,11 +45,16 @@ impl GameManager {
         let building = Building::new(self.world.clone());
         let building2 = Building::new(self.world.clone());
         let worker = Entity::new(self.world.clone(), self.task.clone(), (10, 3));
-        let _ = self.world.send(WorldManagerMessage::Move((3, 3), building.clone()));
         let _ = self
             .world
-            .send(WorldManagerMessage::Move((15, 3), building2.clone()));
-        let _ = self.world.send(WorldManagerMessage::Move((10, 3), worker.clone()));
+            .send(WorldManagerMessage::PlaceBuilding((3, 3), building.clone()));
+        let _ = self.world.send(WorldManagerMessage::PlaceBuilding(
+            (15, 3),
+            building2.clone(),
+        ));
+        let _ = self
+            .world
+            .send(WorldManagerMessage::PlaceWorker((10, 3), worker.clone()));
         thread::sleep(Duration::from_secs(1));
         let _ = worker.send(crate::messages::EntityMessage::Task(
             crate::messages::Task::MoveTo((14, 3)),

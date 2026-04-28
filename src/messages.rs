@@ -1,11 +1,8 @@
-use crate::{
-    aid::AID,
-    player_manager::WorldArray,
-};
+use crate::aid::AID;
 
 use crate::inventory::InventoryMessage;
 use crate::item::Item;
-use crate::world_manager::{Pos, Tile, WIDTH, HEIGHT};
+use crate::world_manager::{Pos, Tile, WorldGrid};
 
 #[derive(Clone)]
 pub enum Task {
@@ -50,7 +47,7 @@ pub enum EntityMessage {
 
 #[derive(Clone)]
 pub enum PlayerManagerMessage {
-    WorldUpdate(WorldArray),
+    WorldUpdate(WorldGrid),
     ShowTileInfo(Pos, Tile),
     TileNotFound(Pos),
     Notification(String), // if we ever want to notify the player of anything special
