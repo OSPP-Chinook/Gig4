@@ -42,7 +42,7 @@ pub fn render_loop(
 
             terminal.draw(|frame| render(frame, world_array))?;
 
-            if poll(Duration::from_secs(0))? {
+            if poll(Duration::from_millis(30))? {
                 match read()? {
                     Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
                         match key_event.code {
@@ -94,13 +94,14 @@ fn render(frame: &mut Frame, world_array: WorldGrid) {
             // check if tile is empty
             match tile {
                 Tile::Empty => {}
-                Tile::Worker(_) => {
+                Tile::Worker(aid) => {
                     let square = Paragraph::new("╭╮\n╰╯").blue();
                     frame.render_widget(square, *cell);
                 }
-                Tile::Building(_) => {
+                Tile::Building(aid) => {
                     let square = Paragraph::new("╔╗\n╚╝").red();
                     frame.render_widget(square, *cell);
+                    // println!("{aid}");
                 }
             }
         }

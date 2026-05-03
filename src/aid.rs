@@ -2,6 +2,7 @@ use std::{
     hash::{Hash, Hasher},
     sync::mpsc,
     thread,
+    fmt,
 };
 
 // actor identifier
@@ -53,5 +54,12 @@ impl<T> Eq for AID<T> {}
 impl<T> Hash for AID<T> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.tid.hash(state);
+    }
+}
+
+// print AID: just use tid
+impl<T> fmt::Display for AID<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        return write!(f, "AID({0:?})", self.tid);
     }
 }
