@@ -21,6 +21,7 @@ struct Camera(i32, i32);
 
 impl Camera {
     fn change(&mut self, dx: i32, dy: i32) {
+        // limit camera from going outside world
         let width = WIDTH.try_into().unwrap();
         let height = HEIGHT.try_into().unwrap();
         let mut x = self.0 + dx;
@@ -79,11 +80,6 @@ pub fn render_loop(
                             KeyCode::Char('s') => {camera.change(0,  MOVE_CAMERA);}
                             KeyCode::Char('a') => {camera.change(-MOVE_CAMERA, 0);}
                             KeyCode::Char('d') => {camera.change( MOVE_CAMERA, 0);}
-                            
-                            // KeyCode::Char('w') => {camera = Camera(camera.0, camera.1 - INVERT_CAMERA);}
-                            // KeyCode::Char('s') => {camera = Camera(camera.0, camera.1 + INVERT_CAMERA);}
-                            // KeyCode::Char('a') => {camera = Camera(camera.0 - INVERT_CAMERA, camera.1);}
-                            // KeyCode::Char('d') => {camera = Camera(camera.0 + INVERT_CAMERA, camera.1);}
                             _ => {}
                         }
                     }
@@ -102,7 +98,6 @@ fn render(frame: &mut Frame, world_array: WorldGrid, camera: Camera) {
         world_area.outer(Margin::new(1, 1)),
     );
     
-    // let origin: (i32, i32) = (0, 0);
     let box_w = world_area.width / 2;
     let box_h = world_area.height / 2;
     
