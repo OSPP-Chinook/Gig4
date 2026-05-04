@@ -6,7 +6,7 @@ use crate::{
 };
 
 pub const WIDTH: usize = 32;
-pub const HEIGHT: usize = 16;
+pub const HEIGHT: usize = 12;
 
 pub type Pos = (usize, usize);
 
