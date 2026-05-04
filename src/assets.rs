@@ -2,11 +2,11 @@ use serde::Deserialize;
 use std::{collections::HashMap, path::Path};
 
 pub struct Assets {
-    pub items: HashMap<String, Item>,
-    pub workers: HashMap<String, Worker>,
-    pub buildings: HashMap<String, Building>,
-    pub recipes: HashMap<String, Recipe>,
-    pub categories: HashMap<String, Category>,
+    pub items: HashMap<String, ItemAsset>,
+    pub workers: HashMap<String, WorkerAsset>,
+    pub buildings: HashMap<String, BuildingAsset>,
+    pub recipes: HashMap<String, RecipeAsset>,
+    pub categories: HashMap<String, CategoryAsset>,
 }
 
 /// All static game data is loaded and initialized once at startup.
@@ -71,7 +71,13 @@ macro_rules! impl_identifiable {
     };
 }
 
-impl_identifiable!(Item, Worker, Building, Category, Recipe);
+impl_identifiable!(
+    ItemAsset,
+    WorkerAsset,
+    BuildingAsset,
+    CategoryAsset,
+    RecipeAsset
+);
 
 #[derive(Debug)]
 pub enum AssetError {
@@ -99,7 +105,7 @@ pub struct ItemStack {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct Item {
+pub struct ItemAsset {
     pub id: String,
     pub name: String,
     pub description: String,
@@ -108,7 +114,7 @@ pub struct Item {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct Worker {
+pub struct WorkerAsset {
     pub id: String,
     pub name: String,
     pub description: String,
@@ -119,7 +125,7 @@ pub struct Worker {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct Building {
+pub struct BuildingAsset {
     pub id: String,
     pub name: String,
     pub description: String,
@@ -135,7 +141,7 @@ pub struct Building {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct Recipe {
+pub struct RecipeAsset {
     pub id: String,
     pub inputs: ItemList,
     pub outputs: ItemList,
@@ -143,7 +149,7 @@ pub struct Recipe {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct Category {
+pub struct CategoryAsset {
     pub id: String,
     pub name: String,
     pub description: String,
@@ -162,7 +168,7 @@ mod tests {
             "description": "Raw and impure iron.",
             "stack_limit": 256
         }]"#;
-        let map: HashMap<String, Item> = parse(json).unwrap();
+        let map: HashMap<String, ItemAsset> = parse(json).unwrap();
         let item = map.get("iron_ore").expect("Iron Ore missing");
         assert_eq!(item.name, "Iron Ore");
         assert_eq!(item.category, "ore");
@@ -176,7 +182,7 @@ mod tests {
             "name": "Worker",
             "description": "Carries items."
         }]"#;
-        let map: HashMap<String, Category> = parse(json).unwrap();
+        let map: HashMap<String, CategoryAsset> = parse(json).unwrap();
         let category = map.get("worker").expect("Worker missing");
         assert_eq!(category.name, "Worker");
         assert_eq!(category.description, "Carries items.");
@@ -188,7 +194,7 @@ mod tests {
             "id": "bad",
             "name": "Bad"
         }]"#;
-        let result: Result<HashMap<String, Item>, AssetError> = parse(json);
+        let result: Result<HashMap<String, ItemAsset>, AssetError> = parse(json);
         assert!(result.is_err());
     }
 }
