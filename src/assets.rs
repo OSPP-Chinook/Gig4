@@ -1,8 +1,5 @@
-use std::{
-    path::Path,
-    collections::HashMap,
-};
 use serde::Deserialize;
+use std::{collections::HashMap, path::Path};
 
 pub type ItemList = Vec<ItemStack>;
 
@@ -33,7 +30,7 @@ pub struct Building {
     pub x_size: usize,
     pub y_size: usize,
     pub inventory_size: usize,
-    pub production_rules: Vec<String>,
+    pub recipes: Vec<String>,
     pub production_speed: f32,
 }
 
@@ -64,7 +61,7 @@ pub struct Assets {
 /// Each collection is keyed by the id of the asset.
 impl Assets {
     /// Loads all asset files.
-    /// 
+    ///
     /// # Errors
     /// Returns an error if any file fails to load or parse.
     pub fn load(dir: &Path) -> Result<Self, AssetError> {
@@ -78,16 +75,17 @@ impl Assets {
 }
 
 /// Loads a JSON file containing an array of T and deserializes it.
-fn load_json<T>(dir: &Path) -> Result<HashMap<String, T>, AssetError> 
-where T: for<'de> Deserialize<'de> + Identifiable {
-    let asset = std::fs::read_to_string(dir)
-        .map_err(AssetError::IoError)?;
-    
-    let entries: Vec<T> = serde_json::from_str(&asset)
-        .map_err(AssetError::ParseError)?;
+fn load_json<T>(dir: &Path) -> Result<HashMap<String, T>, AssetError>
+where
+    T: for<'de> Deserialize<'de> + Identifiable,
+{
+    let asset = std::fs::read_to_string(dir).map_err(AssetError::IoError)?;
+    let entries: Vec<T> = serde_json::from_str(&asset).map_err(AssetError::ParseError)?;
+    let hashmap = entries
+        .into_iter()
+        .map(|e| (e.id().to_owned(), e))
+        .collect();
 
-    let hashmap = entries.into_iter().map(|e| (e.id().to_owned(), e)).collect();
-    
     Ok(hashmap)
 }
 
@@ -125,9 +123,14 @@ mod tests {
     use super::*;
 
     fn deserialize<T>(json: &str) -> HashMap<String, T>
-    where T: for<'de> Deserialize<'de> + Identifiable {
+    where
+        T: for<'de> Deserialize<'de> + Identifiable,
+    {
         let entries: Vec<T> = serde_json::from_str(json).expect("Failed to parse test JSON");
-        entries.into_iter().map(|e| (e.id().to_owned(), e)).collect()
+        entries
+            .into_iter()
+            .map(|e| (e.id().to_owned(), e))
+            .collect()
     }
 
     #[test]
