@@ -1,12 +1,7 @@
 use std::{thread, time::Duration};
 
 use crate::{
-    aid::AID,
-    building::Building,
-    entity::Entity,
-    messages::{PlayerManagerMessage, TaskManagerMessage},
-    player_manager,
-    world_manager::{self, WorldManagerMessage},
+    aid::AID, building::Building, entity::Entity, item::Item, messages::{EntityMessage, PlayerManagerMessage}, player_manager, task_manager::{self, Task, TaskManagerMessage}, world_manager::{self, WorldManagerMessage}
 };
 
 pub struct GameManager {
@@ -18,7 +13,9 @@ pub struct GameManager {
 impl GameManager {
     pub fn new() -> Self {
         let world = AID::new(world_manager::main);
-        let task = AID::new(|_, _| {});
+        let task = AID::new(|aid, mailbox| {
+            task_manager::main(aid, mailbox);
+        });
         let player = AID::new({
             let world = world.clone();
             move |aid, mailbox| {
@@ -46,7 +43,7 @@ impl GameManager {
         let building2 = Building::new(self.world.clone());
         let _ = self
             .world
-            .send(WorldManagerMessage::PlaceBuilding((3, 3), building.clone()));
+            .send(WorldManagerMessage::PlaceBuilding((3, 5), building.clone()));
         let _ = self.world.send(WorldManagerMessage::PlaceBuilding(
             (15, 3),
             building2.clone(),
@@ -59,25 +56,22 @@ impl GameManager {
         let _ = self
             .world
             .send(WorldManagerMessage::PlaceWorker((x, y), worker.clone()));
-
+        
+        let _ = self.task.send(TaskManagerMessage::CreatePath(Item::Mutexium, (14, 3), (3, 4)));
         loop {
-            while x < 14 {
-                thread::sleep(Duration::from_millis(250));
-                x += 1;
-                let _ = worker.send(crate::messages::EntityMessage::Task(
-                    crate::messages::Task::MoveTo((x, y)),
-                ));
-            }
-            thread::sleep(Duration::from_millis(2500));
+            // while x < 14 {
+            //     thread::sleep(Duration::from_millis(250));
+            //     x += 1;
+            //     let _ = worker.send(EntityMessage::Task(Task::MoveTo((x, y))));
+            // }
+            // thread::sleep(Duration::from_millis(2500));
 
-            while x > 4 {
-                thread::sleep(Duration::from_millis(250));
-                x -= 1;
-                let _ = worker.send(crate::messages::EntityMessage::Task(
-                    crate::messages::Task::MoveTo((x, y)),
-                ));
-            }
-            thread::sleep(Duration::from_millis(2500));
+            // while x > 4 {
+            //     thread::sleep(Duration::from_millis(250));
+            //     x -= 1;
+            //     let _ = worker.send(EntityMessage::Task(Task::MoveTo((x, y))));
+            // }
+            // thread::sleep(Duration::from_millis(2500));
         }
     }
 }
