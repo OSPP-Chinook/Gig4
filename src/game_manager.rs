@@ -1,16 +1,11 @@
-use std::{
-    thread,
-    sync::Arc,
-    time::Duration,
-    path::Path,
-};
+use std::{path::Path, sync::Arc, thread, time::Duration};
 
 use crate::{
     aid::AID,
-    assets::{Assets, AssetError},
+    assets::{AssetError, Assets},
     building::Building,
     entity::Entity,
-    messages::{PlayerManagerMessage, TaskManagerMessage, Task, EntityMessage},
+    messages::{EntityMessage, PlayerManagerMessage, Task, TaskManagerMessage},
     player_manager,
     world_manager::{self, WorldManagerMessage},
 };
@@ -34,27 +29,58 @@ impl GameManager {
             }
         });
 
-        Ok(Self { assets, world, task, player })
+        Ok(Self {
+            assets,
+            world,
+            task,
+            player,
+        })
     }
 
     pub fn run(&self) {
         self.demo();
-        loop { thread::park(); }
+        loop {
+            thread::park();
+        }
     }
 
     fn demo(&self) {
-        let world = &self.world;
-        
-        let worker = Entity::new(world.clone(), self.task.clone(), (10, 3));
-        let building1 = Building::new(world.clone(), );
-        let building2 = Building::new(world.clone());
+        let building = Building::new(self.world.clone());
+        let building2 = Building::new(self.world.clone());
+        let _ = self
+            .world
+            .send(WorldManagerMessage::PlaceBuilding((3, 3), building.clone()));
+        let _ = self.world.send(WorldManagerMessage::PlaceBuilding(
+            (15, 3),
+            building2.clone(),
+        ));
 
-        let _ = world.send(WorldManagerMessage::Move((10, 3), worker.clone()));
-        let _ = world.send(WorldManagerMessage::Move((3, 3), building1));
-        let _ = world.send(WorldManagerMessage::Move((15, 3), building2));
+        let mut x = 10;
+        let y = 3;
 
-        thread::sleep(Duration::from_secs(1));
-        let _ = worker.send(EntityMessage::Task(Task::MoveTo((14, 3))));
-        thread::sleep(Duration::from_secs(1));
+        let worker = Entity::new(self.world.clone(), self.task.clone(), (10, 3));
+        let _ = self
+            .world
+            .send(WorldManagerMessage::PlaceWorker((x, y), worker.clone()));
+
+        loop {
+            while x < 14 {
+                thread::sleep(Duration::from_millis(250));
+                x += 1;
+                let _ = worker.send(crate::messages::EntityMessage::Task(
+                    crate::messages::Task::MoveTo((x, y)),
+                ));
+            }
+            thread::sleep(Duration::from_millis(2500));
+
+            while x > 4 {
+                thread::sleep(Duration::from_millis(250));
+                x -= 1;
+                let _ = worker.send(crate::messages::EntityMessage::Task(
+                    crate::messages::Task::MoveTo((x, y)),
+                ));
+            }
+            thread::sleep(Duration::from_millis(2500));
+        }
     }
 }
