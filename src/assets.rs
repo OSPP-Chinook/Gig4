@@ -9,7 +9,14 @@ pub struct Assets {
     pub categories: HashMap<String, Category>,
 }
 
+/// All static game data is loaded and initialized once at startup.
 impl Assets {
+    /// Loads all assets from the given directory.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AssetError::IoError` if the directory cannot be read.
+    /// Returns `AssetError::ParseError` if any of the JSON files cannot be parsed.
     pub fn load(dir: &Path) -> Result<Self, AssetError> {
         Ok(Self {
             items: load_asset(&dir.join("items.json"))?,
@@ -21,10 +28,20 @@ impl Assets {
     }
 }
 
+/// Reads a file and returns its content as a string.
+///
+/// # Errors
+///
+/// Returns `AssetError::IoError` if the file cannot be read.
 fn read_json(path: &Path) -> Result<String, AssetError> {
     std::fs::read_to_string(path).map_err(AssetError::IoError)
 }
 
+/// Deserializes a JSON string into a hash map of any asset type accepted by Identifiable, keyed by its id.
+///
+/// # Errors
+///
+/// Returns `AssetError::ParseError` if the JSON string cannot be parsed.
 fn parse<T>(json: &str) -> Result<HashMap<String, T>, AssetError>
 where
     T: for<'de> Deserialize<'de> + Identifiable,
@@ -43,6 +60,7 @@ where
     parse(&read_json(path)?)
 }
 
+/// Trait for assets that can be identified by a string ID.
 trait Identifiable {
     fn id(&self) -> &str;
 }
