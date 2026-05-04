@@ -6,7 +6,7 @@ use crate::{
     messages::PlayerManagerMessage,
     world_manager::{HEIGHT, Tile, WIDTH, WorldGrid, WorldManagerMessage},
 };
-use crossterm::event::{Event, KeyCode, KeyEventKind, poll, read};
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, MouseButton, MouseEvent, MouseEventKind, poll, read};
 use ratatui::Frame;
 use ratatui::layout::Constraint::Length;
 use ratatui::layout::{Constraint, Layout, Margin, Rect};
@@ -15,6 +15,11 @@ use ratatui::widgets::{Block, Borders, Paragraph};
 
 // Width and height of a tile on the screen in characters
 const TILE_SIZE: usize = 2;
+
+struct Input {
+    mouse: Option<MouseEvent>,
+    key: Option<KeyEvent>,
+}
 
 pub fn render_loop(
     aid: AID<PlayerManagerMessage>,
@@ -40,26 +45,29 @@ pub fn render_loop(
                 }
             }
 
-            terminal.draw(|frame| render(frame, world_array))?;
+            let mut input: Input = Input { mouse: Option::None, key: Option::None };
 
             if poll(Duration::from_secs(0))? {
                 match read()? {
                     Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
-                        match key_event.code {
-                            KeyCode::Char('q') => {
-                                break Ok(());
-                            }
-                            _ => {}
+                        if key_event.code == KeyCode::Char('q') {
+                            break Ok(());
                         }
+                        input.key = Option::Some(key_event);
+                    }
+                    Event::Mouse(mouse_event) => {
+                        input.mouse = Option::Some(mouse_event);
                     }
                     _ => {}
                 }
             }
+
+            terminal.draw(|frame| render(frame, world_array, input))?;
         }
     })
 }
 
-fn render(frame: &mut Frame, world_array: WorldGrid) {
+fn render(frame: &mut Frame, world_array: WorldGrid, input: Input) {
     let world_area = frame.area().centered(
         Length((WIDTH * 2 + 2) as u16),
         Length((HEIGHT * 2 + 2) as u16),
