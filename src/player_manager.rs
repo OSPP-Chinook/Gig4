@@ -79,12 +79,6 @@ pub fn render_loop(
                     Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
                         if key_event.code == KeyCode::Char('q') {
                             break Ok(());
-                        match key_event.code {
-                            KeyCode::Char('q') => {
-                                break Ok(());
-                            }
-                            
-                            _ => {}
                         }
                         input.key = Option::Some(key_event);
                     }
@@ -95,19 +89,23 @@ pub fn render_loop(
                 }
             }
 
-            parse_input(&input);
+            parse_input(&input, &mut camera);
 
             terminal.draw(|frame| render(frame, world_array, camera, input))?;
         }
     })
 }
 
-fn parse_input(&input: Input) {
-    match input.
-    KeyCode::Char('w') => {camera.change(0, -MOVE_CAMERA);}
-    KeyCode::Char('s') => {camera.change(0,  MOVE_CAMERA);}
-    KeyCode::Char('a') => {camera.change(-MOVE_CAMERA, 0);}
-    KeyCode::Char('d') => {camera.change( MOVE_CAMERA, 0);}
+fn parse_input(input: &Input, camera: &mut Camera) {
+    if input.key.is_none() {return;}
+    
+    match input.key.unwrap().code {
+        KeyCode::Char('w') => {camera.change(0, -MOVE_CAMERA);}
+        KeyCode::Char('s') => {camera.change(0,  MOVE_CAMERA);}
+        KeyCode::Char('a') => {camera.change(-MOVE_CAMERA, 0);}
+        KeyCode::Char('d') => {camera.change( MOVE_CAMERA, 0);}
+        _ => {}
+    }
 }
 
 fn render(frame: &mut Frame, world_array: WorldGrid, camera: Camera, input: Input) {
