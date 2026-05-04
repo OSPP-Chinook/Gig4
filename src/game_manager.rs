@@ -6,7 +6,7 @@ use crate::{
     entity::Entity,
     messages::{PlayerManagerMessage, TaskManagerMessage},
     player_manager,
-    world_manager::{self, WorldManagerMessage},
+    world_manager::{self, WorldManagerMessage, init_world_grid},
 };
 
 pub struct GameManager {
@@ -17,12 +17,18 @@ pub struct GameManager {
 
 impl GameManager {
     pub fn new() -> Self {
-        let world = AID::new(world_manager::main);
+        let grid = init_world_grid();
+
+        let world = AID::new({
+            let grid = grid.clone();
+            |aid, mailbox| world_manager::main(aid, mailbox, grid)
+        });
         let task = AID::new(|_, _| {});
         let player = AID::new({
             let world = world.clone();
-            move |aid, mailbox| {
-                let _ = player_manager::render_loop(aid, mailbox, world);
+            let grid = grid.clone();
+            |aid, mailbox| {
+                player_manager::render_loop(aid, mailbox, world, grid);
             }
         });
 

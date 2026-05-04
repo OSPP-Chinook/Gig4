@@ -20,29 +20,21 @@ pub fn render_loop(
     aid: AID<PlayerManagerMessage>,
     mailbox: Receiver<PlayerManagerMessage>,
     world: AID<WorldManagerMessage>,
+    world_array: WorldGrid,
 ) -> Result<(), Box<dyn std::error::Error>> {
     ratatui::run(|terminal| {
         loop {
-            let _ = world.send(WorldManagerMessage::GetDisplay(aid.clone()));
-
-            let mut world_array: WorldGrid =
-                std::array::from_fn(|_| std::array::from_fn(|_| Tile::Empty));
-
-            for msg in &mailbox {
+            //read all messages in mailbox
+            while let Ok(msg) = mailbox.try_recv() {
                 match msg {
-                    PlayerManagerMessage::WorldUpdate(arr) => {
-                        world_array = arr;
-                        let _ = world.send(WorldManagerMessage::GetDisplay(aid.clone()));
-                        break;
-                    }
                     // TODO: Handle more message types
                     _ => {}
                 }
             }
 
-            terminal.draw(|frame| render(frame, world_array))?;
+            terminal.draw(|frame| render(frame, &world_array))?;
 
-            if poll(Duration::from_secs(0))? {
+            if poll(Duration::from_millis(30))? {
                 match read()? {
                     Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
                         match key_event.code {
@@ -59,7 +51,7 @@ pub fn render_loop(
     })
 }
 
-fn render(frame: &mut Frame, world_array: WorldGrid) {
+fn render(frame: &mut Frame, world_array: &WorldGrid) {
     let world_area = frame.area().centered(
         Length((WIDTH * 2 + 2) as u16),
         Length((HEIGHT * 2 + 2) as u16),
@@ -86,6 +78,9 @@ fn render(frame: &mut Frame, world_array: WorldGrid) {
         .iter()
         .map(|row: &Rect| row.layout_vec(&horizontal))
         .collect();
+
+    // aquire lock until it falls out of scope
+    let world_array = &world_array.lock().unwrap();
 
     // TODO: Det här är lätt att förstå men kan vara RUSTigare
     for (row, y) in grid_array.iter().zip(0..HEIGHT) {

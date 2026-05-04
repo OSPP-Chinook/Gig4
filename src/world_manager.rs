@@ -1,12 +1,18 @@
-use std::{collections::HashMap, sync::mpsc::Receiver};
+use std::{
+    collections::HashMap,
+    mem::MaybeUninit,
+    ptr,
+    sync::{Arc, Mutex, mpsc::Receiver},
+    vec,
+};
 
 use crate::{
     aid::AID,
     messages::{EntityMessage, PlayerManagerMessage},
 };
 
-pub const WIDTH: usize = 32;
-pub const HEIGHT: usize = 16;
+pub const WIDTH: usize = 50;
+pub const HEIGHT: usize = 30;
 
 pub type Pos = (usize, usize);
 
@@ -18,7 +24,6 @@ pub enum WorldManagerMessage {
     PlaceBuilding(Pos, AID<EntityMessage>),
     KillMe(AID<EntityMessage>),
     TileInfo(Pos, AID<PlayerManagerMessage>),
-    GetDisplay(AID<PlayerManagerMessage>),
 }
 
 #[derive(Clone)]
@@ -28,20 +33,27 @@ pub enum Tile {
     Building(AID<EntityMessage>),
 }
 
-pub type WorldGrid = [[Tile; WIDTH]; HEIGHT];
 type WorldLookup = HashMap<AID<EntityMessage>, Pos>;
+type RawWorldArray = Vec<Vec<Tile>>;
+pub type WorldGrid = Arc<Mutex<RawWorldArray>>;
 
-fn get_tile(grid: &mut WorldGrid, pos: Pos) -> Option<&mut Tile> {
+pub fn init_world_grid() -> WorldGrid {
+    return Arc::new(Mutex::new(vec![vec![Tile::Empty; WIDTH]; HEIGHT]));
+}
+
+fn get_tile(grid: &mut RawWorldArray, pos: Pos) -> Option<&mut Tile> {
     return grid.get_mut(pos.1)?.get_mut(pos.0);
 }
 
 fn place_tile(
-    grid: &mut WorldGrid,
+    grid: &WorldGrid,
     entity_lookup: &mut WorldLookup,
     pos: Pos,
     aid: AID<EntityMessage>,
     tile: Tile,
 ) {
+    let grid = &mut grid.lock().unwrap();
+
     // check that it does not already have a position
     if let None = entity_lookup.get(&aid) {
         // check if pos in bounds
@@ -60,12 +72,9 @@ fn place_tile(
     let _ = aid.send(EntityMessage::Err);
 }
 
-fn move_tile(
-    grid: &mut WorldGrid,
-    entity_lookup: &mut WorldLookup,
-    pos: Pos,
-    aid: AID<EntityMessage>,
-) {
+fn move_tile(grid: &WorldGrid, entity_lookup: &mut WorldLookup, pos: Pos, aid: AID<EntityMessage>) {
+    let grid = &mut grid.lock().unwrap();
+
     // check if pos is valid
     if let Some(dest) = get_tile(grid, pos) {
         if let Tile::Empty = *dest {
@@ -88,47 +97,49 @@ fn move_tile(
     let _ = aid.send(EntityMessage::Err);
 }
 
-pub fn main(_this: AID<WorldManagerMessage>, mailbox: Receiver<WorldManagerMessage>) {
-    let mut grid: WorldGrid = std::array::from_fn(|_| std::array::from_fn(|_| Tile::Empty));
+pub fn main(
+    _this: AID<WorldManagerMessage>,
+    mailbox: Receiver<WorldManagerMessage>,
+    grid: WorldGrid,
+) {
     let mut entity_lookup: WorldLookup = HashMap::new();
 
     for msg in mailbox {
         match msg {
             WorldManagerMessage::Stop => break,
-            WorldManagerMessage::Move(pos, aid) => {
-                move_tile(&mut grid, &mut entity_lookup, pos, aid)
-            }
+            WorldManagerMessage::Move(pos, aid) => move_tile(&grid, &mut entity_lookup, pos, aid),
             WorldManagerMessage::PlaceWorker(pos, aid) => place_tile(
-                &mut grid,
+                &grid,
                 &mut entity_lookup,
                 pos,
                 aid.clone(),
                 Tile::Worker(aid),
             ),
             WorldManagerMessage::PlaceBuilding(pos, aid) => place_tile(
-                &mut grid,
+                &grid,
                 &mut entity_lookup,
                 pos,
                 aid.clone(),
                 Tile::Building(aid),
             ),
             WorldManagerMessage::TileInfo(pos, aid) => {
-                if let Some(tile) = get_tile(&mut grid, pos) {
+                let grid = &mut grid.lock().unwrap();
+
+                if let Some(tile) = get_tile(grid, pos) {
                     let _ = aid.send(PlayerManagerMessage::ShowTileInfo(pos, tile.clone()));
                 } else {
                     let _ = aid.send(PlayerManagerMessage::TileNotFound(pos));
                 }
             }
             WorldManagerMessage::KillMe(aid) => {
+                let grid = &mut grid.lock().unwrap();
+
                 if let Some(pos) = entity_lookup.remove(&aid) {
-                    if let Some(tile) = get_tile(&mut grid, pos) {
+                    if let Some(tile) = get_tile(grid, pos) {
                         *tile = Tile::Empty;
                     }
                 }
                 // no response necessary
-            }
-            WorldManagerMessage::GetDisplay(aid) => {
-                let _ = aid.send(PlayerManagerMessage::WorldUpdate(grid.clone()));
             }
         }
     }
