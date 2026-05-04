@@ -1,33 +1,61 @@
-use std::sync::mpsc;
+use crate::aid::AID;
 
-struct Actor {}
-struct Task {}
-type Pos = (usize, usize);
+use crate::inventory::InventoryMessage;
+use crate::item::Item;
+use crate::world_manager::{Pos, Tile, WorldGrid};
 
-type WorldManagerMailbox =  mpsc::Receiver<(WorldManagerMessage, Actor)>;
-type PlayerManagerMailbox =  mpsc::Receiver<(PlayerManagerMessage, Actor)>;
-type TaskManagerMailbox =  mpsc::Receiver<(TaskManagerMessage, Actor)>;
-type EntityMailbox =  mpsc::Receiver<(EntityMessage, Actor)>;
+#[derive(Clone)]
+pub enum Task {
+    MoveTo(Pos),
 
+    AddItem {
+        item: Item,
+        amount: usize,
+    },
 
+    RemoveItem {
+        item: Item,
+        amount: usize,
+    },
 
-enum WorldManagerMessage {
-    Move(Pos),
-    TileInfo(Pos),
-    KillMe,
-    GetDisplay,
+    TakeFrom {
+        from: AID<InventoryMessage>,
+        item: Item,
+        amount: usize,
+    },
+
+    GiveTo {
+        to: AID<InventoryMessage>,
+        item: Item,
+        amount: usize,
+    },
+
+    PrintInventory(String),
+
+    Idle,
 }
 
-enum EntityMessage {
+#[derive(Clone)]
+pub enum EntityMessage {
     Task(Task),
     KillYourself,
     Ok,
-    Err
+    Err,
+    InventoryOk,
+    InventoryErr,
 }
 
-enum PlayerManagerMessage {
+#[derive(Clone)]
+pub enum PlayerManagerMessage {
+    WorldUpdate(WorldGrid),
+    ShowTileInfo(Pos, Tile),
+    TileNotFound(Pos),
+    Notification(String), // if we ever want to notify the player of anything special
 }
 
-enum TaskManagerMessage {
-
+#[derive(Clone)]
+pub enum TaskManagerMessage {
+    AssignTask(Task),
+    RevokeTask(Task),
+    TaskDone(AID<EntityMessage>, Task),
 }
