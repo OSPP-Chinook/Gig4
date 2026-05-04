@@ -19,6 +19,17 @@ pub struct Item {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+pub struct Worker {
+    pub id: String,
+    pub name: String,
+    pub category: String,
+    pub description: String,
+    pub stack_limit: usize,
+    pub speed: f32,
+    pub inventory_size: usize,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct Building {
     pub id: String,
     pub name: String,
@@ -52,6 +63,7 @@ pub struct Recipe {
 #[derive(Debug)]
 pub struct Assets {
     pub items: HashMap<String, Item>,
+    pub workers: HashMap<String, Worker>,
     pub buildings: HashMap<String, Building>,
     pub categories: HashMap<String, Category>,
     pub recipes: HashMap<String, Recipe>,
@@ -67,6 +79,7 @@ impl Assets {
     pub fn load(dir: &Path) -> Result<Self, AssetError> {
         Ok(Self {
             items: load_json(&dir.join("items.json"))?,
+            workers: load_json(&dir.join("workers.json"))?,
             buildings: load_json(&dir.join("buildings.json"))?,
             categories: load_json(&dir.join("categories.json"))?,
             recipes: load_json(&dir.join("recipes.json"))?,
@@ -99,7 +112,7 @@ macro_rules! has_id {
         $(impl Identifiable for $t { fn id(&self) -> &str { &self.id } })*
     };
 }
-has_id!(Item, Building, Category, Recipe);
+has_id!(Item, Worker, Building, Category, Recipe);
 
 #[derive(Debug)]
 pub enum AssetError {
