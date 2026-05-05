@@ -4,9 +4,8 @@ use crate::item::Item;
 use crate::messages::EntityMessage;
 use crate::task_manager::{Task, TaskManagerMessage};
 use crate::world_manager::{Pos, WorldManagerMessage};
-use std::cmp::{max, min};
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::sync::mpsc::{Receiver, sync_channel};
+use std::sync::mpsc::Receiver;
 use std::thread;
 use std::time::Duration;
 
@@ -48,21 +47,9 @@ enum Request {
     TakeItem(Item),
 }
 
-fn abs_sub(a: usize, b: usize) -> usize {
-    return max(a, b) - min(a, b);
-}
-
-// |x2 - x1| + |y2 - y1|
-#[allow(unused)]
-fn manhattan_distance(from: Pos, to: Pos) -> usize {
-    return abs_sub(from.0, to.0) + abs_sub(from.1, to.1);
-}
-
-// (x2 - x1)^2 + (y2 - y1)^2
+// nicer to keep it squared to avaoid roots and floats
 fn euclidean_distance_squared(from: Pos, to: Pos) -> usize {
-    let dx = abs_sub(from.0, to.0);
-    let dy = abs_sub(from.1, to.1);
-    return dx * dx + dy * dy;
+    return from.0.abs_diff(to.0).pow(2) + from.1.abs_diff(to.1).pow(2);
 }
 
 // Returns a set of all adjacent positions
