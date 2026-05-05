@@ -7,7 +7,7 @@ use crate::{
     entity::Entity,
     messages::{EntityMessage, PlayerManagerMessage, Task, TaskManagerMessage},
     player_manager,
-    world_manager::{self, WorldManagerMessage},
+    world_manager::{self, WorldManagerMessage, init_world_grid},
 };
 
 pub struct GameManager {
@@ -20,12 +20,18 @@ pub struct GameManager {
 impl GameManager {
     pub fn new() -> Result<Self, AssetError> {
         let assets = Arc::new(Assets::load(Path::new("assets"))?);
-        let world = AID::new(world_manager::main);
+
+        let grid = init_world_grid();
+        let world = AID::new({
+            let grid = grid.clone();
+            |aid, mailbox| world_manager::main(aid, mailbox, grid)
+        });
         let task = AID::new(|_, _| {});
         let player = AID::new({
             let world = world.clone();
-            move |aid, mailbox| {
-                let _ = player_manager::render_loop(aid, mailbox, world);
+            let grid = grid.clone();
+            |aid, mailbox| {
+                player_manager::render_loop(aid, mailbox, world, grid);
             }
         });
 

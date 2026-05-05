@@ -47,7 +47,6 @@ pub enum EntityMessage {
 
 #[derive(Clone)]
 pub enum PlayerManagerMessage {
-    WorldUpdate(WorldGrid),
     ShowTileInfo(Pos, Tile),
     TileNotFound(Pos),
     Notification(String), // if we ever want to notify the player of anything special
