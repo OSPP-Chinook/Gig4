@@ -280,11 +280,12 @@ mod tests {
         let start_pos = (1, 1);
         let mut core = EntityCore::new(start_pos);
 
-        let new_pos = (10, 10);
+        let new_pos = (1, 2);
         let task = Task::MoveTo(new_pos);
-
-        //assert_eq!(core.apply_task(task), Some(new_pos));
-        //assert_eq!(core.pending_move, Some(new_pos));
+        core.new_task(task);
+        assert_eq!(core.sub_tasks.len(), 1);
+        core.process_task();
+        assert_eq!(core.pending_move, Some(new_pos));
     }
 
     #[test]
@@ -292,9 +293,10 @@ mod tests {
         let start_pos = (1, 1);
         let mut core = EntityCore::new(start_pos);
 
-        let new_pos = (20, 20);
+        let new_pos = (2, 1);
         let task = Task::MoveTo(new_pos);
-        //core.apply_task(task);
+        core.new_task(task);
+        core.process_task();
         core.apply_ok();
         assert_eq!(core.current_pos, new_pos);
     }
@@ -308,24 +310,11 @@ mod tests {
 
         let task = Task::MoveTo(new_pos);
 
-        //core.apply_task(task);
+        core.new_task(task);
+        core.process_task();
         core.apply_err();
 
         assert_eq!(core.current_pos, start_pos);
         assert_eq!(core.pending_move, None);
-    }
-
-    #[test]
-
-    fn is_bussy() {
-        let start_pos = (10, 10);
-        let mut core = EntityCore::new(start_pos);
-        //assert_eq!(core.is_busy, false);
-
-        let new_pos = (20, 20);
-        let task = Task::MoveTo(new_pos);
-        //core.apply_task(task);
-
-        //assert_eq!(core.is_busy, true);
     }
 }
