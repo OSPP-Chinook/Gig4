@@ -1,8 +1,13 @@
 use crate::aid::AID;
-use crate::inventory::{InventoryMessage,self};
-use crate::messages::{EntityMessage, Task, TaskManagerMessage};
+use crate::inventory::{self, InventoryMessage};
+use crate::item::Item;
+use crate::messages::EntityMessage;
+use crate::task_manager::{Task, TaskManagerMessage};
 use crate::world_manager::{Pos, WorldManagerMessage};
+use std::collections::VecDeque;
 use std::sync::mpsc::Receiver;
+use std::thread;
+use std::time::Duration;
 
 /// Ren logik- och state för en entity.
 ///
@@ -12,13 +17,20 @@ use std::sync::mpsc::Receiver;
 /// - att behandla inkommande tasks
 /// - att uppdatera state baserat på Ok/Err från WorldManager
 ///
-/// Innehåller ingen actor‑logik. 
+/// Innehåller ingen actor‑logik.
 /// Används av `Entity` som den faktiska logikdelen.
 #[allow(dead_code)]
 struct EntityCore {
     current_pos: Pos,
     pending_move: Option<Pos>,
-    is_busy: bool,
+    sub_tasks: VecDeque<SubTask>,
+}
+#[derive(Clone)]
+enum SubTask {
+    Move(Pos),
+    TakeItem(AID<EntityMessage>, Item),
+    GiveItem(AID<EntityMessage>, Item),
+    Done,
 }
 
 #[allow(dead_code)]
@@ -28,42 +40,79 @@ impl EntityCore {
         EntityCore {
             current_pos: start_pos,
             pending_move: None,
-            is_busy: false,
+            sub_tasks: VecDeque::new(),
         }
+    }
+
+    fn process_move(&mut self, pos: Pos) -> Option<Pos> {
+        let mut return_pos: Option<Pos> = None;
+        if pos.0.abs_diff(self.current_pos.0) + pos.1.abs_diff(self.current_pos.1) <= 1 {
+            self.sub_tasks.pop_front();
+            return None;
+        }
+        if pos.0 > self.current_pos.0 {
+            return_pos = Some((self.current_pos.0 + 1, self.current_pos.1));
+        } else if pos.0 < self.current_pos.0 {
+            return_pos = Some((self.current_pos.0 - 1, self.current_pos.1));
+        } else if pos.1 > self.current_pos.1 {
+            return_pos = Some((self.current_pos.0, self.current_pos.1 + 1));
+        } else if pos.1 < self.current_pos.1 {
+            return_pos = Some((self.current_pos.0, self.current_pos.1 - 1));
+        } else {
+            self.sub_tasks.pop_front();
+        }
+        self.pending_move = return_pos;
+        return return_pos;
+    }
+
+    fn process_task(&mut self) -> SubTask {
+        if self.sub_tasks.is_empty() {
+            return SubTask::Done;
+        }
+        let sub_task = self.sub_tasks.front().unwrap();
+        if let SubTask::Move(pos) = sub_task {
+            if let Some(target) = self.process_move(*pos) {
+                return SubTask::Move(target);
+            } else {
+                return self.process_task();
+            }
+        }
+        return sub_task.clone();
     }
 
     /// Behandlar en Task och returnerar eventuell Move-position
     /// som Entity-aktorn ska skicka till WorldManager.
-    fn apply_task(&mut self, task: Task) -> Option<Pos> {
+    fn new_task(&mut self, task: Task) {
         match task {
             Task::MoveTo(pos) => {
-                self.pending_move = Some(pos);
-                self.is_busy = true;
-                Some(pos)
+                self.sub_tasks.push_back(SubTask::Move(pos));
             }
-
-            Task::AddItem { .. } => {
-                self.is_busy = true;
-                None
+            Task::DeliverItem(item, (from_aid, from), (to_aid, to)) => {
+                self.sub_tasks.push_back(SubTask::Move(from));
+                self.sub_tasks.push_back(SubTask::TakeItem(from_aid.clone(), item));
+                self.sub_tasks.push_back(SubTask::Move(to));
+                self.sub_tasks.push_back(SubTask::GiveItem(to_aid.clone(), item));
             }
-            Task::RemoveItem { .. } => {
-                self.is_busy = true;
-                None
-            }
-            Task::TakeFrom { .. } => {
-                self.is_busy = true;
-                None
-            }
-            Task::GiveTo { .. } => {
-                self.is_busy = true;
-                None
-            }
-            Task::PrintInventory(_) => {
-                self.is_busy = true;
-                None
-            }
-
-            Task::Idle => None,
+            _ => (),
+            // Task::AddItem { .. } => {
+            //     self.is_busy = true;
+            //     None
+            // }
+            // Task::RemoveItem { .. } => {
+            //     self.is_busy = true;
+            //     None
+            // }
+            // Task::TakeFrom { .. } => {
+            //     self.is_busy = true;
+            //     None
+            // }
+            // Task::GiveTo { .. } => {
+            //     self.is_busy = true;
+            //     None
+            // }
+            // Task::PrintInventory(_) => {
+            //     self.is_busy = true;
+            //     None
         }
     }
     /// Anropas när WorldManager godkänner en flytt.
@@ -71,7 +120,7 @@ impl EntityCore {
     fn apply_ok(&mut self) {
         if let Some(pos) = self.pending_move.take() {
             self.current_pos = pos;
-            self.is_busy = false;
+            self.pending_move = None;
         }
     }
     /// Anropas när WorldManager nekar en flytt.
@@ -93,6 +142,7 @@ impl EntityCore {
 /// Entity själv hanterar endast actor‑beteende och message‑flow.
 pub struct Entity {
     core: EntityCore,
+    waiting: bool,
     world_aid: AID<WorldManagerMessage>,
     task_aid: AID<TaskManagerMessage>,
     inventory: AID<InventoryMessage>,
@@ -120,6 +170,7 @@ impl Entity {
     ) -> Self {
         Entity {
             core: EntityCore::new(start_pos),
+            waiting: false,
             world_aid: world,
             task_aid: task,
             inventory: inventory::init(),
@@ -128,79 +179,98 @@ impl Entity {
     }
 
     fn run(&mut self, mailbox: Receiver<EntityMessage>) {
-        for msg in mailbox {
-            match msg {
-                EntityMessage::Task(task) => match task {
-                    Task::MoveTo(_pos) => {
-                        if let Some(pos) = self.core.apply_task(task) {
-                            let _ = self
-                                .world_aid
-                                .send(WorldManagerMessage::Move(pos, self.self_aid.clone()));
+        let mut pending_inventory_task: Option<(bool, Item)> = None;
+        loop {
+            while let Ok(msg) = mailbox.try_recv() {
+                match msg {
+                    EntityMessage::Task(task) => {
+                        self.core.new_task(task);
+                        self.waiting = false;
+                    }
+
+                    EntityMessage::KillYourself => {
+                        let _ = self
+                            .world_aid
+                            .send(WorldManagerMessage::KillMe(self.self_aid.clone()));
+                        break;
+                    }
+
+                    EntityMessage::Ok => {
+                        //world manager godkände flyyten
+                        //uppdatera EntityCore-> cunnrent_pos
+                        self.core.apply_ok();
+                        thread::sleep(Duration::from_millis(500));
+                        self.waiting = false;
+                    }
+
+                    EntityMessage::Err => {
+                        // world manager neckade flytten
+                        // ingen ändring i pos
+                        self.core.apply_err();
+                        self.waiting = false;
+                    }
+
+                    EntityMessage::InventoryOk => {
+                        self.core.sub_tasks.pop_front();
+                        pending_inventory_task = None;
+                        self.waiting = false;
+                    }
+
+                    EntityMessage::InventoryErr => {
+                        self.waiting = false;
+                    }
+
+                    EntityMessage::GetInventory(aid) => {
+                        let _ = aid.send(EntityMessage::SendInventory(self.inventory.clone()));
+                    }
+
+                    EntityMessage::SendInventory(inventory) => {
+                        if let Some((send, item)) = pending_inventory_task {
+                            if send {
+                                let _ = self.inventory.send(InventoryMessage::GiveTo(
+                                    self.self_aid.clone(),
+                                    inventory,
+                                    (item, 10),
+                                ));
+                            } else {
+                                let _ = self.inventory.send(InventoryMessage::TakeFrom(
+                                    self.self_aid.clone(),
+                                    inventory,
+                                    (item, 10),
+                                ));
+                            }
                         }
                     }
-
-                    Task::AddItem { item, amount } => {
-                        let _ = self.inventory.send(InventoryMessage::Add(self.self_aid.clone(), (item,amount)));
-                    }
-
-                    Task::RemoveItem { item, amount } => {
-                        let _ = self
-                            .inventory
-                            .send(InventoryMessage::Remove(self.self_aid.clone(), (item,amount)));
-                    }
-
-                    Task::TakeFrom { from, item, amount } => {
-                        let _ = self
-                            .inventory
-                            .send(InventoryMessage::TakeFrom(self.self_aid.clone(), self.inventory.clone(), (item,amount)));
-                    }
-
-                    Task::GiveTo { to, item, amount } => {
-                        let _ = self
-                            .inventory
-                            .send(InventoryMessage::GiveTo(self.self_aid.clone(), self.inventory.clone(),(item,amount)));
-                    }
-
-                    Task::PrintInventory(name) => {
-                        let _ = self.inventory.send(InventoryMessage::PrintInventory(name));
-                    }
-
-                    Task::Idle => {}
-                },
-
-                EntityMessage::KillYourself => {
+                }
+            }
+            if self.waiting {
+                continue;
+            }
+            //process task
+            let task = self.core.process_task();
+            match task {
+                SubTask::Move(pos) => {
                     let _ = self
                         .world_aid
-                        .send(WorldManagerMessage::KillMe(self.self_aid.clone()));
-                    break;
+                        .send(WorldManagerMessage::Move(pos, self.self_aid.clone()));
+                    self.waiting = true;
                 }
-
-                EntityMessage::Ok => {
-                    //world manager godkände flyyten
-                    //uppdatera EntityCore-> cunnrent_pos
-                    self.core.apply_ok();
-                    self.core.is_busy = false;
+                SubTask::Done => {
+                    let _ = self
+                        .task_aid
+                        .send(TaskManagerMessage::GiveMeNewTask(self.self_aid.clone()));
+                    self.waiting = true;
                 }
-
-                EntityMessage::Err => {
-                    // world manager neckade flytten
-                    // ingen ändring i pos
-                    self.core.apply_err();
-                    self.core.is_busy = false;
+                SubTask::GiveItem(to, item) => {
+                    pending_inventory_task = Some((true, item));
+                    let _ = to.send(EntityMessage::GetInventory(self.self_aid.clone()));
+                    thread::sleep(Duration::from_millis(3000));
                 }
-
-                EntityMessage::InventoryOk =>{
-
-                    //tillfälligt lösning
-                    self.core.is_busy = false;
-                }
-
-
-                EntityMessage::InventoryErr =>{
-
-                    //tillfälligt lösning
-                    self.core.is_busy = false;
-
+                SubTask::TakeItem(from, item) => {
+                    pending_inventory_task = Some((false, item));
+                    let _ = from.send(EntityMessage::GetInventory(self.self_aid.clone()));
+                    thread::sleep(Duration::from_millis(3000));
+                    //println!("Took 1000 Megaforium");
                 }
             }
         }
@@ -221,9 +291,9 @@ mod tests {
 
         let new_pos = (10, 10);
         let task = Task::MoveTo(new_pos);
-
-        assert_eq!(core.apply_task(task), Some(new_pos));
-        assert_eq!(core.pending_move, Some(new_pos));
+        core.new_task(task);
+        assert_eq!(core.sub_tasks.len(), 1);
+        core.process_task();
     }
 
     #[test]
@@ -233,9 +303,10 @@ mod tests {
 
         let new_pos = (20, 20);
         let task = Task::MoveTo(new_pos);
-        core.apply_task(task);
+        core.new_task(task);
+        core.process_task();
         core.apply_ok();
-        assert_eq!(core.current_pos, new_pos);
+        assert_ne!(core.current_pos, start_pos);
     }
 
     #[test]
@@ -247,24 +318,11 @@ mod tests {
 
         let task = Task::MoveTo(new_pos);
 
-        core.apply_task(task);
+        core.new_task(task);
+        core.process_task();
         core.apply_err();
 
         assert_eq!(core.current_pos, start_pos);
         assert_eq!(core.pending_move, None);
-    }
-
-    #[test]
-
-    fn is_bussy() {
-        let start_pos = (10, 10);
-        let mut core = EntityCore::new(start_pos);
-        assert_eq!(core.is_busy, false);
-
-        let new_pos = (20, 20);
-        let task = messages::Task::MoveTo(new_pos);
-        core.apply_task(task);
-
-        assert_eq!(core.is_busy, true);
     }
 }

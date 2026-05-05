@@ -1,8 +1,8 @@
 use std::{
+    fmt,
     hash::{Hash, Hasher},
     sync::mpsc,
     thread,
-    fmt,
 };
 
 // actor identifier
@@ -35,6 +35,25 @@ impl<T> AID<T> {
             tid: handle.thread().id(),
             channel: sender,
         };
+    }
+
+    #[cfg(test)]
+    pub fn mock() -> (Self, mpsc::Receiver<T>) {
+        //Creates an AID with random tid but no starts no new thread
+        //Returns both AID and mailbox in a tuple
+        //Useful to write unit tests
+
+        let (sender, reciever) = mpsc::channel();
+        let handle = thread::spawn(|| ());
+        let tid = handle.thread().id();
+        let _ = handle.join();
+        return (
+            AID {
+                tid: tid,
+                channel: sender,
+            },
+            reciever,
+        );
     }
 
     pub fn send(&self, t: T) -> Result<(), mpsc::SendError<T>> {
