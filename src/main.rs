@@ -60,10 +60,7 @@ fn test_inventory() {
 
     sleep(time::Duration::from_millis(500));
     
-    print_system_status(worker_aid.clone(), factory_aid1.clone(), factory_aid2.clone());
-    sleep(time::Duration::from_millis(500));
-    
-    print_system_status(worker_aid.clone(), factory_aid1.clone(), factory_aid2.clone());
+    print_system_status(worker_aid.clone(), factory_aid1.clone(), factory_aid2.clone());    
 }
 
 fn print_system_status(

@@ -8,7 +8,7 @@ use std::{
 
 use crate::{
     aid::AID, 
-    item::Item, messages::EntityMessage
+    item::{Item}, messages::EntityMessage
 };
 
 #[derive(Clone)]
@@ -25,14 +25,14 @@ pub enum InventoryMessage {
     GiveMeItems(AID<EntityMessage>, AID<InventoryMessage>, (Item, usize)),      // From TakeFrom 
     GiveMeItemResult(AID<EntityMessage>, Result<(Item, usize), &'static str>),  // From GiveMeItems
     TakeMyItems(AID<EntityMessage>, AID<InventoryMessage>, (Item, usize)),      // From GiveTo
-    TakeMyItemsResult(AID<EntityMessage>, Result<(Item, usize), &'static str>), // From TakeMyItems
+    TakeMyItemsResult(AID<EntityMessage>, Result<(Item, usize), (Item, usize)>), // From TakeMyItems
 }
 
 
 struct Inventory {
     aid: AID<InventoryMessage>,
     max: usize,                           // ???
-    waiting: VecDeque<(AID<InventoryMessage>, InventoryMessage)>,  // TODO: Not needed for minimum viable product
+    waiting: VecDeque<InventoryMessage>,  // TODO: Not needed for minimum viable product
     items: HashMap<Item, (usize, usize)>, // Key: Name of item -> Value: (count, max).
 }
 
@@ -50,12 +50,14 @@ impl Inventory {
         return inventory;
     }
     
-    fn give(&mut self, (item, count): (Item, usize)) {
-        // if is_full() or whatever return false
+    fn give(&mut self, (item, count): (Item, usize)) -> bool {
+        if self.is_full() {
+            return false; 
+        }
 
         self.items.entry(item).or_insert((0, 0)).0 += count;
 
-        return  /* true */;
+        return true;
     }
 
     fn take(&mut self, (item, count): (Item, usize)) -> bool {
@@ -80,8 +82,8 @@ impl Inventory {
     fn print_inv(&self, name: String) {
         println!("{0}:", name);
         
-        for (key, value) in &self.items {
-            println!("      {0} - {1}/{2}", key.to_str(), value.0, value.1);
+        for (key, (amount, max)) in &self.items {
+            println!("      {0} - {1}/{2}", key.to_str(), amount, max);
         }
     }
 }
@@ -96,15 +98,14 @@ fn inventory_loop(
         mailbox: std::sync::mpsc::Receiver<InventoryMessage>
     ){
     let mut inventory: Inventory = Inventory::construct(aid);
-    // let mut transfer_in_process: bool = false; 
 
     loop {
         if !inventory.waiting.is_empty() {
             println!("Inventory has a queue of requests");
-            match_message(inventory.waiting.pop_front().unwrap().1.clone(), &mut inventory);
+            match_message(inventory.waiting.pop_front().unwrap().clone(), &mut inventory);
         }
         
-        let message = mailbox.try_recv();
+        let message: Result<InventoryMessage, TryRecvError> = mailbox.try_recv();
 
         match message {
             Ok(m) => match_message(m, &mut inventory),
@@ -127,27 +128,24 @@ fn match_message(message: InventoryMessage, inventory: &mut Inventory) {
             remove(sender, inventory, item),
 
         InventoryMessage::TakeFrom(sender, other, items) => 
-            take_from(sender, &inventory, other, items, /*&mut transfer_in_process*/),
+            take_from(sender, &inventory, other, items),
 
         InventoryMessage::GiveTo(sender, other, items) => 
-            give_to(sender, &inventory, other, items, /*&mut transfer_in_process*/),
+            give_to(sender, inventory, other, items),
 
         InventoryMessage::PrintInventory(name) => inventory.print_inv(name),
         
-        InventoryMessage::Kill => return, 
-
+        InventoryMessage::Kill => return, // Should probably take care of all messages in mailbox somehow
 
 
         InventoryMessage::GiveMeItems(sender, sending_inventory, item) => 
-            give_me_items(sender, inventory, sending_inventory, item, /*&mut transfer_in_process*/),
+            give_me_items(sender, inventory, sending_inventory, item),
 
-        InventoryMessage::GiveMeItemResult(sender, result) => {
-            give_me_items_result(sender, inventory, result);
-            // transfer_in_process = false;
-        }
+        InventoryMessage::GiveMeItemResult(sender, result) =>
+            give_me_items_result(sender, inventory, result),
 
         InventoryMessage::TakeMyItems(sender, sending_inventory, item) => 
-            take_my_items(sender, inventory, sending_inventory, item, /*&mut transfer_in_process*/),
+            take_my_items(sender, inventory, sending_inventory, item),
 
         InventoryMessage::TakeMyItemsResult(sender, result) => 
             take_my_items_result(sender, inventory, result),
@@ -216,20 +214,19 @@ fn take_from(
 /// * 'inventory'            - Reference to the inventory to move item from 
 /// * 'aid'                  - AID of the inventory to give to
 /// * 'items'                - Tuple of Item and amount to give
-/// * 'transfer_in_progress' - Bool that is true if there is already a transfer in progress, else false
 fn give_to(
     sender: AID<EntityMessage>,
-    inventory: &Inventory, 
+    inventory: &mut Inventory, 
     aid: AID<InventoryMessage>, 
-    item: (Item, usize),
-    // transfer_in_progress: &mut bool
+    items: (Item, usize),
 ) {
-    // if *transfer_in_progress /*|| inventory.is_full() */ {
-    //     return; // Should send an error or whatever
-    // }
+    if inventory.has_too_few_items(items) {
+        inventory.waiting.push_back(InventoryMessage::GiveTo(sender.clone(), aid, items));
+        return;
+    }
 
-    // *transfer_in_progress = true;
-    _ = aid.send(InventoryMessage::TakeMyItems(sender, inventory.aid.clone(), item));
+    inventory.take(items);
+    _ = aid.send(InventoryMessage::TakeMyItems(sender, inventory.aid.clone(), items));
 }
 
 /// Checks if this inventory can give item and sends a result containing either a tuple containing
@@ -241,29 +238,24 @@ fn give_to(
 /// * 'inventory'            - Mutable reference to this inventory
 /// * 'sender'               - AID of the requesting inventory
 /// * 'items'                - Tuple of Item and amount to give
-/// * 'transfer_in_progress' - Bool that is true if there is already a transfer in progress, else false
 fn give_me_items(
     sender: AID<EntityMessage>,
     inventory: &mut Inventory, 
     sending_inventory: AID<InventoryMessage>, 
     item: (Item, usize),
-    // transfer_in_progress: &mut bool
 ) {
-    // if *transfer_in_progress {
-    //     _ = sender.send(InventoryMessage::GiveMeItemResult(Result::Err("I'm busy!"))); // Sends an error; TODO: Should handle Result in some way
-    //     return;
-    // }
-
     if inventory.has_too_few_items(item) {
         println!("had too few items");
-        inventory.waiting.push_back((sending_inventory.clone(), InventoryMessage::GiveMeItems(sender.clone(), sending_inventory.clone(), item)));
-        // TODO: Figure out how to know if an inventory of a factory has changed production rules, making the request impossible to fulfill.
-        //       Should send error in that case.
+        inventory.waiting.push_back(
+            InventoryMessage::GiveMeItems(sender.clone(), sending_inventory.clone(), item)
+        );
+        // TODO: Figure out how to know if an inventory of a factory has changed production rules, 
+        //       making the request impossible to fulfill. Should send error in that case.
         return;
     }
 
     inventory.take(item);
-    _ = sending_inventory.send(InventoryMessage::GiveMeItemResult(sender, Result::Ok(item))); // Sends a tuple containing what item it is and how many it moved; TODO: Should handle Result in some way
+    _ = sending_inventory.send(InventoryMessage::GiveMeItemResult(sender, Result::Ok(item)));
 }
 
 /// Gets the result from a GiveMeItem message and add the item to this inventory, or prints the
@@ -302,20 +294,14 @@ fn give_me_items_result(
 /// * 'inventory'            - Mutable reference to this inventory
 /// * 'sender'               - AID of the requesting inventory
 /// * 'items'                - Tuple of Item and amount to get
-/// * 'transfer_in_progress' - Bool that is true if there is already a transfer in progress, else false
 fn take_my_items(
     sender: AID<EntityMessage>,
     inventory: &mut Inventory, 
     sending_inventory: AID<InventoryMessage>, 
     items: (Item, usize), 
-    // transfer_in_progress: &mut bool
 ) {
-    // if *transfer_in_progress {
-    //     _ = sender.send(InventoryMessage::TakeMyItemsResult(Result::Err("I'm busy!")));
-    // }
-
     if inventory.is_full() { // FIXME: this wont happen as is_full is not implemented
-        inventory.waiting.push_back((sending_inventory.clone(), InventoryMessage::GiveMeItems(sender.clone(), sending_inventory.clone(), items)));
+        inventory.waiting.push_back(InventoryMessage::TakeMyItems(sender.clone(), sending_inventory.clone(), items));
         // TODO: Should send error if inventory is full.
         return;
     } 
@@ -336,15 +322,14 @@ fn take_my_items(
 fn take_my_items_result(
     sender: AID<EntityMessage>,
     inventory: &mut Inventory, 
-    result: Result<(Item, usize), &'static str>
+    result: Result<(Item, usize), (Item, usize)>
 ) {
     match result {
-        Ok(item) => { 
-            _ = inventory.take(item);
+        Ok(_) => { 
             _ = sender.send(EntityMessage::InventoryOk);
         },
-        Err(msg) => { 
-            println!("{}", msg); // should probably do something else
+        Err(item) => { 
+            _ = inventory.give(item); // Revert removal
             _ = sender.send(EntityMessage::InventoryErr);
         }    
     };
