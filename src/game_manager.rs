@@ -61,6 +61,7 @@ impl GameManager {
             (8, 5),
             (8, 6),
             (9, 6),
+            (7, 6),
         ] {
             let _ = self.world.send(WorldManagerMessage::PlaceObstacle(pos));
         }
@@ -86,6 +87,16 @@ impl GameManager {
             .world
             .send(WorldManagerMessage::PlaceWorker((10, 5), worker.clone()));
 
+        let worker = Entity::new(self.world.clone(), self.task.clone(), (10, 7));
+        let _ = self
+            .world
+            .send(WorldManagerMessage::PlaceWorker((10, 7), worker.clone()));
+
+        let _ = self.task.send(TaskManagerMessage::CreatePath(
+            Item::Mutexium,
+            (14, 3),
+            (3, 4),
+        ));
         let _ = self.task.send(TaskManagerMessage::CreatePath(
             Item::Mutexium,
             (14, 3),
