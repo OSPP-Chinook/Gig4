@@ -1,4 +1,10 @@
-use std::{collections::HashMap};
+use std::{
+    collections::{
+        HashMap,
+        VecDeque,
+    }, 
+    sync::mpsc::TryRecvError
+};
 
 use crate::{
     aid::AID, 
@@ -26,7 +32,7 @@ pub enum InventoryMessage {
 struct Inventory {
     aid: AID<InventoryMessage>,
     max: usize,                           // ???
-    waiting: Vec<AID<InventoryMessage>>,  // TODO: Not needed for minimum viable product
+    waiting: VecDeque<(AID<InventoryMessage>, InventoryMessage)>,  // TODO: Not needed for minimum viable product
     items: HashMap<Item, (usize, usize)>, // Key: Name of item -> Value: (count, max).
 }
 
@@ -35,7 +41,7 @@ impl Inventory {
         let mut inventory = Inventory { 
             aid, 
             max: 10, 
-            waiting: Vec::new(), 
+            waiting: VecDeque::new(), 
             items: HashMap::new() 
         };
 
@@ -93,39 +99,58 @@ fn inventory_loop(
     // let mut transfer_in_process: bool = false; 
 
     loop {
-        match mailbox.recv().unwrap() {
-            InventoryMessage::Add(sender, item) => 
-                add(sender, &mut inventory, item),
+        if !inventory.waiting.is_empty() {
+            println!("Inventory has a queue of requests");
+            match_message(inventory.waiting.pop_front().unwrap().1.clone(), &mut inventory);
+        }
+        
+        let message = mailbox.try_recv();
 
-            InventoryMessage::Remove(sender, item) => 
-                remove(sender, &mut inventory, item),
+        match message {
+            Ok(m) => match_message(m, &mut inventory),
 
-            InventoryMessage::TakeFrom(sender, other, items) => 
-                take_from(sender, &inventory, other, items, /*&mut transfer_in_process*/),
-
-            InventoryMessage::GiveTo(sender, other, items) => 
-                give_to(sender, &inventory, other, items, /*&mut transfer_in_process*/),
-
-            InventoryMessage::PrintInventory(name) => inventory.print_inv(name),
-            
-            InventoryMessage::Kill => return, 
-
-
-
-            InventoryMessage::GiveMeItems(sender, sending_inventory, item) => 
-                give_me_items(sender, &mut inventory, sending_inventory, item, /*&mut transfer_in_process*/),
-
-            InventoryMessage::GiveMeItemResult(sender, result) => {
-                give_me_items_result(sender, &mut inventory, result);
-                // transfer_in_process = false;
+            Err(e) => {
+                if e == TryRecvError::Disconnected  {
+                    return; // Could possibly do something different.
+                }
             }
+        };
+    }
+}
 
-            InventoryMessage::TakeMyItems(sender, sending_inventory, item) => 
-                take_my_items(sender, &mut inventory, sending_inventory, item, /*&mut transfer_in_process*/),
+fn match_message(message: InventoryMessage, inventory: &mut Inventory) {
+    match message {
+        InventoryMessage::Add(sender, item) => 
+            add(sender, inventory, item),
 
-            InventoryMessage::TakeMyItemsResult(sender, result) => 
-                take_my_items_result(sender, &mut inventory, result),
-        };            
+        InventoryMessage::Remove(sender, item) => 
+            remove(sender, inventory, item),
+
+        InventoryMessage::TakeFrom(sender, other, items) => 
+            take_from(sender, &inventory, other, items, /*&mut transfer_in_process*/),
+
+        InventoryMessage::GiveTo(sender, other, items) => 
+            give_to(sender, &inventory, other, items, /*&mut transfer_in_process*/),
+
+        InventoryMessage::PrintInventory(name) => inventory.print_inv(name),
+        
+        InventoryMessage::Kill => return, 
+
+
+
+        InventoryMessage::GiveMeItems(sender, sending_inventory, item) => 
+            give_me_items(sender, inventory, sending_inventory, item, /*&mut transfer_in_process*/),
+
+        InventoryMessage::GiveMeItemResult(sender, result) => {
+            give_me_items_result(sender, inventory, result);
+            // transfer_in_process = false;
+        }
+
+        InventoryMessage::TakeMyItems(sender, sending_inventory, item) => 
+            take_my_items(sender, inventory, sending_inventory, item, /*&mut transfer_in_process*/),
+
+        InventoryMessage::TakeMyItemsResult(sender, result) => 
+            take_my_items_result(sender, inventory, result),
     }
 }
 
@@ -230,10 +255,12 @@ fn give_me_items(
     // }
 
     if inventory.has_too_few_items(item) {
-        _ = sending_inventory.send(InventoryMessage::GiveMeItemResult(sender, Result::Err("I'm empty!"))); // Sends an error; TODO: Should handle Result in some way
+        println!("had too few items");
+        inventory.waiting.push_back((sending_inventory.clone(), InventoryMessage::GiveMeItems(sender.clone(), sending_inventory.clone(), item)));
+        // TODO: Figure out how to know if an inventory of a factory has changed production rules, making the request impossible to fulfill.
+        //       Should send error in that case.
         return;
     }
-
 
     inventory.take(item);
     _ = sending_inventory.send(InventoryMessage::GiveMeItemResult(sender, Result::Ok(item))); // Sends a tuple containing what item it is and how many it moved; TODO: Should handle Result in some way
@@ -288,7 +315,9 @@ fn take_my_items(
     // }
 
     if inventory.is_full() { // FIXME: this wont happen as is_full is not implemented
-        _ = sending_inventory.send(InventoryMessage::TakeMyItemsResult(sender.clone(), Result::Err("I'm full!"))); // Sends an error; TODO: Should handle Result in some way
+        inventory.waiting.push_back((sending_inventory.clone(), InventoryMessage::GiveMeItems(sender.clone(), sending_inventory.clone(), items)));
+        // TODO: Should send error if inventory is full.
+        return;
     } 
 
     inventory.give(items);
