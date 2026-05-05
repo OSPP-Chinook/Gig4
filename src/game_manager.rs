@@ -18,8 +18,9 @@ impl GameManager {
             let grid = grid.clone();
             |aid, mailbox| world_manager::main(aid, mailbox, grid)
         });
-        let task = AID::new(|aid, mailbox| {
-            task_manager::main(aid, mailbox);
+        let task = AID::new({
+            let grid = grid.clone();
+            |aid, mailbox| task_manager::main(aid, mailbox, grid)
         });
         let player = AID::new({
             let world = world.clone();
@@ -65,8 +66,8 @@ impl GameManager {
 
         let _ = self.task.send(TaskManagerMessage::CreatePath(
             Item::Mutexium,
-            (14, 3),
-            (3, 4),
+            (15, 3),
+            (3, 5),
         ));
         loop {
             // while x < 14 {

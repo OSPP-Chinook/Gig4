@@ -4,14 +4,17 @@ use std::{
     sync::mpsc::Receiver,
 };
 
-use crate::{item::Item, world_manager::Pos};
-use crate::{aid::AID, messages::EntityMessage};
+use crate::{aid::AID, messages::EntityMessage, world_manager::Tile};
+use crate::{
+    item::Item,
+    world_manager::{Pos, WorldGrid},
+};
 
 #[derive(Clone, PartialEq)]
 pub enum Task {
     MoveTo(Pos),
-    DeliverItem(Item, Pos, Pos), //Deliver Item from A to B.
-    Produce(usize),           //produce recipe id
+    DeliverItem(Item, (AID<EntityMessage>, Pos), (AID<EntityMessage>, Pos)), //Deliver Item from A to B.
+    Produce(usize),                                                          //produce recipe id
     Idle,
 }
 
@@ -24,7 +27,7 @@ pub enum TaskManagerMessage {
     Quit,
 }
 
-pub fn main(aid: AID<TaskManagerMessage>, mailbox: Receiver<TaskManagerMessage>) {
+pub fn main(aid: AID<TaskManagerMessage>, mailbox: Receiver<TaskManagerMessage>, grid: WorldGrid) {
     //Maps AID to assigned task
     let mut task_list: HashMap<AID<EntityMessage>, Task> = HashMap::new();
     //A queue of non-assigned tasks
@@ -42,7 +45,15 @@ pub fn main(aid: AID<TaskManagerMessage>, mailbox: Receiver<TaskManagerMessage>)
                 let _ = to.send(EntityMessage::Task(task));
             }
             TaskManagerMessage::CreatePath(item, from, to) => {
-                task_queue.push_back(Task::DeliverItem(item, from, to));
+                let grid = &grid.lock().unwrap();
+                let from_tile = grid.get(from.1).unwrap().get(from.0).unwrap().clone();
+                let to_tile = grid.get(to.1).unwrap().get(to.0).unwrap().clone();
+                if let Tile::Building(from_aid) = from_tile
+                    && let Tile::Building(to_aid) = to_tile
+                {
+                    task_queue.push_back(Task::DeliverItem(item, (from_aid, from), (to_aid, to)));
+                } else {
+                }
             }
 
             TaskManagerMessage::CreateMoveTask(to) => {
@@ -79,18 +90,23 @@ fn assign_task(
 #[cfg(test)]
 mod tests {
     use std::{
-        sync::mpsc::{SendError, channel},
+        sync::{
+            Arc, Mutex,
+            mpsc::{SendError, channel},
+        },
         thread,
         time::Duration,
     };
 
-    use crate::task_manager;
+    use crate::{task_manager, world_manager::Tile};
 
     use super::*;
 
     #[test]
     fn create_destroy() {
-        let task_manager: AID<TaskManagerMessage> = AID::new(main);
+        let grid: WorldGrid = Arc::new(Mutex::new(vec![vec![Tile::Empty; 10]; 10]));
+        let task_manager: AID<TaskManagerMessage> =
+            AID::new(|aid, mailbox| main(aid, mailbox, grid));
         let _ = task_manager.send(TaskManagerMessage::Quit);
         thread::sleep(Duration::from_secs(1));
         //panic if can send message after quit
@@ -102,7 +118,9 @@ mod tests {
     //worker get idle when no tasks exist
     #[test]
     fn empty_task_queue() {
-        let task_manager: AID<TaskManagerMessage> = AID::new(main);
+        let grid: WorldGrid = Arc::new(Mutex::new(vec![vec![Tile::Empty; 10]; 10]));
+        let task_manager: AID<TaskManagerMessage> =
+            AID::new(|aid, mailbox| main(aid, mailbox, grid));
         let (fake_worker, fake_worker_mailbox) = AID::<EntityMessage>::mock();
         let _ = task_manager.send(TaskManagerMessage::GiveMeNewTask(fake_worker.clone()));
         if let Ok(EntityMessage::Task(Task::Idle)) = fake_worker_mailbox.recv() {
@@ -114,20 +132,18 @@ mod tests {
     ///task manager with one task gives back that one task when the assigned worker asks for a new task
     #[test]
     fn same_task_twice() {
-        let task_manager: AID<TaskManagerMessage> = AID::new(main);
+        let grid: WorldGrid = Arc::new(Mutex::new(vec![vec![Tile::Empty; 10]; 10]));
+        let task_manager: AID<TaskManagerMessage> =
+            AID::new(|aid, mailbox| main(aid, mailbox, grid));
         let (fake_worker, fake_worker_mailbox) = AID::<EntityMessage>::mock();
-        let _ = task_manager.send(TaskManagerMessage::CreatePath(
-            Item::Mutexium,
-            (0, 0),
-            (0, 0),
-        ));
+        let _ = task_manager.send(TaskManagerMessage::CreateMoveTask((0, 0)));
         let _ = task_manager.send(TaskManagerMessage::GiveMeNewTask(fake_worker.clone()));
-        if let Ok(EntityMessage::Task(Task::DeliverItem(_, _, _))) = fake_worker_mailbox.recv() {
+        if let Ok(EntityMessage::Task(Task::MoveTo(_))) = fake_worker_mailbox.recv() {
         } else {
             panic!("First")
         }
         let _ = task_manager.send(TaskManagerMessage::GiveMeNewTask(fake_worker.clone()));
-        if let Ok(EntityMessage::Task(Task::DeliverItem(_, _, _))) = fake_worker_mailbox.recv() {
+        if let Ok(EntityMessage::Task(Task::MoveTo(_))) = fake_worker_mailbox.recv() {
         } else {
             panic!("Second")
         }
@@ -136,17 +152,15 @@ mod tests {
     //Workers get idle when all tasks are occupied
     #[test]
     fn idle_when_no_available() {
-        let task_manager: AID<TaskManagerMessage> = AID::new(main);
+        let grid: WorldGrid = Arc::new(Mutex::new(vec![vec![Tile::Empty; 10]; 10]));
+        let task_manager: AID<TaskManagerMessage> =
+            AID::new(|aid, mailbox| main(aid, mailbox, grid));
         let (fake_worker2, fake_worker_mailbox2) = AID::<EntityMessage>::mock();
         let (fake_worker, fake_worker_mailbox) = AID::<EntityMessage>::mock();
-        let _ = task_manager.send(TaskManagerMessage::CreatePath(
-            Item::Mutexium,
-            (0, 0),
-            (0, 0),
-        ));
+        let _ = task_manager.send(TaskManagerMessage::CreateMoveTask((0, 0)));
         let _ = task_manager.send(TaskManagerMessage::GiveMeNewTask(fake_worker.clone()));
         let _ = task_manager.send(TaskManagerMessage::GiveMeNewTask(fake_worker2.clone()));
-        if let Ok(EntityMessage::Task(Task::DeliverItem(_, _, _))) = fake_worker_mailbox.recv() {
+        if let Ok(EntityMessage::Task(Task::MoveTo(_,))) = fake_worker_mailbox.recv() {
         } else {
             panic!("First")
         }

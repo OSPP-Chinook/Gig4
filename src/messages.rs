@@ -1,5 +1,6 @@
 use crate::aid::AID;
 
+use crate::inventory::InventoryMessage;
 use crate::task_manager::Task;
 use crate::world_manager::{WorldGrid, Pos, Tile};
 
@@ -11,6 +12,8 @@ pub enum EntityMessage {
     Err,
     InventoryOk,
     InventoryErr,
+    GetInventory(AID<EntityMessage>),
+    SendInventory(AID<InventoryMessage>),
 }
 
 #[derive(Clone)]

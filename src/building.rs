@@ -73,6 +73,10 @@ impl Building {
                     EntityMessage::Task(task) => continue, //Update task
                     EntityMessage::Ok => {}
                     EntityMessage::Err => {}
+                    EntityMessage::GetInventory(aid) => {
+                        let _ = aid.send(EntityMessage::SendInventory(self.inventory.clone()));
+                    }
+                    _ => {}
                 }
             }
             if let Some(recipe) = &active_recipe
