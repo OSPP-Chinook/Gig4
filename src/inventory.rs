@@ -160,9 +160,12 @@ fn match_message(message: InventoryMessage, inventory: &mut Inventory) {
 /// * 'inventory' - Mutable reference to the inventory to increase
 /// * 'item'      - Tuple of Item and amount to take
 fn add(sender: AID<EntityMessage>, inventory: &mut Inventory, item: (Item, usize)) {
-    // FIXME: INVENTORIES ARE INFINITE FOR FIRST DEMO
-    inventory.give(item);
-    _ = sender.send(EntityMessage::InventoryOk);
+    if inventory.give(item) {
+        _ = sender.send(EntityMessage::InventoryOk);
+        return;
+    }
+
+    _ = sender.send(EntityMessage::InventoryErr);
 }
 
 /// Takes some count of Items from inventory, will not do anything if inventory is empty.
@@ -175,6 +178,7 @@ fn add(sender: AID<EntityMessage>, inventory: &mut Inventory, item: (Item, usize
 fn remove(sender: AID<EntityMessage>, inventory: &mut Inventory, item: (Item, usize)) {
     if inventory.take(item) {
         _ = sender.send(EntityMessage::InventoryOk);
+        return;
     }
 
     _ = sender.send(EntityMessage::InventoryErr);
@@ -189,19 +193,16 @@ fn remove(sender: AID<EntityMessage>, inventory: &mut Inventory, item: (Item, us
 /// * 'inventory'            - Reference to the inventory to move item to 
 /// * 'aid'                  - AID of the inventory to take from
 /// * 'items'                - Tuple of Item and amount to take
-/// * 'transfer_in_progress' - Bool that is true if there is already a transfer in progress, else false
 fn take_from(
     sender: AID<EntityMessage>,
     inventory: &Inventory, 
     aid: AID<InventoryMessage>, 
     item: (Item, usize),
-    // transfer_in_progress: &mut bool
 ) {
-    // if *transfer_in_progress /*|| inventory.is_full() */ {
-    //     return; // Should send an error or whatever
-    // }
+    if inventory.is_full() {
+        return; // Should send an error or whatever
+    }
 
-    // *transfer_in_progress = true;
     _ = aid.send(InventoryMessage::GiveMeItems(sender, inventory.aid.clone(), item)); // Should handle Result in some way
 }
 
