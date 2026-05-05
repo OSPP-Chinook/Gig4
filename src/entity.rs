@@ -43,13 +43,6 @@ enum SubTask {
     Done,
 }
 
-enum Request {
-    Move(Pos),
-    RequestTask,
-    GiveItem(Item),
-    TakeItem(Item),
-}
-
 fn manhattan_distance(from: Pos, to: Pos) -> usize {
     return from.0.abs_diff(to.0) + from.1.abs_diff(to.1);
 }
