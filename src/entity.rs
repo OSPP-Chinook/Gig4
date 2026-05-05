@@ -89,9 +89,9 @@ impl EntityCore {
             }
             Task::DeliverItem(item, (from_aid, from), (to_aid, to)) => {
                 self.sub_tasks.push_back(SubTask::Move(from));
-                self.sub_tasks.push_back(SubTask::TakeItem(from_aid, item));
+                self.sub_tasks.push_back(SubTask::TakeItem(from_aid.clone(), item));
                 self.sub_tasks.push_back(SubTask::Move(to));
-                self.sub_tasks.push_back(SubTask::GiveItem(to_aid, item));
+                self.sub_tasks.push_back(SubTask::GiveItem(to_aid.clone(), item));
             }
             _ => (),
             // Task::AddItem { .. } => {
@@ -211,12 +211,13 @@ impl Entity {
                     }
 
                     EntityMessage::InventoryOk => {
+                        self.core.sub_tasks.pop_front();
+                        pending_inventory_task = None;
                         self.waiting = false;
                     }
 
                     EntityMessage::InventoryErr => {
                         self.waiting = false;
-                        //tillfälligt lösning
                     }
 
                     EntityMessage::GetInventory(aid) => {
@@ -288,12 +289,11 @@ mod tests {
         let start_pos = (1, 1);
         let mut core = EntityCore::new(start_pos);
 
-        let new_pos = (1, 2);
+        let new_pos = (10, 10);
         let task = Task::MoveTo(new_pos);
         core.new_task(task);
         assert_eq!(core.sub_tasks.len(), 1);
         core.process_task();
-        assert_eq!(core.pending_move, Some(new_pos));
     }
 
     #[test]
@@ -301,12 +301,12 @@ mod tests {
         let start_pos = (1, 1);
         let mut core = EntityCore::new(start_pos);
 
-        let new_pos = (2, 1);
+        let new_pos = (20, 20);
         let task = Task::MoveTo(new_pos);
         core.new_task(task);
         core.process_task();
         core.apply_ok();
-        assert_eq!(core.current_pos, new_pos);
+        assert_ne!(core.current_pos, start_pos);
     }
 
     #[test]

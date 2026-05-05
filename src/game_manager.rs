@@ -63,7 +63,7 @@ impl GameManager {
         let _ = self
             .world
             .send(WorldManagerMessage::PlaceWorker((x, y), worker.clone()));
-
+        let _ = building2.send(crate::messages::EntityMessage::Task(task_manager::Task::Produce(0)));
         let _ = self.task.send(TaskManagerMessage::CreatePath(
             Item::Mutexium,
             (15, 3),

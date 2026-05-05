@@ -1,6 +1,5 @@
 use std::{
     collections::{HashMap, VecDeque},
-    pin::Pin,
     sync::mpsc::Receiver,
 };
 
@@ -51,7 +50,7 @@ pub fn main(aid: AID<TaskManagerMessage>, mailbox: Receiver<TaskManagerMessage>,
                 if let Tile::Building(from_aid) = from_tile
                     && let Tile::Building(to_aid) = to_tile
                 {
-                    task_queue.push_back(Task::DeliverItem(item, (from_aid, from), (to_aid, to)));
+                    task_queue.push_back(Task::DeliverItem(item, (from_aid.clone(), from), (to_aid.clone(), to)));
                 } else {
                 }
             }
@@ -160,7 +159,7 @@ mod tests {
         let _ = task_manager.send(TaskManagerMessage::CreateMoveTask((0, 0)));
         let _ = task_manager.send(TaskManagerMessage::GiveMeNewTask(fake_worker.clone()));
         let _ = task_manager.send(TaskManagerMessage::GiveMeNewTask(fake_worker2.clone()));
-        if let Ok(EntityMessage::Task(Task::MoveTo(_,))) = fake_worker_mailbox.recv() {
+        if let Ok(EntityMessage::Task(Task::MoveTo(_))) = fake_worker_mailbox.recv() {
         } else {
             panic!("First")
         }
