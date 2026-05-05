@@ -50,7 +50,11 @@ pub fn main(aid: AID<TaskManagerMessage>, mailbox: Receiver<TaskManagerMessage>,
                 if let Tile::Building(from_aid) = from_tile
                     && let Tile::Building(to_aid) = to_tile
                 {
-                    task_queue.push_back(Task::DeliverItem(item, (from_aid.clone(), from), (to_aid.clone(), to)));
+                    task_queue.push_back(Task::DeliverItem(
+                        item,
+                        (from_aid.clone(), from),
+                        (to_aid.clone(), to),
+                    ));
                 } else {
                 }
             }

@@ -157,6 +157,10 @@ fn render(frame: &mut Frame, world_array: &WorldGrid, camera: Camera) {
                     let square = Paragraph::new("  \n  ");
                     frame.render_widget(square, rect_at_pos);
                 }
+                Tile::Obstacle => {
+                    let square = Paragraph::new("██\n██").green();
+                    frame.render_widget(square, rect_at_pos);
+                }
                 Tile::Worker(_aid) => {
                     let square = Paragraph::new("╭╮\n╰╯").blue();
                     frame.render_widget(square, rect_at_pos);
