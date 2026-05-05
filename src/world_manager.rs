@@ -14,6 +14,7 @@ pub type Pos = (usize, usize);
 pub enum WorldManagerMessage {
     Stop, // is only necessary if there are circular AIDs (which there probably will be)
     Move(Pos, AID<EntityMessage>),
+    PlaceObstacle(Pos),
     PlaceWorker(Pos, AID<EntityMessage>),
     PlaceBuilding(Pos, AID<EntityMessage>),
     KillMe(AID<EntityMessage>),
@@ -24,6 +25,7 @@ pub enum WorldManagerMessage {
 #[derive(Clone)]
 pub enum Tile {
     Empty,
+    Obstacle,
     Worker(AID<EntityMessage>),
     Building(AID<EntityMessage>),
 }
@@ -35,7 +37,18 @@ fn get_tile(grid: &mut WorldGrid, pos: Pos) -> Option<&mut Tile> {
     return grid.get_mut(pos.1)?.get_mut(pos.0);
 }
 
-fn place_tile(
+fn place_tile(grid: &mut WorldGrid, pos: Pos, tile: Tile) {
+    // check if pos in bounds
+    if let Some(dest) = get_tile(grid, pos) {
+        // check if pos empty
+        if let Tile::Empty = *dest {
+            *dest = tile;
+            return;
+        }
+    }
+}
+
+fn place_entity(
     grid: &mut WorldGrid,
     entity_lookup: &mut WorldLookup,
     pos: Pos,
@@ -98,14 +111,15 @@ pub fn main(_this: AID<WorldManagerMessage>, mailbox: Receiver<WorldManagerMessa
             WorldManagerMessage::Move(pos, aid) => {
                 move_tile(&mut grid, &mut entity_lookup, pos, aid)
             }
-            WorldManagerMessage::PlaceWorker(pos, aid) => place_tile(
+            WorldManagerMessage::PlaceObstacle(pos) => place_tile(&mut grid, pos, Tile::Obstacle),
+            WorldManagerMessage::PlaceWorker(pos, aid) => place_entity(
                 &mut grid,
                 &mut entity_lookup,
                 pos,
                 aid.clone(),
                 Tile::Worker(aid),
             ),
-            WorldManagerMessage::PlaceBuilding(pos, aid) => place_tile(
+            WorldManagerMessage::PlaceBuilding(pos, aid) => place_entity(
                 &mut grid,
                 &mut entity_lookup,
                 pos,

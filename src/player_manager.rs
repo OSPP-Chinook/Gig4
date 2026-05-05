@@ -26,11 +26,19 @@ impl Camera {
         let height = HEIGHT.try_into().unwrap();
         let mut x = self.0 + dx;
         let mut y = self.1 + dy;
-        if x < 0 {x = 0;}
-        if y < 0 {y = 0;}
-        if x >= width {x = width - 1;}
-        if y >= height {y = height - 1;}
-        
+        if x < 0 {
+            x = 0;
+        }
+        if y < 0 {
+            y = 0;
+        }
+        if x >= width {
+            x = width - 1;
+        }
+        if y >= height {
+            y = height - 1;
+        }
+
         self.0 = x;
         self.1 = y;
     }
@@ -47,8 +55,11 @@ pub fn render_loop(
 ) -> Result<(), Box<dyn std::error::Error>> {
     ratatui::run(|terminal| {
         // camera starts centered on the world
-        let mut camera = Camera((WIDTH / 2).try_into().unwrap(), (HEIGHT / 2).try_into().unwrap());
-        
+        let mut camera = Camera(
+            (WIDTH / 2).try_into().unwrap(),
+            (HEIGHT / 2).try_into().unwrap(),
+        );
+
         loop {
             let _ = world.send(WorldManagerMessage::GetDisplay(aid.clone()));
 
@@ -76,10 +87,18 @@ pub fn render_loop(
                             KeyCode::Char('q') => {
                                 break Ok(());
                             }
-                            KeyCode::Char('w') => {camera.change(0, -MOVE_CAMERA);}
-                            KeyCode::Char('s') => {camera.change(0,  MOVE_CAMERA);}
-                            KeyCode::Char('a') => {camera.change(-MOVE_CAMERA, 0);}
-                            KeyCode::Char('d') => {camera.change( MOVE_CAMERA, 0);}
+                            KeyCode::Char('w') => {
+                                camera.change(0, -MOVE_CAMERA);
+                            }
+                            KeyCode::Char('s') => {
+                                camera.change(0, MOVE_CAMERA);
+                            }
+                            KeyCode::Char('a') => {
+                                camera.change(-MOVE_CAMERA, 0);
+                            }
+                            KeyCode::Char('d') => {
+                                camera.change(MOVE_CAMERA, 0);
+                            }
                             _ => {}
                         }
                     }
@@ -92,48 +111,59 @@ pub fn render_loop(
 
 fn render(frame: &mut Frame, world_array: WorldGrid, camera: Camera) {
     let world_area = frame.area().inner(Margin::new(4, 4));
-    
+
     frame.render_widget(
         Block::new().borders(Borders::ALL).title("World"),
         world_area.outer(Margin::new(1, 1)),
     );
-    
+
     let box_w = world_area.width / 2;
     let box_h = world_area.height / 2;
-    
+
     for y in 0..box_h {
         for x in 0..box_w {
             // draw a background in the "World" area
             // this is so the player can tell the difference between buildable area and surrounding borders
-            let rect = Rect::new(world_area.x + 2*x, world_area.y + 2*y, 2, 2);
+            let rect = Rect::new(world_area.x + 2 * x, world_area.y + 2 * y, 2, 2);
             let square = Paragraph::new(".").gray();
             frame.render_widget(square, rect);
         }
     }
-    
+
     for y in 0..HEIGHT {
         for x in 0..WIDTH {
             let tile = &world_array[y][x];
-            
+
             let y: i32 = y.try_into().unwrap();
             let x: i32 = x.try_into().unwrap();
-            let draw_pos = (x + (box_w/2) as i32 - camera.0, y + (box_h/2) as i32 - camera.1);
-            let rect_at_pos = if
-                0 <= draw_pos.0 && draw_pos.0 < box_w.into() &&
-                0 <= draw_pos.1 && draw_pos.1 < box_h.into()
+            let draw_pos = (
+                x + (box_w / 2) as i32 - camera.0,
+                y + (box_h / 2) as i32 - camera.1,
+            );
+            let rect_at_pos = if 0 <= draw_pos.0
+                && draw_pos.0 < box_w.into()
+                && 0 <= draw_pos.1
+                && draw_pos.1 < box_h.into()
             {
                 // tile in visible grid
-                Rect::new(world_area.x + (2*draw_pos.0 as u16), world_area.y + (2*draw_pos.1 as u16), 2, 2)
+                Rect::new(
+                    world_area.x + (2 * draw_pos.0 as u16),
+                    world_area.y + (2 * draw_pos.1 as u16),
+                    2,
+                    2,
+                )
             } else {
                 continue;
             };
-            
-            
-            
+
             match tile {
                 Tile::Empty => {
                     // overwrite background
                     let square = Paragraph::new("  \n  ");
+                    frame.render_widget(square, rect_at_pos);
+                }
+                Tile::Obstacle => {
+                    let square = Paragraph::new("██\n██").green();
                     frame.render_widget(square, rect_at_pos);
                 }
                 Tile::Worker(_aid) => {
