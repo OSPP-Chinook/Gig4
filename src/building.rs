@@ -5,6 +5,7 @@ use crate::{
     inventory::{self, InventoryMessage},
     item::Item,
     messages::EntityMessage,
+    task_manager::Task,
     world_manager::WorldManagerMessage,
 };
 
@@ -70,20 +71,38 @@ impl Building {
                         waiting = false;
                     }
 
-                    EntityMessage::Task(task) => continue, //Update task
+                    EntityMessage::Task(task) => {
+                        if let Task::Produce(index) = task {
+                            //get recipes from static data.
+                            active_recipe = Some(Recipe {
+                                input: vec![],
+                                output: vec![(Item::Mutexium, 10)],
+                                recipe_time: 5,
+                            })
+                        }
+                    } //Update task
                     EntityMessage::Ok => {}
                     EntityMessage::Err => {}
+                    EntityMessage::GetInventory(aid) => {
+                        let _ = aid.send(EntityMessage::SendInventory(self.inventory.clone()));
+                    }
+                    _ => {}
                 }
             }
             if let Some(recipe) = &active_recipe
                 && current_process == None
                 && !waiting
             {
-                let _ = self.inventory.send(InventoryMessage::Remove(
-                    self.self_aid.clone(),
-                    recipe.input[0],
-                ));
-                waiting = true;
+                if recipe.input.is_empty() {
+                    current_process = Some(recipe.recipe_time);
+                    waiting = false;
+                } else {
+                    let _ = self.inventory.send(InventoryMessage::Remove(
+                        self.self_aid.clone(),
+                        recipe.input[0],
+                    ));
+                    waiting = true;
+                }
             }
             if let Some(time_left) = current_process {
                 if time_left == 0 {
@@ -91,6 +110,7 @@ impl Building {
                         self.self_aid.clone(),
                         active_recipe.as_ref().unwrap().output[0],
                     ));
+                    current_process = None;
                     continue;
                 } else {
                     current_process = Some(time_left - 1);

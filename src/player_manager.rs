@@ -52,6 +52,7 @@ pub fn render_loop(
     aid: AID<PlayerManagerMessage>,
     mailbox: Receiver<PlayerManagerMessage>,
     world: AID<WorldManagerMessage>,
+    world_array: WorldGrid,
 ) -> Result<(), Box<dyn std::error::Error>> {
     ratatui::run(|terminal| {
         // camera starts centered on the world
@@ -61,24 +62,15 @@ pub fn render_loop(
         );
 
         loop {
-            let _ = world.send(WorldManagerMessage::GetDisplay(aid.clone()));
-
-            let mut world_array: WorldGrid =
-                std::array::from_fn(|_| std::array::from_fn(|_| Tile::Empty));
-
-            for msg in &mailbox {
+            //read all messages in mailbox
+            while let Ok(msg) = mailbox.try_recv() {
                 match msg {
-                    PlayerManagerMessage::WorldUpdate(arr) => {
-                        world_array = arr;
-                        let _ = world.send(WorldManagerMessage::GetDisplay(aid.clone()));
-                        break;
-                    }
                     // TODO: Handle more message types
                     _ => {}
                 }
             }
 
-            terminal.draw(|frame| render(frame, world_array, camera))?;
+            terminal.draw(|frame| render(frame, &world_array, camera))?;
 
             if poll(Duration::from_millis(30))? {
                 match read()? {
@@ -109,7 +101,7 @@ pub fn render_loop(
     })
 }
 
-fn render(frame: &mut Frame, world_array: WorldGrid, camera: Camera) {
+fn render(frame: &mut Frame, world_array: &WorldGrid, camera: Camera) {
     let world_area = frame.area().inner(Margin::new(4, 4));
 
     frame.render_widget(
@@ -129,6 +121,9 @@ fn render(frame: &mut Frame, world_array: WorldGrid, camera: Camera) {
             frame.render_widget(square, rect);
         }
     }
+
+    // aquire lock until it falls out of scope
+    let world_array = &world_array.lock().unwrap();
 
     for y in 0..HEIGHT {
         for x in 0..WIDTH {

@@ -1,14 +1,12 @@
-use std::{thread, time::Duration};
-
 use crate::{
     aid::AID,
     building::Building,
     entity::Entity,
     item::Item,
-    messages::{EntityMessage, PlayerManagerMessage},
+    messages::PlayerManagerMessage,
     player_manager,
-    task_manager::{self, Task, TaskManagerMessage},
-    world_manager::{self, WorldManagerMessage},
+    task_manager::{self, TaskManagerMessage},
+    world_manager::{self, WorldManagerMessage, init_world_grid},
 };
 
 pub struct GameManager {
@@ -19,14 +17,21 @@ pub struct GameManager {
 
 impl GameManager {
     pub fn new() -> Self {
-        let world = AID::new(world_manager::main);
-        let task = AID::new(|aid, mailbox| {
-            task_manager::main(aid, mailbox);
+        let grid = init_world_grid();
+
+        let world = AID::new({
+            let grid = grid.clone();
+            |aid, mailbox| world_manager::main(aid, mailbox, grid)
+        });
+        let task = AID::new({
+            let grid = grid.clone();
+            |aid, mailbox| task_manager::main(aid, mailbox, grid)
         });
         let player = AID::new({
             let world = world.clone();
-            move |aid, mailbox| {
-                let _ = player_manager::render_loop(aid, mailbox, world);
+            let grid = grid.clone();
+            |aid, mailbox| {
+                let _ = player_manager::render_loop(aid, mailbox, world, grid);
             }
         });
 
@@ -76,36 +81,18 @@ impl GameManager {
             (15, 3),
             building.clone(),
         ));
+        let _ = building.send(crate::messages::EntityMessage::Task(
+            task_manager::Task::Produce(0),
+        ));
 
         let worker = Entity::new(self.world.clone(), self.task.clone(), (10, 3));
         let _ = self
             .world
             .send(WorldManagerMessage::PlaceWorker((10, 3), worker.clone()));
-
-        let worker = Entity::new(self.world.clone(), self.task.clone(), (10, 5));
-        let _ = self
-            .world
-            .send(WorldManagerMessage::PlaceWorker((10, 5), worker.clone()));
-
-        let worker = Entity::new(self.world.clone(), self.task.clone(), (10, 7));
-        let _ = self
-            .world
-            .send(WorldManagerMessage::PlaceWorker((10, 7), worker.clone()));
-
         let _ = self.task.send(TaskManagerMessage::CreatePath(
             Item::Mutexium,
-            (14, 3),
-            (3, 4),
-        ));
-        let _ = self.task.send(TaskManagerMessage::CreatePath(
-            Item::Mutexium,
-            (14, 3),
-            (3, 4),
-        ));
-        let _ = self.task.send(TaskManagerMessage::CreatePath(
-            Item::Mutexium,
-            (14, 3),
-            (3, 4),
+            (15, 3),
+            (3, 5),
         ));
     }
 }

@@ -12,7 +12,7 @@ use std::time::Duration;
 // duration to wait after moving
 const MOVE_TIME: Duration = Duration::from_millis(250);
 // duration to wait after transferring items
-const TRANSFER_TIME: Duration = Duration::from_millis(1500);
+const TRANSFER_TIME: Duration = Duration::from_millis(5000);
 
 /// Ren logik- och state för en entity.
 ///
@@ -34,10 +34,13 @@ struct EntityCore {
     heuristic: HashMap<Pos, usize>,
 }
 
+#[derive(Clone)]
 enum SubTask {
+    MoveError,
     Move(Pos),
-    TakeItem(Item),
-    GiveItem(Item),
+    TakeItem(AID<EntityMessage>, Item),
+    GiveItem(AID<EntityMessage>, Item),
+    Done,
 }
 
 enum Request {
@@ -45,6 +48,10 @@ enum Request {
     RequestTask,
     GiveItem(Item),
     TakeItem(Item),
+}
+
+fn manhattan_distance(from: Pos, to: Pos) -> usize {
+    return from.0.abs_diff(to.0) + from.1.abs_diff(to.1);
 }
 
 // nicer to keep it squared to avaoid roots and floats
@@ -127,36 +134,29 @@ impl EntityCore {
         return best.map(|(pos, _)| pos);
     }
 
-    fn process_task(&mut self) -> Option<Request> {
-        if let Some(sub_task) = self.sub_tasks.front() {
-            match sub_task {
-                SubTask::Move(pos) => {
-                    if *pos == self.current_pos {
-                        self.sub_tasks.pop_front();
-                        self.heuristic.clear();
-                        return None;
-                    }
-
-                    if let Some(target) = self.pathfind(*pos) {
-                        self.pending_move = Some(target);
-                        return Some(Request::Move(target));
-                    } else {
-                        // completely stuck
-                        // wait a bit and hope something has moved until next iteration
-                        thread::sleep(MOVE_TIME);
-                        return None;
-                    }
-                }
-                SubTask::GiveItem(item) => {
-                    return Some(Request::GiveItem(*item));
-                }
-                SubTask::TakeItem(item) => {
-                    return Some(Request::TakeItem(*item));
-                }
-            }
-        } else {
-            return Some(Request::RequestTask);
+    fn process_task(&mut self) -> SubTask {
+        if self.sub_tasks.is_empty() {
+            return SubTask::Done;
         }
+        let sub_task = self.sub_tasks.front().unwrap();
+        if let SubTask::Move(pos) = sub_task {
+            // check if adjecant to goal
+            if manhattan_distance(self.current_pos, *pos) <= 1 {
+                self.sub_tasks.pop_front();
+                self.heuristic.clear();
+                return self.process_task();
+            }
+
+            if let Some(target) = self.pathfind(*pos) {
+                self.pending_move = Some(target);
+                return SubTask::Move(target);
+            } else {
+                // completely stuck
+                // wait and hope something moves out of the way
+                return SubTask::MoveError;
+            }
+        }
+        return sub_task.clone();
     }
 
     /// Behandlar en Task och returnerar eventuell Move-position
@@ -166,11 +166,13 @@ impl EntityCore {
             Task::MoveTo(pos) => {
                 self.sub_tasks.push_back(SubTask::Move(pos));
             }
-            Task::DeliverItem(item, from, to) => {
+            Task::DeliverItem(item, (from_aid, from), (to_aid, to)) => {
                 self.sub_tasks.push_back(SubTask::Move(from));
-                self.sub_tasks.push_back(SubTask::TakeItem(item));
+                self.sub_tasks
+                    .push_back(SubTask::TakeItem(from_aid.clone(), item));
                 self.sub_tasks.push_back(SubTask::Move(to));
-                self.sub_tasks.push_back(SubTask::GiveItem(item));
+                self.sub_tasks
+                    .push_back(SubTask::GiveItem(to_aid.clone(), item));
             }
             _ => (),
             // Task::AddItem { .. } => {
@@ -227,6 +229,7 @@ pub struct Entity {
     core: EntityCore,
     alive: bool,
     waiting: bool,
+    pending_inventory_task: Option<(bool, Item)>,
     world_aid: AID<WorldManagerMessage>,
     task_aid: AID<TaskManagerMessage>,
     inventory: AID<InventoryMessage>,
@@ -256,6 +259,7 @@ impl Entity {
             core: EntityCore::new(start_pos),
             alive: true,
             waiting: false,
+            pending_inventory_task: None,
             world_aid: world,
             task_aid: task,
             inventory: inventory::init(),
@@ -293,12 +297,35 @@ impl Entity {
             }
 
             EntityMessage::InventoryOk => {
+                self.core.sub_tasks.pop_front();
+                self.pending_inventory_task = None;
                 self.waiting = false;
             }
 
             EntityMessage::InventoryErr => {
                 self.waiting = false;
-                //tillfälligt lösning
+            }
+
+            EntityMessage::GetInventory(aid) => {
+                let _ = aid.send(EntityMessage::SendInventory(self.inventory.clone()));
+            }
+
+            EntityMessage::SendInventory(inventory) => {
+                if let Some((send, item)) = self.pending_inventory_task {
+                    if send {
+                        let _ = self.inventory.send(InventoryMessage::GiveTo(
+                            self.self_aid.clone(),
+                            inventory,
+                            (item, 10),
+                        ));
+                    } else {
+                        let _ = self.inventory.send(InventoryMessage::TakeFrom(
+                            self.self_aid.clone(),
+                            inventory,
+                            (item, 10),
+                        ));
+                    }
+                }
             }
         }
     }
@@ -319,32 +346,33 @@ impl Entity {
             }
 
             //process task
-            if let Some(req) = self.core.process_task() {
-                match req {
-                    Request::Move(pos) => {
-                        let _ = self
-                            .world_aid
-                            .send(WorldManagerMessage::Move(pos, self.self_aid.clone()));
-                        self.waiting = true;
-                    }
-                    Request::RequestTask => {
-                        let _ = self
-                            .task_aid
-                            .send(TaskManagerMessage::GiveMeNewTask(self.self_aid.clone()));
-                        self.waiting = true;
-                    }
-                    Request::GiveItem(item) => {
-                        thread::sleep(TRANSFER_TIME);
-                        //println!("Dropped 1000 Megaforium");
-                        self.core.sub_tasks.pop_front();
-                        self.waiting = false;
-                    }
-                    Request::TakeItem(item) => {
-                        thread::sleep(TRANSFER_TIME);
-                        //println!("Took 1000 Megaforium");
-                        self.core.sub_tasks.pop_front();
-                        self.waiting = false;
-                    }
+            let task = self.core.process_task();
+            match task {
+                SubTask::MoveError => {
+                    thread::sleep(MOVE_TIME);
+                }
+                SubTask::Move(pos) => {
+                    let _ = self
+                        .world_aid
+                        .send(WorldManagerMessage::Move(pos, self.self_aid.clone()));
+                    self.waiting = true;
+                }
+                SubTask::Done => {
+                    let _ = self
+                        .task_aid
+                        .send(TaskManagerMessage::GiveMeNewTask(self.self_aid.clone()));
+                    self.waiting = true;
+                }
+                SubTask::GiveItem(to, item) => {
+                    self.pending_inventory_task = Some((true, item));
+                    let _ = to.send(EntityMessage::GetInventory(self.self_aid.clone()));
+                    thread::sleep(TRANSFER_TIME);
+                }
+                SubTask::TakeItem(from, item) => {
+                    self.pending_inventory_task = Some((false, item));
+                    let _ = from.send(EntityMessage::GetInventory(self.self_aid.clone()));
+                    thread::sleep(TRANSFER_TIME);
+                    //println!("Took 1000 Megaforium");
                 }
             }
         }
@@ -365,9 +393,9 @@ mod tests {
 
         let new_pos = (10, 10);
         let task = Task::MoveTo(new_pos);
-
-        //assert_eq!(core.apply_task(task), Some(new_pos));
-        //assert_eq!(core.pending_move, Some(new_pos));
+        core.new_task(task);
+        assert_eq!(core.sub_tasks.len(), 1);
+        core.process_task();
     }
 
     #[test]
@@ -377,9 +405,10 @@ mod tests {
 
         let new_pos = (20, 20);
         let task = Task::MoveTo(new_pos);
-        //core.apply_task(task);
+        core.new_task(task);
+        core.process_task();
         core.apply_ok();
-        assert_eq!(core.current_pos, new_pos);
+        assert_ne!(core.current_pos, start_pos);
     }
 
     #[test]
@@ -391,24 +420,11 @@ mod tests {
 
         let task = Task::MoveTo(new_pos);
 
-        //core.apply_task(task);
+        core.new_task(task);
+        core.process_task();
         core.apply_err();
 
         assert_eq!(core.current_pos, start_pos);
         assert_eq!(core.pending_move, None);
-    }
-
-    #[test]
-
-    fn is_bussy() {
-        let start_pos = (10, 10);
-        let mut core = EntityCore::new(start_pos);
-        //assert_eq!(core.is_busy, false);
-
-        let new_pos = (20, 20);
-        let task = Task::MoveTo(new_pos);
-        //core.apply_task(task);
-
-        //assert_eq!(core.is_busy, true);
     }
 }
