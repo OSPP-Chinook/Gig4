@@ -34,7 +34,7 @@ pub enum Tile {
 }
 
 type WorldLookup = HashMap<AID<EntityMessage>, Pos>;
-type RawWorldArray = Vec<Vec<Tile>>;
+pub type RawWorldArray = Vec<Vec<Tile>>;
 pub type WorldGrid = Arc<Mutex<RawWorldArray>>;
 
 pub fn init_world_grid() -> WorldGrid {
