@@ -231,33 +231,15 @@ fn render(frame: &mut Frame, old_world_array: &RawWorldArray, world_array: &RawW
             let mut animation_dx = 0;
             let mut animation_dy = 0;
             
-            if y > 0        && is_same_tile(&old_world_array[y-1][x], tile) {animation_dy = -1}
-            if y+1 < HEIGHT && is_same_tile(&old_world_array[y+1][x], tile) {animation_dy = 1}
-            if x > 0        && is_same_tile(&old_world_array[y][x-1], tile) {animation_dx = -1}
-            if x+1 < WIDTH  && is_same_tile(&old_world_array[y][x+1], tile) {animation_dx = 1}
-            
-            // divide by 2 to get center of screen
-            let draw_pos = (
-                x as i32 + (box_w / 2) as i32 - camera.0,
-                y as i32 + (box_h / 2) as i32 - camera.1,
-            );
-            let mut rect_at_pos = if
-                0 <= draw_pos.0 && draw_pos.0 < box_w.into() &&
-                0 <= draw_pos.1 && draw_pos.1 < box_h.into()
-            {
-                // tile in visible area
-                let rx: i32 = world_area.x as i32 + TILE_SIZE.0 as i32 * draw_pos.0 + animation_dx;
-                let ry: i32 = world_area.y as i32 + TILE_SIZE.1 as i32 * draw_pos.1 + animation_dy;
-                Rect::new(rx as u16, ry as u16, TILE_SIZE.0, TILE_SIZE.1)
-            } else {
-                // tile outside visible area
-                continue;
-            };
-            
             let mut rect_at_pos = match get_rect_from_world_xy(x as i32, y as i32) {
                 None => continue,
                 Some(rect) => rect
             };
+            
+            if y > 0        && is_same_tile(&old_world_array[y-1][x], tile) {animation_dy = -1}
+            if y+1 < HEIGHT && is_same_tile(&old_world_array[y+1][x], tile) {animation_dy = 1}
+            if x > 0        && is_same_tile(&old_world_array[y][x-1], tile) {animation_dx = -1}
+            if x+1 < WIDTH  && is_same_tile(&old_world_array[y][x+1], tile) {animation_dx = 1}
             
             rect_at_pos.x = (rect_at_pos.x as i32 + animation_dx) as u16;
             rect_at_pos.y = (rect_at_pos.y as i32 + animation_dy) as u16;
