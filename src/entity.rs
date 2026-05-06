@@ -9,6 +9,8 @@ use std::sync::mpsc::Receiver;
 use std::thread;
 use std::time::Duration;
 
+// duration to wait while idling
+const IDLE_TIME: Duration = Duration::from_millis(500);
 // duration to wait after moving
 const MOVE_TIME: Duration = Duration::from_millis(250);
 // duration to wait after transferring items
@@ -36,7 +38,7 @@ struct EntityCore {
 
 #[derive(Clone)]
 enum SubTask {
-    MoveError,
+    Idle,
     Move(Pos),
     TakeItem(AID<EntityMessage>, Item),
     GiveItem(AID<EntityMessage>, Item),
@@ -146,7 +148,7 @@ impl EntityCore {
             } else {
                 // completely stuck
                 // wait and hope something moves out of the way
-                return SubTask::MoveError;
+                return SubTask::Idle;
             }
         }
         return sub_task.clone();
@@ -166,6 +168,9 @@ impl EntityCore {
                 self.sub_tasks.push_back(SubTask::Move(to));
                 self.sub_tasks
                     .push_back(SubTask::GiveItem(to_aid.clone(), item));
+            }
+            Task::Idle => {
+                self.sub_tasks.push_back(SubTask::Idle);
             }
             _ => (),
             // Task::AddItem { .. } => {
@@ -341,8 +346,8 @@ impl Entity {
             //process task
             let task = self.core.process_task();
             match task {
-                SubTask::MoveError => {
-                    thread::sleep(MOVE_TIME);
+                SubTask::Idle => {
+                    thread::sleep(IDLE_TIME);
                 }
                 SubTask::Move(pos) => {
                     let _ = self
