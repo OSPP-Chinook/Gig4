@@ -330,11 +330,13 @@ fn render(
 fn render_fps(frame: &mut Frame, dur_copy: Duration, dur_render: Duration) {
     let width = frame.area().width;
     
+    // time to run get_copy_of_world() 
     let text = format!("{} ms", dur_copy.as_millis());
     let len = text.len() as u16;
     let rect = Rect::new(width - len, 0, len, 1);
     frame.render_widget(Paragraph::new(text), rect);
     
+    // time to run render()
     let text = format!("{} ms", dur_render.as_millis());
     let len = text.len() as u16;
     let rect = Rect::new(width - len, 1, len, 1);
