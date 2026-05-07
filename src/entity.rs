@@ -66,19 +66,33 @@ impl EntityCore {
     }
 
     fn process_task(&mut self) -> SubTask {
-        if self.sub_tasks.is_empty() {
-            return SubTask::Done;
-        }
-        let sub_task = self.sub_tasks.front().unwrap();
-        if let SubTask::Move(pos) = sub_task {
-            if let Some(target) = self.process_move(*pos) {
-                return SubTask::Move(target);
-            } else {
-                return self.process_task();
+    // 1. Inga subtasks kvar
+    if self.sub_tasks.is_empty() {
+        return SubTask::Done;
+    }
+
+    // 2. Ta första subtasken
+    let sub = self.sub_tasks.front().unwrap().clone();
+
+    match sub {
+        SubTask::Move(target_pos) => {
+            // Försök ta ett steg
+            match self.process_move(target_pos) {
+                Some(next_step) => {
+                    SubTask::Move(next_step)
+                },
+                None => {
+                    // Move är klar
+                    self.process_task()
+                }
             }
         }
-        return sub_task.clone();
+
+        // 3. Alla andra subtasks returneras direkt
+        other => other,
     }
+}
+
 
     /// Behandlar en Task och returnerar eventuell Move-position
     /// som Entity-aktorn ska skicka till WorldManager.
@@ -94,25 +108,6 @@ impl EntityCore {
                 self.sub_tasks.push_back(SubTask::GiveItem(to_aid.clone(), item));
             }
             _ => (),
-            // Task::AddItem { .. } => {
-            //     self.is_busy = true;
-            //     None
-            // }
-            // Task::RemoveItem { .. } => {
-            //     self.is_busy = true;
-            //     None
-            // }
-            // Task::TakeFrom { .. } => {
-            //     self.is_busy = true;
-            //     None
-            // }
-            // Task::GiveTo { .. } => {
-            //     self.is_busy = true;
-            //     None
-            // }
-            // Task::PrintInventory(_) => {
-            //     self.is_busy = true;
-            //     None
         }
     }
     /// Anropas när WorldManager godkänner en flytt.
@@ -204,7 +199,7 @@ impl Entity {
                     }
 
                     EntityMessage::Err => {
-                        // world manager neckade flytten
+                        // world manager neckade flyttenf
                         // ingen ändring i pos
                         self.core.apply_err();
                         self.waiting = false;
