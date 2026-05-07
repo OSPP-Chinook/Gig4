@@ -67,6 +67,52 @@ impl GameManager {
             (8, 6),
             (9, 6),
             (7, 6),
+            (85, 75),
+            (85, 76),
+            (85, 77),
+            (85, 78),
+            (85, 79),
+            (85, 80),
+            (85, 81),
+            (85, 82),
+            (85, 83),
+            (85, 84),
+            (85, 85),
+            (75, 75),
+            (75, 76),
+            (75, 77),
+            (75, 78),
+            (75, 79),
+            (75, 80),
+            (75, 81),
+            (75, 82),
+            (75, 83),
+            (75, 84),
+            (75, 85),
+
+            (75, 85),
+            (76, 85),
+            (77, 85),
+            (78, 85),
+            (79, 85),
+            (80, 85),
+            (81, 85),
+            (82, 85),
+            (83, 85),
+            (84, 85),
+            (85, 85),
+            (75, 75),
+            (76, 75),
+            (77, 75),
+            (78, 75),
+            (79, 75),
+            (80, 75),
+            (81, 75),
+            (82, 75),
+            (83, 75),
+            (84, 75),
+            (85, 75),
+
         ] {
             let _ = self.world.send(WorldManagerMessage::PlaceObstacle(pos));
         }
@@ -76,6 +122,24 @@ impl GameManager {
             .world
             .send(WorldManagerMessage::PlaceBuilding((3, 5), building.clone()));
 
+        let building = Building::new(self.world.clone());
+        let _ = self.world.send(WorldManagerMessage::PlaceBuilding(
+            (23, 12),
+            building.clone(),
+        ));
+        let _ = building.send(crate::messages::EntityMessage::Task(
+            task_manager::Task::Produce(0),
+        ));
+        let building = Building::new(self.world.clone());
+        let _ = self.world.send(WorldManagerMessage::PlaceBuilding(
+            (25, 4),
+            building.clone(),
+        ));
+        let building = Building::new(self.world.clone());
+        let _ = self.world.send(WorldManagerMessage::PlaceBuilding(
+            (6, 12),
+            building.clone(),
+        ));
         let building = Building::new(self.world.clone());
         let _ = self.world.send(WorldManagerMessage::PlaceBuilding(
             (15, 3),
@@ -89,10 +153,34 @@ impl GameManager {
         let _ = self
             .world
             .send(WorldManagerMessage::PlaceWorker((10, 3), worker.clone()));
+        let worker = Entity::new(self.world.clone(), self.task.clone(), (7, 10));
+        let _ = self
+            .world
+            .send(WorldManagerMessage::PlaceWorker((7, 10), worker.clone()));
+        let worker = Entity::new(self.world.clone(), self.task.clone(), (80, 80));
+        let _ = self
+            .world
+            .send(WorldManagerMessage::PlaceWorker((80, 80), worker.clone()));
         let _ = self.task.send(TaskManagerMessage::CreatePath(
             Item::Mutexium,
             (15, 3),
             (3, 5),
         ));
+        let _ = self.task.send(TaskManagerMessage::CreatePath(
+            Item::Mutexium,
+            (6, 12),
+            (15, 3),
+        ));
+        let _ = self.task.send(TaskManagerMessage::CreatePath(
+            Item::Mutexium,
+            (23, 12),
+            (25, 4),
+        ));
+        let _ = self.task.send(TaskManagerMessage::CreatePath(
+            Item::Mutexium,
+            (3, 5),
+            (6, 12),
+        ));
+
     }
 }

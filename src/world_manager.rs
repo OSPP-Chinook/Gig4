@@ -9,8 +9,8 @@ use crate::{
     messages::{EntityMessage, PlayerManagerMessage},
 };
 
-pub const WIDTH: usize = 32;
-pub const HEIGHT: usize = 16;
+pub const WIDTH: usize = 100;
+pub const HEIGHT: usize = 100;
 
 pub type Pos = (usize, usize);
 

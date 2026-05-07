@@ -12,7 +12,7 @@ use std::time::Duration;
 // duration to wait after moving
 const MOVE_TIME: Duration = Duration::from_millis(250);
 // duration to wait after transferring items
-const TRANSFER_TIME: Duration = Duration::from_millis(5000);
+const TRANSFER_TIME: Duration = Duration::from_millis(1000);
 
 /// Ren logik- och state för en entity.
 ///

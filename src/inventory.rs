@@ -259,7 +259,7 @@ fn give_me_items_result(
             _ = sender.send(EntityMessage::InventoryOk); 
         },
         Err(msg) => { 
-            println!("{}", msg); // should probably do something else
+            //println!("{}", msg); // should probably do something else
             _ = sender.send(EntityMessage::InventoryErr); 
         }
     };
@@ -315,7 +315,7 @@ fn take_my_items_result(
             _ = sender.send(EntityMessage::InventoryOk);
         },
         Err(msg) => { 
-            println!("{}", msg); // should probably do something else
+            //println!("{}", msg); // should probably do something else
             _ = sender.send(EntityMessage::InventoryErr);
         }    
     };
