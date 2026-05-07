@@ -1,4 +1,5 @@
 use std::{
+    fmt,
     hash::{Hash, Hasher},
     sync::mpsc,
     thread,
@@ -36,6 +37,25 @@ impl<T> AID<T> {
         };
     }
 
+    #[cfg(test)]
+    pub fn mock() -> (Self, mpsc::Receiver<T>) {
+        //Creates an AID with random tid but no starts no new thread
+        //Returns both AID and mailbox in a tuple
+        //Useful to write unit tests
+
+        let (sender, reciever) = mpsc::channel();
+        let handle = thread::spawn(|| ());
+        let tid = handle.thread().id();
+        let _ = handle.join();
+        return (
+            AID {
+                tid: tid,
+                channel: sender,
+            },
+            reciever,
+        );
+    }
+
     pub fn send(&self, t: T) -> Result<(), mpsc::SendError<T>> {
         return self.channel.send(t);
     }
@@ -53,5 +73,12 @@ impl<T> Eq for AID<T> {}
 impl<T> Hash for AID<T> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.tid.hash(state);
+    }
+}
+
+// print AID: just use tid
+impl<T> fmt::Display for AID<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        return write!(f, "AID({0:?})", self.tid);
     }
 }
