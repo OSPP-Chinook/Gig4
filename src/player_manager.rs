@@ -1,11 +1,11 @@
+use rand::{RngExt, SeedableRng, rngs::ChaCha8Rng};
 use std::sync::mpsc::Receiver;
 use std::time::Duration;
-use rand::{rngs::ChaCha8Rng, RngExt, SeedableRng};
 
 use crate::{
     aid::AID,
     messages::PlayerManagerMessage,
-    world_manager::{HEIGHT, Tile, WIDTH, RawWorldArray, WorldGrid, WorldManagerMessage},
+    world_manager::{HEIGHT, RawWorldArray, Tile, WIDTH, WorldGrid, WorldManagerMessage},
 };
 use crossterm::event::{Event, KeyCode, KeyEventKind, poll, read};
 use ratatui::Frame;
@@ -72,9 +72,8 @@ pub fn render_loop(
             (HEIGHT / 2).try_into().unwrap(),
         );
 
-        
         let mut old_world = get_copy_of_world(&world_array);
-        
+
         loop {
             //read all messages in mailbox
             while let Ok(msg) = mailbox.try_recv() {
@@ -96,10 +95,18 @@ pub fn render_loop(
                             KeyCode::Char('q') => {
                                 break Ok(());
                             }
-                            KeyCode::Char('w') => {camera.change(0, -MOVE_CAMERA);}
-                            KeyCode::Char('s') => {camera.change(0,  MOVE_CAMERA);}
-                            KeyCode::Char('a') => {camera.change(-MOVE_CAMERA, 0);}
-                            KeyCode::Char('d') => {camera.change( MOVE_CAMERA, 0);}
+                            KeyCode::Char('w') => {
+                                camera.change(0, -MOVE_CAMERA);
+                            }
+                            KeyCode::Char('s') => {
+                                camera.change(0, MOVE_CAMERA);
+                            }
+                            KeyCode::Char('a') => {
+                                camera.change(-MOVE_CAMERA, 0);
+                            }
+                            KeyCode::Char('d') => {
+                                camera.change(MOVE_CAMERA, 0);
+                            }
                             _ => {}
                         }
                     }
@@ -112,34 +119,33 @@ pub fn render_loop(
 
 fn is_same_tile(old_tile: &Tile, new_tile: &Tile) -> bool {
     match old_tile {
-        Tile::Empty => {
-            false
-        }
-        Tile::Worker(aid) => {
-            match new_tile {
-                Tile::Worker(aid_new) => {
-                    return aid == aid_new;
-                }
-                _ => false
+        Tile::Worker(aid) => match new_tile {
+            Tile::Worker(aid_new) => {
+                return aid == aid_new;
             }
-        }
-        Tile::Building(aid) => {
-            match new_tile {
-                Tile::Building(aid_new) => {
-                    return aid == aid_new;
-                }
-                _ => false
+            _ => false,
+        },
+        Tile::Building(aid) => match new_tile {
+            Tile::Building(aid_new) => {
+                return aid == aid_new;
             }
-        }
+            _ => false,
+        },
+        _ => false,
     }
 }
 
-fn render(frame: &mut Frame, old_world_array: &RawWorldArray, world_array: &RawWorldArray, camera: Camera) {
+fn render(
+    frame: &mut Frame,
+    old_world_array: &RawWorldArray,
+    world_array: &RawWorldArray,
+    camera: Camera,
+) {
     let world_area = frame.area();
 
     let box_w = world_area.width / TILE_SIZE.0;
     let box_h = world_area.height / TILE_SIZE.1;
-    
+
     // this is repeated several times, so it's a closure here
     let get_rect_from_world_xy = |x: i32, y: i32| {
         // divide by 2 to get center of screen
@@ -147,9 +153,10 @@ fn render(frame: &mut Frame, old_world_array: &RawWorldArray, world_array: &RawW
             x + (box_w / 2) as i32 - camera.0,
             y + (box_h / 2) as i32 - camera.1,
         );
-        return if
-            0 <= draw_pos.0 && draw_pos.0 < box_w.into() &&
-            0 <= draw_pos.1 && draw_pos.1 < box_h.into()
+        return if 0 <= draw_pos.0
+            && draw_pos.0 < box_w.into()
+            && 0 <= draw_pos.1
+            && draw_pos.1 < box_h.into()
         {
             // tile in visible area
             let rx: i32 = world_area.x as i32 + TILE_SIZE.0 as i32 * draw_pos.0;
@@ -170,15 +177,16 @@ fn render(frame: &mut Frame, old_world_array: &RawWorldArray, world_array: &RawW
                 x as i32 - (box_w / 2) as i32 + camera.0,
                 y as i32 - (box_h / 2) as i32 + camera.1,
             );
-            
-            if
-                0 <= world_pos.0 && world_pos.0 < WIDTH as i32 &&
-                0 <= world_pos.1 && world_pos.1 < HEIGHT as i32
+
+            if 0 <= world_pos.0
+                && world_pos.0 < WIDTH as i32
+                && 0 <= world_pos.1
+                && world_pos.1 < HEIGHT as i32
             {
                 // if inside world: skip
                 continue;
             }
-            
+
             // draw a background in the "World" area
             // this is so the player can tell the difference between buildable area and surrounding borders
             let rect = Rect::new(
@@ -187,7 +195,7 @@ fn render(frame: &mut Frame, old_world_array: &RawWorldArray, world_array: &RawW
                 TILE_SIZE.0,
                 TILE_SIZE.1,
             );
-            
+
             let border_tile = "...\n...";
             let square = Paragraph::new(border_tile).gray();
             frame.render_widget(square, rect);
@@ -196,7 +204,7 @@ fn render(frame: &mut Frame, old_world_array: &RawWorldArray, world_array: &RawW
 
     // aquire lock until it falls out of scope
     // let world_array = &world_array.lock().unwrap();
-    
+
     // a set seed gives us the same values in the world every time
     let mut rng = ChaCha8Rng::seed_from_u64(5);
 
@@ -207,14 +215,14 @@ fn render(frame: &mut Frame, old_world_array: &RawWorldArray, world_array: &RawW
             // needs to run on every iteration
             // skipping an iteration would mess up the order
             let tile_rand: u16 = rng.random();
-            
+
             let mut rect_at_pos = match get_rect_from_world_xy(x as i32, y as i32) {
                 None => continue,
-                Some(rect) => rect
+                Some(rect) => rect,
             };
-            
+
             let random_tiles = [".", " .", "   .", "\n.", "\n .", "\n  ."];
-            
+
             // 1/16 chance
             if tile_rand < 4004 {
                 let square = Paragraph::new(random_tiles[(tile_rand % 6) as usize]).gray();
@@ -227,28 +235,39 @@ fn render(frame: &mut Frame, old_world_array: &RawWorldArray, world_array: &RawW
     for y in 0..HEIGHT {
         for x in 0..WIDTH {
             let tile = &world_array[y][x];
-            
+
             let mut animation_dx = 0;
             let mut animation_dy = 0;
-            
+
             let mut rect_at_pos = match get_rect_from_world_xy(x as i32, y as i32) {
                 None => continue,
-                Some(rect) => rect
+                Some(rect) => rect,
             };
-            
-            if y > 0        && is_same_tile(&old_world_array[y-1][x], tile) {animation_dy = -1}
-            if y+1 < HEIGHT && is_same_tile(&old_world_array[y+1][x], tile) {animation_dy = 1}
-            if x > 0        && is_same_tile(&old_world_array[y][x-1], tile) {animation_dx = -1}
-            if x+1 < WIDTH  && is_same_tile(&old_world_array[y][x+1], tile) {animation_dx = 1}
-            
+
+            if y > 0 && is_same_tile(&old_world_array[y - 1][x], tile) {
+                animation_dy = -1
+            }
+            if y + 1 < HEIGHT && is_same_tile(&old_world_array[y + 1][x], tile) {
+                animation_dy = 1
+            }
+            if x > 0 && is_same_tile(&old_world_array[y][x - 1], tile) {
+                animation_dx = -1
+            }
+            if x + 1 < WIDTH && is_same_tile(&old_world_array[y][x + 1], tile) {
+                animation_dx = 1
+            }
+
             rect_at_pos.x = (rect_at_pos.x as i32 + animation_dx) as u16;
             rect_at_pos.y = (rect_at_pos.y as i32 + animation_dy) as u16;
-            
-            
+
             match tile {
                 Tile::Empty => {}
+                Tile::Obstacle => {
+                    let square = Paragraph::new("███\n███").green();
+                    frame.render_widget(square, rect_at_pos);
+                }
                 Tile::Worker(_aid) => {
-                    let square = Paragraph::new("╭—╮\n╰—╯").blue();
+                    let square = Paragraph::new("╭─╮\n╰─╯").blue();
                     frame.render_widget(square, rect_at_pos);
                 }
                 Tile::Building(_aid) => {
