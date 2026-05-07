@@ -160,7 +160,7 @@ impl GameManager {
         let worker = Entity::new(self.world.clone(), self.task.clone(), (60, 40));
         let _ = self
             .world
-            .send(WorldManagerMessage::PlaceWorker((40, 40), worker.clone()));
+            .send(WorldManagerMessage::PlaceWorker((60, 40), worker.clone()));
         let _ = self.task.send(TaskManagerMessage::CreatePath(
             Item::Mutexium,
             (15, 3),
