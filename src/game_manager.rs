@@ -121,7 +121,9 @@ impl GameManager {
         let _ = self
             .world
             .send(WorldManagerMessage::PlaceBuilding((3, 5), building.clone()));
-
+        let _ = building.send(crate::messages::EntityMessage::Task(
+            task_manager::Task::Produce(0),
+        ));
         let building = Building::new(self.world.clone());
         let _ = self.world.send(WorldManagerMessage::PlaceBuilding(
             (23, 12),
