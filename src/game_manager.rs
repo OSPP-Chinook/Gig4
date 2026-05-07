@@ -30,8 +30,9 @@ impl GameManager {
         let player = AID::new({
             let world = world.clone();
             let grid = grid.clone();
+            let task = task.clone();
             |aid, mailbox| {
-                let _ = player_manager::render_loop(aid, mailbox, world, grid);
+                let _ = player_manager::render_loop(aid, mailbox, world, grid, task);
             }
         });
 

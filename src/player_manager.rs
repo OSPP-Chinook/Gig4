@@ -6,6 +6,9 @@ use crate::{
     aid::AID,
     messages::PlayerManagerMessage,
     world_manager::{HEIGHT, RawWorldArray, Tile, WIDTH, WorldGrid, WorldManagerMessage},
+    task_manager::{TaskManagerMessage},
+    entity::Entity,
+    item::Item,
 };
 use crossterm::event::{Event, KeyCode, KeyEventKind, poll, read};
 use ratatui::Frame;
@@ -64,6 +67,7 @@ pub fn render_loop(
     mailbox: Receiver<PlayerManagerMessage>,
     world: AID<WorldManagerMessage>,
     world_array: WorldGrid,
+    task: AID<TaskManagerMessage>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     ratatui::run(|terminal| {
         // camera starts centered on the world
@@ -106,6 +110,32 @@ pub fn render_loop(
                             }
                             KeyCode::Char('d') => {
                                 camera.change(MOVE_CAMERA, 0);
+                            }
+                            KeyCode::Char('p') => {
+                                // make worker
+                                let worker = Entity::new(world.clone(), task.clone(), (20, 20));
+                                let _ = world.send(WorldManagerMessage::PlaceWorker((20, 20), worker.clone()));
+                                
+                                let _ = task.send(TaskManagerMessage::CreatePath(
+                                    Item::Mutexium,
+                                    (15, 3),
+                                    (3, 5),
+                                ));
+                                let _ = task.send(TaskManagerMessage::CreatePath(
+                                    Item::Mutexium,
+                                    (6, 12),
+                                    (15, 3),
+                                ));
+                                let _ = task.send(TaskManagerMessage::CreatePath(
+                                    Item::Mutexium,
+                                    (23, 12),
+                                    (25, 4),
+                                ));
+                                let _ = task.send(TaskManagerMessage::CreatePath(
+                                    Item::Mutexium,
+                                    (3, 5),
+                                    (6, 12),
+                                ));
                             }
                             _ => {}
                         }
