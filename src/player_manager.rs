@@ -1,7 +1,9 @@
 use rand::{RngExt, SeedableRng, rngs::ChaCha8Rng};
 use std::sync::mpsc::Receiver;
 use std::time::Duration;
+use std::time::Instant;
 use std::cmp::Ordering;
+use std::cmp;
 
 use crate::{
     aid::AID,
@@ -84,12 +86,19 @@ pub fn render_loop(
                 }
             }
 
+            let time_0 = Instant::now();
             let new_world = get_copy_of_world(&world_array);
-            terminal.draw(|frame| render(frame, &old_world, &new_world, camera))?;
+            let time_1 = Instant::now();
+            terminal.draw(|frame| render(frame, &old_world, &new_world, camera, (time_0, time_1)))?;
             old_world = new_world;
+            
+            // reduce wait time by how much time we spent rendering
+            // I can't tell if this makes any difference, or if it doesn't work with poll()
+            let time_to_wait = 50;
+            let time_to_wait = cmp::max(0, time_to_wait - time_0.elapsed().as_millis() as i64) as u64;
 
             // 50 ms looks better with animations
-            if poll(Duration::from_millis(50))? {
+            if poll(Duration::from_millis(time_to_wait))? {
                 match read()? {
                     Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
                         match key_event.code {
@@ -141,6 +150,7 @@ fn render(
     old_world_array: &RawWorldArray,
     world_array: &RawWorldArray,
     camera: Camera,
+    (time_0, time_1): (Instant, Instant),
 ) {
     let world_area = frame.area();
 
@@ -307,4 +317,26 @@ fn render(
             }
         }
     }
+    
+    // return; // don't draw fps
+    let time_2 = Instant::now();
+    render_fps(
+        frame,
+        time_1.duration_since(time_0),
+        time_2.duration_since(time_1),
+    );
+}
+
+fn render_fps(frame: &mut Frame, dur_copy: Duration, dur_render: Duration) {
+    let width = frame.area().width;
+    
+    let text = format!("{} ms", dur_copy.as_millis());
+    let len = text.len() as u16;
+    let rect = Rect::new(width - len, 0, len, 1);
+    frame.render_widget(Paragraph::new(text), rect);
+    
+    let text = format!("{} ms", dur_render.as_millis());
+    let len = text.len() as u16;
+    let rect = Rect::new(width - len, 1, len, 1);
+    frame.render_widget(Paragraph::new(text), rect);
 }
