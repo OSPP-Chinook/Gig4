@@ -218,7 +218,8 @@ fn render(
                 Some(rect) => rect,
             };
 
-            let random_tiles = ["  ", "  ", " .", ". "];
+            // let random_tiles = ["  ", "  ", " .", ". "];
+            let random_tiles = ["  "];
 
             // 1/16 chance
             if tile_rand < 4004 {
