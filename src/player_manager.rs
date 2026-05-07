@@ -1,6 +1,7 @@
 use rand::{RngExt, SeedableRng, rngs::ChaCha8Rng};
 use std::sync::mpsc::Receiver;
 use std::time::Duration;
+use std::cmp::Ordering;
 
 use crate::{
     aid::AID,
@@ -145,6 +146,17 @@ fn render(
 
     let box_w = world_area.width / TILE_SIZE.0;
     let box_h = world_area.height / TILE_SIZE.1;
+    
+    let is_row_in_world = |y: i32| {
+        let draw_y = y + (box_h / 2) as i32 - camera.1;
+        if draw_y < 0 {
+            return Ordering::Less;
+        }
+        if draw_y >= box_h.into() {
+            return Ordering::Greater;
+        }
+        return Ordering::Equal;
+    };
 
     // this is repeated several times, so it's a closure here
     let get_rect_from_world_xy = |x: i32, y: i32| {
@@ -206,15 +218,27 @@ fn render(
     // let world_array = &world_array.lock().unwrap();
 
     // a set seed gives us the same values in the world every time
+    // this rng is used to set the seed for every row
     let mut rng = ChaCha8Rng::seed_from_u64(5);
 
     // draw background
     // we do this separately so objects are correctly layered on top of the background
     for y in 0..HEIGHT {
+        // this rng applies to every row
+        // needs to run on every iteration
+        // skipping an iteration would mess up the order
+        let mut rng_row = ChaCha8Rng::seed_from_u64(rng.random());
+        
+        match is_row_in_world(y as i32) {
+            Ordering::Less => continue,
+            Ordering::Greater => break,
+            _ => (),
+        }
+        
         for x in 0..WIDTH {
             // needs to run on every iteration
             // skipping an iteration would mess up the order
-            let tile_rand: u16 = rng.random();
+            let tile_rand: u16 = rng_row.random();
 
             let mut rect_at_pos = match get_rect_from_world_xy(x as i32, y as i32) {
                 None => continue,
@@ -233,6 +257,12 @@ fn render(
 
     // draw world
     for y in 0..HEIGHT {
+        match is_row_in_world(y as i32) {
+            Ordering::Less => continue,
+            Ordering::Greater => break,
+            _ => (),
+        }
+        
         for x in 0..WIDTH {
             let tile = &world_array[y][x];
 
