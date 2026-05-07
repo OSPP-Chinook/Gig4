@@ -16,9 +16,15 @@ use ratatui::widgets::{Block, Borders, Paragraph};
 // Width and height of a tile on the screen in characters
 const TILE_SIZE: usize = 2;
 
+enum MouseClick {
+    None,
+    Left,
+    Right,
+}
 struct Input {
-    mouse: Option<MouseEvent>,
-    key: Option<KeyEvent>,
+    mouse_pos: Option<(u16, u16)>, // (x, y)
+    mouse_click: MouseClick,
+    key: Option<KeyCode>,
 }
 
 #[derive(Copy, Clone)]
@@ -72,38 +78,65 @@ pub fn render_loop(
                 }
             }
 
-            let mut input: Input = Input { mouse: Option::None, key: Option::None };
+            let mut key_event: Option<KeyEvent> = None;
+            let mut mouse_event: Option<MouseEvent> = None;
 
             if poll(Duration::from_millis(30))? {
                 match read()? {
-                    Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
-                        if key_event.code == KeyCode::Char('q') {
+                    Event::Key(event) if event.kind == KeyEventKind::Press => {
+                        // Det här måste ske utanför input handler eftersom 
+                        // det ska stänga av loopen
+                        if event.code == KeyCode::Char('q') {
                             break Ok(());
                         }
-                        input.key = Option::Some(key_event);
+                        key_event = Some(event);
                     }
-                    Event::Mouse(mouse_event) => {
-                        input.mouse = Option::Some(mouse_event);
+                    Event::Mouse(event) => {
+                        mouse_event = Some(event);
                     }
                     _ => {}
                 }
             }
 
-            parse_input(&input, &mut camera);
+            let mut input: Input = Input { mouse_pos: None, mouse_click: MouseClick::None, key: None };
+
+            parse_input_keyboard(&mut input, &key_event, &mut camera);
+            parse_input_mouse(&mut input, &mouse_event);
 
             terminal.draw(|frame| render(frame, world_array, camera, input))?;
         }
     })
 }
 
-fn parse_input(input: &Input, camera: &mut Camera) {
-    if input.key.is_none() {return;}
-    
-    match input.key.unwrap().code {
+fn parse_input_keyboard(input: &mut Input, event_opt: &Option<KeyEvent>, camera: &mut Camera) {
+    if event_opt.is_none() {return;}
+
+    let event: KeyEvent = event_opt.unwrap();
+    match event.code {
         KeyCode::Char('w') => {camera.change(0, -MOVE_CAMERA);}
         KeyCode::Char('s') => {camera.change(0,  MOVE_CAMERA);}
         KeyCode::Char('a') => {camera.change(-MOVE_CAMERA, 0);}
         KeyCode::Char('d') => {camera.change( MOVE_CAMERA, 0);}
+        _ => {input.key = Some(event.code)}
+    }
+}
+
+fn parse_input_mouse(input: &mut Input, event_opt: &Option<MouseEvent>) {
+    if event_opt.is_none() {return;}
+
+    let event: MouseEvent = event_opt.unwrap();
+    match event.kind {
+        MouseEventKind::Moved => {
+            input.mouse_pos = Some((event.column, event.row));
+        }
+        MouseEventKind::Down(MouseButton::Left) => {
+            input.mouse_pos = Some((event.column, event.row));
+            input.mouse_click = MouseClick::Left;
+        }
+        MouseEventKind::Down(MouseButton::Right) => {
+            input.mouse_pos = Some((event.column, event.row));
+            input.mouse_click = MouseClick::Right;
+        }
         _ => {}
     }
 }
