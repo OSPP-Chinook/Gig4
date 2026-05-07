@@ -241,7 +241,7 @@ fn render(
     
     if let Some(sel_aid) = selected_aid {
         let (width, height) = (world_area.width / 3, world_area.height / 2);
-        let m = 2; // margin: 2 x border, 2 x space for animation
+        let m = 2; // margin: 2 x border, which doubles as 2 x space for animation
         if width > m && height > m {
             // pov_area encloses a whole number of tiles
             let width = (width - m) / TILE_SIZE.0 * TILE_SIZE.0 + m;
