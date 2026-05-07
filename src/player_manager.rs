@@ -68,8 +68,8 @@ pub fn render_loop(
     ratatui::run(|terminal| {
         // camera starts centered on the world
         let mut camera = Camera(
-            (WIDTH / 2).try_into().unwrap(),
-            (HEIGHT / 2).try_into().unwrap(),
+            (14).try_into().unwrap(),
+            (7).try_into().unwrap(),
         );
 
         let mut old_world = get_copy_of_world(&world_array);
