@@ -8,6 +8,7 @@ use std::cmp;
 use crate::{
     aid::AID,
     messages::PlayerManagerMessage,
+    EntityMessage,
     world_manager::{HEIGHT, RawWorldArray, Tile, WIDTH, WorldGrid, WorldManagerMessage},
 };
 use crossterm::event::{Event, KeyCode, KeyEventKind, poll, read};
@@ -15,7 +16,7 @@ use ratatui::Frame;
 use ratatui::layout::Constraint::Length;
 use ratatui::layout::{Constraint, Layout, Margin, Rect};
 use ratatui::style::Stylize;
-use ratatui::widgets::{Block, Borders, Paragraph};
+use ratatui::widgets::{Block, Borders, Paragraph, Clear};
 
 // Width and height of a tile on the screen in characters
 // Needs to be u16 for ratatui
@@ -76,6 +77,8 @@ pub fn render_loop(
         );
 
         let mut old_world = get_copy_of_world(&world_array);
+        
+        let mut selected_aid = None;
 
         loop {
             //read all messages in mailbox
@@ -89,7 +92,7 @@ pub fn render_loop(
             let time_0 = Instant::now();
             let new_world = get_copy_of_world(&world_array);
             let time_1 = Instant::now();
-            terminal.draw(|frame| render(frame, &old_world, &new_world, camera, (time_0, time_1)))?;
+            terminal.draw(|frame| render(frame, &old_world, &new_world, camera, (time_0, time_1), &selected_aid))?;
             old_world = new_world;
             
             // reduce wait time by how much time we spent rendering
@@ -151,9 +154,45 @@ fn render(
     world_array: &RawWorldArray,
     camera: Camera,
     (time_0, time_1): (Instant, Instant),
+    selected_aid: &Option<AID<EntityMessage>>,
 ) {
     let world_area = frame.area();
+    
+    render_world_in_area(frame, &world_area, &old_world_array, &world_array, camera);
+    
+    let (width, height) = (world_area.width / 3, world_area.height / 2);
+    if width > 2 && height > 2 {
+        // pov_area encloses a whole number of tiles
+        let width = (width - 2) / TILE_SIZE.0 * TILE_SIZE.0 + 2;
+        let height = (height - 2) / TILE_SIZE.1 * TILE_SIZE.1 + 2;
+        let pov_area = Rect::new(world_area.width - width, world_area.height - height, width, height);
 
+        frame.render_widget(Clear, pov_area);
+        frame.render_widget(
+            Block::new().borders(Borders::ALL).title("─ POV: you're a worker "),
+            pov_area,
+        );
+        
+        let pov_area_inner = pov_area.inner(Margin::new(1, 1));
+        render_world_in_area(frame, &pov_area_inner, &old_world_array, &world_array, camera);
+    }
+    
+    // return; // don't draw fps
+    let time_2 = Instant::now();
+    render_fps(
+        frame,
+        time_1.duration_since(time_0),
+        time_2.duration_since(time_1),
+    );
+}
+
+fn render_world_in_area(
+    frame: &mut Frame,
+    world_area: &Rect,
+    old_world_array: &RawWorldArray,
+    world_array: &RawWorldArray,
+    camera: Camera,
+) {
     let box_w = world_area.width / TILE_SIZE.0;
     let box_h = world_area.height / TILE_SIZE.1;
     
@@ -317,14 +356,6 @@ fn render(
             }
         }
     }
-    
-    // return; // don't draw fps
-    let time_2 = Instant::now();
-    render_fps(
-        frame,
-        time_1.duration_since(time_0),
-        time_2.duration_since(time_1),
-    );
 }
 
 fn render_fps(frame: &mut Frame, dur_copy: Duration, dur_render: Duration) {
