@@ -16,7 +16,7 @@ use ratatui::widgets::{Block, Borders, Paragraph};
 
 // Width and height of a tile on the screen in characters
 // Needs to be u16 for ratatui
-const TILE_SIZE: (u16, u16) = (3, 2);
+const TILE_SIZE: (u16, u16) = (2, 1);
 
 #[derive(Copy, Clone)]
 struct Camera(i32, i32);
@@ -67,10 +67,7 @@ pub fn render_loop(
 ) -> Result<(), Box<dyn std::error::Error>> {
     ratatui::run(|terminal| {
         // camera starts centered on the world
-        let mut camera = Camera(
-            (14).try_into().unwrap(),
-            (7).try_into().unwrap(),
-        );
+        let mut camera = Camera((14).try_into().unwrap(), (7).try_into().unwrap());
 
         let mut old_world = get_copy_of_world(&world_array);
 
@@ -196,8 +193,8 @@ fn render(
                 TILE_SIZE.1,
             );
 
-            let border_tile = "...\n...";
-            let square = Paragraph::new(border_tile).gray();
+            let border_tile = ". ";
+            let square = Paragraph::new(border_tile);
             frame.render_widget(square, rect);
         }
     }
@@ -221,11 +218,11 @@ fn render(
                 Some(rect) => rect,
             };
 
-            let random_tiles = [".", " .", "   .", "\n.", "\n .", "\n  ."];
+            let random_tiles = ["  ", "  ", " .", ". "];
 
             // 1/16 chance
             if tile_rand < 4004 {
-                let square = Paragraph::new(random_tiles[(tile_rand % 6) as usize]).gray();
+                let square = Paragraph::new(random_tiles[tile_rand as usize % random_tiles.len()]);
                 frame.render_widget(square, rect_at_pos);
             }
         }
@@ -263,15 +260,15 @@ fn render(
             match tile {
                 Tile::Empty => {}
                 Tile::Obstacle => {
-                    let square = Paragraph::new("███\n███").green();
+                    let square = Paragraph::new("[]");
                     frame.render_widget(square, rect_at_pos);
                 }
                 Tile::Worker(_aid) => {
-                    let square = Paragraph::new("╭─╮\n╰─╯").blue();
+                    let square = Paragraph::new("o ");
                     frame.render_widget(square, rect_at_pos);
                 }
                 Tile::Building(_aid) => {
-                    let square = Paragraph::new("╔═╗\n╚═╝").red();
+                    let square = Paragraph::new("# ");
                     frame.render_widget(square, rect_at_pos);
                 }
             }
