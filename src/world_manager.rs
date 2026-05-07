@@ -1,7 +1,5 @@
 use std::{
     collections::HashMap,
-    mem::MaybeUninit,
-    ptr,
     sync::{Arc, Mutex, mpsc::Receiver},
     vec,
 };
@@ -20,6 +18,7 @@ pub type Pos = (usize, usize);
 pub enum WorldManagerMessage {
     Stop, // is only necessary if there are circular AIDs (which there probably will be)
     Move(Pos, AID<EntityMessage>),
+    PlaceObstacle(Pos),
     PlaceWorker(Pos, AID<EntityMessage>),
     PlaceBuilding(Pos, AID<EntityMessage>),
     KillMe(AID<EntityMessage>),
@@ -29,6 +28,7 @@ pub enum WorldManagerMessage {
 #[derive(Clone)]
 pub enum Tile {
     Empty,
+    Obstacle,
     Worker(AID<EntityMessage>),
     Building(AID<EntityMessage>),
 }
@@ -45,7 +45,20 @@ fn get_tile(grid: &mut RawWorldArray, pos: Pos) -> Option<&mut Tile> {
     return grid.get_mut(pos.1)?.get_mut(pos.0);
 }
 
-fn place_tile(
+fn place_tile(grid: &WorldGrid, pos: Pos, tile: Tile) {
+    let grid = &mut grid.lock().unwrap();
+
+    // check if pos in bounds
+    if let Some(dest) = get_tile(grid, pos) {
+        // check if pos empty
+        if let Tile::Empty = *dest {
+            *dest = tile;
+            return;
+        }
+    }
+}
+
+fn place_entity(
     grid: &WorldGrid,
     entity_lookup: &mut WorldLookup,
     pos: Pos,
@@ -108,14 +121,15 @@ pub fn main(
         match msg {
             WorldManagerMessage::Stop => break,
             WorldManagerMessage::Move(pos, aid) => move_tile(&grid, &mut entity_lookup, pos, aid),
-            WorldManagerMessage::PlaceWorker(pos, aid) => place_tile(
+            WorldManagerMessage::PlaceObstacle(pos) => place_tile(&grid, pos, Tile::Obstacle),
+            WorldManagerMessage::PlaceWorker(pos, aid) => place_entity(
                 &grid,
                 &mut entity_lookup,
                 pos,
                 aid.clone(),
                 Tile::Worker(aid),
             ),
-            WorldManagerMessage::PlaceBuilding(pos, aid) => place_tile(
+            WorldManagerMessage::PlaceBuilding(pos, aid) => place_entity(
                 &grid,
                 &mut entity_lookup,
                 pos,
