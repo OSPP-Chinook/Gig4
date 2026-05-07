@@ -6,6 +6,14 @@
         "description": "It seems as though only one entity can hold this piece of raw mutexium at any one time. How did you get your hands on this?",
         "stackLimit": 256
     },
+    
+    {
+        "id": "semaphorite",
+        "name": "Semaphorite",
+        "category": "raw-nonmetal",
+        "description": "It emits light with a color that oscillates periodically. Bringing two pieces together will cause their glow to synchronize without fail.",
+        "stackLimit": 256
+    },
 
     {
         "id": "iron-ore",
