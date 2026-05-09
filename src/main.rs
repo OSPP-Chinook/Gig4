@@ -22,9 +22,9 @@ use crate::{game_manager::GameManager, messages::EntityMessage};
 
 fn main() {
     println!("Hello, world!");
-    // let gm = GameManager::new();
-    // gm.run();
-    test_inventory();
+    let gm = GameManager::new();
+    gm.run();
+    // test_inventory();
 }
 
 fn do_nothing(_aid: aid::AID<EntityMessage>, _mailbox: std::sync::mpsc::Receiver<EntityMessage>) {
@@ -38,24 +38,30 @@ fn test_inventory() {
     let factory_aid1: aid::AID<InventoryMessage> = inventory::init();
     let factory_aid2: aid::AID<InventoryMessage> = inventory::init();
 
-    println!("Produce mutexium in factory 1");
-    _ = factory_aid1.send( // Factory 1 produces 8 mutexium
-        InventoryMessage::Add(sender.clone(), (Item::Mutexium, 8))
+    println!("Give Factory 1 8 mutexium and 8 semaphorite");
+    _ = factory_aid1.send(
+        InventoryMessage::Add(sender.clone(), vec!((Item::Mutexium, 8), (Item::Semaphorite, 8)))
     ); 
+
+    println!("Converting mutexium and semaphorite to Actorisite");
+    for _ in 1..9 {
+        _ = factory_aid1.send(
+            InventoryMessage::Remove(sender.clone(), vec!((Item::Mutexium, 1), (Item::Semaphorite, 1)))
+        );
+
+        _ = factory_aid1.send(
+            InventoryMessage::Add(sender.clone(), vec!((Item::Actorisite, 1)))
+        );
+    }
     
-    println!("Taking 9 mutexium from factory 1 to worker, should be in waiting queue");
-    _ = worker_aid.send( // Worker takes 9 Mutexium from factory 1
-        InventoryMessage::TakeFrom(sender.clone(), factory_aid1.clone(), (Item::Mutexium, 9))
+    println!("Taking 8 actorisite from factory 1 to worker, should be in waiting queue");
+    _ = worker_aid.send(
+        InventoryMessage::TakeFrom(sender.clone(), factory_aid1.clone(), vec!((Item::Actorisite, 8)))
     ); 
 
-    println!("Produce 1 more mutexium in factory 1");
-    _ = factory_aid1.send( // Factory 1 produces 8 mutexium
-        InventoryMessage::Add(sender.clone(), (Item::Mutexium, 1))
-    ); 
-
-    println!("Giving 8 mutexium from worker to factory 2");
-    _ = worker_aid.send( // Worker gives 8 Mutexium to factory 2
-        InventoryMessage::GiveTo(sender.clone(), factory_aid2.clone(), (Item::Mutexium, 8))
+    println!("Giving 8 actorisite from worker to factory 2");
+    _ = worker_aid.send(
+        InventoryMessage::GiveTo(sender.clone(), factory_aid2.clone(), vec!((Item::Actorisite, 8)))
     ); 
 
     sleep(time::Duration::from_millis(500));

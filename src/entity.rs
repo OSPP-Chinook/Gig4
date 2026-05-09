@@ -139,26 +139,26 @@ impl Entity {
                         }
                     }
 
-                    Task::AddItem { item, amount } => {
-                        let _ = self.inventory.send(InventoryMessage::Add(self.self_aid.clone(), (item,amount)));
+                    Task::AddItem { item, amount } => { 
+                        let _ = self.inventory.send(InventoryMessage::Add(self.self_aid.clone(), vec!((item, amount))));
                     }
 
                     Task::RemoveItem { item, amount } => {
                         let _ = self
                             .inventory
-                            .send(InventoryMessage::Remove(self.self_aid.clone(), (item,amount)));
+                            .send(InventoryMessage::Remove(self.self_aid.clone(), vec!((item, amount))));
                     }
 
                     Task::TakeFrom { from, item, amount } => {
                         let _ = self
                             .inventory
-                            .send(InventoryMessage::TakeFrom(self.self_aid.clone(), self.inventory.clone(), (item,amount)));
+                            .send(InventoryMessage::TakeFrom(self.self_aid.clone(), self.inventory.clone(), vec!((item, amount))));
                     }
 
                     Task::GiveTo { to, item, amount } => {
                         let _ = self
                             .inventory
-                            .send(InventoryMessage::GiveTo(self.self_aid.clone(), self.inventory.clone(),(item,amount)));
+                            .send(InventoryMessage::GiveTo(self.self_aid.clone(), self.inventory.clone(), vec!((item, amount))));
                     }
 
                     Task::PrintInventory(name) => {
