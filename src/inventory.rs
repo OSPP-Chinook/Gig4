@@ -112,7 +112,7 @@ fn inventory_loop(
 
     loop {
         if !inventory.waiting.is_empty() {
-            println!("Inventory has a queue of requests");
+            // println!("Inventory has a queue of requests");
             match_message(inventory.waiting.pop_front().unwrap().clone(), &mut inventory);
         }
         
@@ -264,7 +264,7 @@ fn give_me_items(
     items: Vec<(Item, usize)>,
 ) {
     if !inventory.can_remove(&items) {
-        println!("had too few items");
+        // println!("had too few items");
         inventory.waiting.push_back(
             InventoryMessage::GiveMeItems(sender.clone(), sending_inventory.clone(), items)
         );
