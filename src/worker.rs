@@ -374,31 +374,70 @@ mod tests {
     }
 
     #[test]
-    fn apply_task() {
+    fn process_task_done() {
+        let start_pos = (1, 1);
+        let mut core = WorkerCore::new(start_pos);
+
+        let result = core.process_task();
+
+        assert!(matches!(result, SubTask::Done));
+    }
+
+    #[test]
+    fn process_task_move() {
+        let start_pos = (1, 1);
+        let mut core = WorkerCore::new(start_pos);
+
+        let new_pos = (10, 10);
+        core.new_task(Task::MoveTo(new_pos));
+
+        assert_eq!(core.sub_tasks.len(), 1);
+
+        let sub_task = core.process_task();
+
+        assert!(matches!(sub_task, SubTask::Move(_)));
+
+        assert!(core.pending_move.is_some());
+
+        assert!(matches!(core.sub_tasks.front(), Some(SubTask::Move(p)) if *p == new_pos));
+    }
+
+    #[test]
+fn process_task_idle() {
+    let start_pos = (1, 1);
+    let mut core = WorkerCore::new(start_pos);
+
+    // Adjacent mål → manhattan_distance = 1
+    let adjacent_pos = (1, 2);
+
+    core.new_task(Task::MoveTo(adjacent_pos));
+
+    let sub_task = core.process_task();
+
+    assert!(matches!(sub_task, SubTask::Done));
+    assert_eq!(core.sub_tasks.len(),0);
+}
+
+
+    #[test]
+    fn new_task_move_to() {
         let start_pos = (1, 1);
         let mut core = WorkerCore::new(start_pos);
 
         let new_pos = (10, 10);
         let task = Task::MoveTo(new_pos);
+
         core.new_task(task);
+
         assert_eq!(core.sub_tasks.len(), 1);
-        core.process_task();
+
+        let sub_task = core.sub_tasks.pop_front();
+
+        assert!(matches!(sub_task, Some(SubTask::Move((10, 10)))));
     }
 
     #[test]
-    fn apply_task_done() {
-        let start_pos = (1, 1);
-        let mut core = WorkerCore::new(start_pos);
-
-        let new_pos = (10, 10);
-        let task = Task::MoveTo(new_pos);
-        core.new_task(task);
-        assert_eq!(core.sub_tasks.len(), 1);
-        core.process_task();
-    }
-
-    #[test]
-    fn new_task() {
+    fn new_task_deliveritem() {
         let start_pos = (1, 1);
         let mut worker = Worker::create(dummy(), dummy(), dummy(), start_pos);
 
@@ -411,11 +450,54 @@ mod tests {
         let fram_pos = (10, 10);
         let to_pos = (20, 20);
 
-        let task = Task::DeliverItem(item, amount, (from_aid, fram_pos), (to_aid, to_pos));
+        let task = Task::DeliverItem(
+            item,
+            amount,
+            (from_aid.clone(), fram_pos),
+            (to_aid.clone(), to_pos),
+        );
 
         worker.core.new_task(task);
 
         assert_eq!(worker.core.sub_tasks.len(), 4);
+
+        // 1. Move to "from"
+        let sub_task_1 = worker.core.sub_tasks.pop_front().unwrap();
+        assert!(matches!(sub_task_1,SubTask::Move(p) if p == fram_pos));
+
+        // 2.TakeItem
+        let sub_task_2 = worker.core.sub_tasks.pop_front().unwrap();
+        assert!(
+            matches!(sub_task_2, SubTask::TakeItem(aid, (i,a))if aid == from_aid && i == item && a == amount)
+        );
+
+        // 3. move to "to"
+        let sub_task_3 = worker.core.sub_tasks.pop_front().unwrap();
+        assert!(matches!(sub_task_3, SubTask::Move(p) if p == to_pos));
+
+        //4. GiveItem
+        let sub_task_4 = worker.core.sub_tasks.pop_front().unwrap();
+        assert!(
+            matches!(sub_task_4, SubTask::GiveItem(aid, (i,a)) if aid == to_aid && i == item && a == amount)
+        );
+
+        assert_eq!(worker.core.sub_tasks.len(), 0);
+    }
+
+    #[test]
+    fn new_task_idle() {
+        let start_pos = (1, 1);
+
+        let mut core = WorkerCore::new(start_pos);
+
+        let task = Task::Idle;
+        core.new_task(task);
+
+        assert_eq!(core.sub_tasks.len(), 1);
+
+        let subtask = core.sub_tasks.pop_front().unwrap();
+
+        assert!(matches!(subtask, SubTask::Idle));
     }
 
     #[test]
