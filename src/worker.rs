@@ -3,7 +3,7 @@ use crate::inventory::{self, InventoryMessage};
 use crate::item::Item;
 use crate::messages::EntityMessage;
 use crate::task_manager::{Task, TaskManagerMessage};
-use crate::world_manager::{Pos, WorldManagerMessage};
+use crate::world_manager::{Pos, WorldManagerMessage,HEIGHT,WIDTH};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::mpsc::Receiver;
 use std::thread;
@@ -83,6 +83,11 @@ impl WorkerCore {
 
     fn pathfind(&mut self, dst: Pos) -> Option<Pos> {
         // RTA* algorithm
+
+        // destination outside world
+        if dst.0 >= WIDTH || dst.1 >= HEIGHT {
+            return None;
+        }
 
         if self.current_pos == dst {
             return None;
@@ -401,23 +406,20 @@ mod tests {
 
         assert!(matches!(core.sub_tasks.front(), Some(SubTask::Move(p)) if *p == new_pos));
     }
-
     #[test]
     fn process_task_idle() {
         let start_pos = (1, 1);
         let mut core = WorkerCore::new(start_pos);
 
-        // Adjacent mål → manhattan_distance = 1
-        let adjacent_pos = (1, 2);
+        // position utanför världen världen är 32,16
+        let impossible_pos = (100, 100);
 
-        core.new_task(Task::MoveTo(adjacent_pos));
+        core.new_task(Task::MoveTo(impossible_pos));
 
         let sub_task = core.process_task();
 
-        assert!(matches!(sub_task, SubTask::Done));
-        assert_eq!(core.sub_tasks.len(), 0);
+        assert!(matches!(sub_task, SubTask::Idle));
     }
-
     #[test]
     fn new_task_move_to() {
         let start_pos = (1, 1);
@@ -504,7 +506,7 @@ mod tests {
         let start_pos = (1, 1);
         let mut core = WorkerCore::new(start_pos);
 
-        let new_pos = (20, 20);
+        let new_pos = (12, 12);
         let task = Task::MoveTo(new_pos);
         core.new_task(task);
         core.process_task();
