@@ -15,8 +15,8 @@ impl Assets {
     ///
     /// # Errors
     ///
-    /// Returns `AssetError::IoError` if the directory cannot be read.
-    /// Returns `AssetError::ParseError` if any of the JSON files cannot be parsed.
+    /// Returns `AssetError::Io` if the directory cannot be read.
+    /// Returns `AssetError::Parse` if any of the JSON files cannot be parsed.
     pub fn load(dir: &Path) -> Result<Self, AssetError> {
         Ok(Self {
             items: load_asset(&dir.join("items.json"))?,
@@ -32,21 +32,21 @@ impl Assets {
 ///
 /// # Errors
 ///
-/// Returns `AssetError::IoError` if the file cannot be read.
+/// Returns `AssetError::Io` if the file cannot be read.
 fn read_json(path: &Path) -> Result<String, AssetError> {
-    std::fs::read_to_string(path).map_err(AssetError::IoError)
+    std::fs::read_to_string(path).map_err(AssetError::Io)
 }
 
 /// Deserializes a JSON string into a hash map of any asset type accepted by Identifiable, keyed by its id.
 ///
 /// # Errors
 ///
-/// Returns `AssetError::ParseError` if the JSON string cannot be parsed.
+/// Returns `AssetError::Parse` if the JSON string cannot be parsed.
 fn parse<T>(json: &str) -> Result<HashMap<String, T>, AssetError>
 where
     T: for<'de> Deserialize<'de> + Identifiable,
 {
-    let entries: Vec<T> = serde_json::from_str(json).map_err(AssetError::ParseError)?;
+    let entries: Vec<T> = serde_json::from_str(json).map_err(AssetError::Parse)?;
     Ok(entries
         .into_iter()
         .map(|e| (e.id().to_owned(), e))
@@ -65,31 +65,35 @@ trait Identifiable {
     fn id(&self) -> &str;
 }
 
-macro_rules! impl_identifiable {
-    ($($t:ty), *) => {
-        $(impl Identifiable for $t { fn id(&self) -> &str { &self.id } })*
-    };
+macro_rules! identifiable {
+    ($($t:ty),* $(,)?) => {
+        $(impl Identifiable for $t {
+            fn id(&self) -> &str {
+                &self.id
+            }
+        })*
+    }
 }
 
-impl_identifiable!(
+identifiable!(
     ItemAsset,
     WorkerAsset,
     BuildingAsset,
     CategoryAsset,
-    RecipeAsset
+    RecipeAsset,
 );
 
 #[derive(Debug)]
 pub enum AssetError {
-    IoError(std::io::Error),
-    ParseError(serde_json::Error),
+    Io(std::io::Error),
+    Parse(serde_json::Error),
 }
 
 impl std::fmt::Display for AssetError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            AssetError::IoError(err) => write!(f, "IO Error: {}", err),
-            AssetError::ParseError(err) => write!(f, "Parse Error: {}", err),
+            AssetError::Io(err) => write!(f, "IO Error: {}", err),
+            AssetError::Parse(err) => write!(f, "Parse Error: {}", err),
         }
     }
 }
