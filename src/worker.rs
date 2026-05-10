@@ -403,21 +403,20 @@ mod tests {
     }
 
     #[test]
-fn process_task_idle() {
-    let start_pos = (1, 1);
-    let mut core = WorkerCore::new(start_pos);
+    fn process_task_idle() {
+        let start_pos = (1, 1);
+        let mut core = WorkerCore::new(start_pos);
 
-    // Adjacent mål → manhattan_distance = 1
-    let adjacent_pos = (1, 2);
+        // Adjacent mål → manhattan_distance = 1
+        let adjacent_pos = (1, 2);
 
-    core.new_task(Task::MoveTo(adjacent_pos));
+        core.new_task(Task::MoveTo(adjacent_pos));
 
-    let sub_task = core.process_task();
+        let sub_task = core.process_task();
 
-    assert!(matches!(sub_task, SubTask::Done));
-    assert_eq!(core.sub_tasks.len(),0);
-}
-
+        assert!(matches!(sub_task, SubTask::Done));
+        assert_eq!(core.sub_tasks.len(), 0);
+    }
 
     #[test]
     fn new_task_move_to() {
