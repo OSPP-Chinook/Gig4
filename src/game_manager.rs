@@ -2,7 +2,7 @@ use crate::{
     aid::AID,
     assets::{AssetError, Assets},
     building::Building,
-    entity::Entity,
+    worker::Worker,
     item::Item,
     messages::PlayerManagerMessage,
     player_manager,
@@ -89,7 +89,7 @@ impl GameManager {
             task_manager::Task::Produce(0),
         ));
 
-        let worker = Entity::new(self.world.clone(), self.task.clone(), (10, 3));
+        let worker = Worker::new(self.world.clone(), self.task.clone(), (10, 3));
         let _ = self
             .world
             .send(WorldManagerMessage::PlaceWorker((10, 3), worker.clone()));
