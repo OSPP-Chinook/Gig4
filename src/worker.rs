@@ -40,8 +40,8 @@ struct WorkerCore {
 enum SubTask {
     Idle,
     Move(Pos),
-    TakeItem(AID<EntityMessage>, (Item,usize)),
-    GiveItem(AID<EntityMessage>, (Item,usize)),
+    TakeItem(AID<EntityMessage>, (Item, usize)),
+    GiveItem(AID<EntityMessage>, (Item, usize)),
     Done,
 }
 
@@ -161,13 +161,13 @@ impl WorkerCore {
             Task::MoveTo(pos) => {
                 self.sub_tasks.push_back(SubTask::Move(pos));
             }
-            Task::DeliverItem(item, amount  , (from_aid, from), (to_aid, to)) => {
+            Task::DeliverItem(item, amount, (from_aid, from), (to_aid, to)) => {
                 self.sub_tasks.push_back(SubTask::Move(from));
                 self.sub_tasks
-                    .push_back(SubTask::TakeItem(from_aid.clone(), (item,amount)));
+                    .push_back(SubTask::TakeItem(from_aid.clone(), (item, amount)));
                 self.sub_tasks.push_back(SubTask::Move(to));
                 self.sub_tasks
-                    .push_back(SubTask::GiveItem(to_aid.clone(), (item,amount)));
+                    .push_back(SubTask::GiveItem(to_aid.clone(), (item, amount)));
             }
             Task::Idle => {
                 self.sub_tasks.push_back(SubTask::Idle);
@@ -208,7 +208,7 @@ pub struct Worker {
     core: WorkerCore,
     alive: bool,
     waiting: bool,
-    pending_inventory_task: Option<(bool, (Item,usize))>,
+    pending_inventory_task: Option<(bool, (Item, usize))>,
     world_aid: AID<WorldManagerMessage>,
     task_aid: AID<TaskManagerMessage>,
     inventory: AID<InventoryMessage>,
@@ -291,13 +291,15 @@ impl Worker {
 
             EntityMessage::SendInventory(inventory) => {
                 if let Some((send, item_and_amount)) = self.pending_inventory_task {
-                    if send { //worker ska ge 
+                    if send {
+                        //worker ska ge
                         let _ = self.inventory.send(InventoryMessage::GiveTo(
                             self.self_aid.clone(),
                             inventory,
                             item_and_amount,
                         ));
-                    } else { // Worker ska få svar
+                    } else {
+                        // Worker ska få svar
                         let _ = self.inventory.send(InventoryMessage::TakeFrom(
                             self.self_aid.clone(),
                             inventory,
@@ -361,9 +363,15 @@ impl Worker {
 #[cfg(test)]
 mod tests {
 
-    use crate::messages;
+    use crate::{aid, messages, worker};
 
     use super::*;
+
+    fn dummy<T: Clone + Send + 'static>() -> AID<T> {
+        AID::new(move |_aid, _mailbox| {
+            // gör ingenting
+        })
+    }
 
     #[test]
     fn apply_task() {
@@ -375,6 +383,39 @@ mod tests {
         core.new_task(task);
         assert_eq!(core.sub_tasks.len(), 1);
         core.process_task();
+    }
+
+    #[test]
+    fn apply_task_done() {
+        let start_pos = (1, 1);
+        let mut core = WorkerCore::new(start_pos);
+
+        let new_pos = (10, 10);
+        let task = Task::MoveTo(new_pos);
+        core.new_task(task);
+        assert_eq!(core.sub_tasks.len(), 1);
+        core.process_task();
+    }
+
+    #[test]
+    fn new_task() {
+        let start_pos = (1, 1);
+        let mut worker = Worker::create(dummy(), dummy(), dummy(), start_pos);
+
+        let item = Item::Mutexium;
+        let amount = 10;
+
+        let from_aid: AID<EntityMessage> = dummy();
+        let to_aid: AID<EntityMessage> = dummy();
+
+        let fram_pos = (10, 10);
+        let to_pos = (20, 20);
+
+        let task = Task::DeliverItem(item, amount, (from_aid, fram_pos), (to_aid, to_pos));
+
+        worker.core.new_task(task);
+
+        assert_eq!(worker.core.sub_tasks.len(), 4);
     }
 
     #[test]
