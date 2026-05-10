@@ -173,25 +173,6 @@ impl WorkerCore {
                 self.sub_tasks.push_back(SubTask::Idle);
             }
             _ => (),
-            // Task::AddItem { .. } => {
-            //     self.is_busy = true;
-            //     None
-            // }
-            // Task::RemoveItem { .. } => {
-            //     self.is_busy = true;
-            //     None
-            // }
-            // Task::TakeFrom { .. } => {
-            //     self.is_busy = true;
-            //     None
-            // }
-            // Task::GiveTo { .. } => {
-            //     self.is_busy = true;
-            //     None
-            // }
-            // Task::PrintInventory(_) => {
-            //     self.is_busy = true;
-            //     None
         }
     }
     /// Anropas när WorldManager godkänner en flytt.
@@ -227,7 +208,7 @@ pub struct Worker {
     core: WorkerCore,
     alive: bool,
     waiting: bool,
-    pending_inventory_task: Option<(bool, Item)>,
+    pending_inventory_task: Option<(bool, (Item,usize))>,
     world_aid: AID<WorldManagerMessage>,
     task_aid: AID<TaskManagerMessage>,
     inventory: AID<InventoryMessage>,
@@ -309,18 +290,18 @@ impl Worker {
             }
 
             EntityMessage::SendInventory(inventory) => {
-                if let Some((send, item)) = self.pending_inventory_task {
-                    if send {
+                if let Some((send, item_and_amount)) = self.pending_inventory_task {
+                    if send { //worker ska ge 
                         let _ = self.inventory.send(InventoryMessage::GiveTo(
                             self.self_aid.clone(),
                             inventory,
-                            (item, 10),
+                            (item_and_amount.0, item_and_amount.1),
                         ));
-                    } else {
+                    } else { // Worker ska få svar
                         let _ = self.inventory.send(InventoryMessage::TakeFrom(
                             self.self_aid.clone(),
                             inventory,
-                            (item, 10),
+                            (item_and_amount.0, item_and_amount.1),
                         ));
                     }
                 }
