@@ -40,8 +40,8 @@ struct WorkerCore {
 enum SubTask {
     Idle,
     Move(Pos),
-    TakeItem(AID<EntityMessage>, Item),
-    GiveItem(AID<EntityMessage>, Item),
+    TakeItem(AID<EntityMessage>, (Item,usize)),
+    GiveItem(AID<EntityMessage>, (Item,usize)),
     Done,
 }
 
@@ -161,13 +161,13 @@ impl WorkerCore {
             Task::MoveTo(pos) => {
                 self.sub_tasks.push_back(SubTask::Move(pos));
             }
-            Task::DeliverItem(item, (from_aid, from), (to_aid, to)) => {
+            Task::DeliverItem(item, amount  , (from_aid, from), (to_aid, to)) => {
                 self.sub_tasks.push_back(SubTask::Move(from));
                 self.sub_tasks
-                    .push_back(SubTask::TakeItem(from_aid.clone(), item));
+                    .push_back(SubTask::TakeItem(from_aid.clone(), (item,amount)));
                 self.sub_tasks.push_back(SubTask::Move(to));
                 self.sub_tasks
-                    .push_back(SubTask::GiveItem(to_aid.clone(), item));
+                    .push_back(SubTask::GiveItem(to_aid.clone(), (item,amount)));
             }
             Task::Idle => {
                 self.sub_tasks.push_back(SubTask::Idle);
@@ -295,13 +295,13 @@ impl Worker {
                         let _ = self.inventory.send(InventoryMessage::GiveTo(
                             self.self_aid.clone(),
                             inventory,
-                            (item_and_amount.0, item_and_amount.1),
+                            item_and_amount,
                         ));
                     } else { // Worker ska få svar
                         let _ = self.inventory.send(InventoryMessage::TakeFrom(
                             self.self_aid.clone(),
                             inventory,
-                            (item_and_amount.0, item_and_amount.1),
+                            item_and_amount,
                         ));
                     }
                 }
@@ -342,13 +342,13 @@ impl Worker {
                         .send(TaskManagerMessage::GiveMeNewTask(self.self_aid.clone()));
                     self.waiting = true;
                 }
-                SubTask::GiveItem(to, item) => {
-                    self.pending_inventory_task = Some((true, item));
+                SubTask::GiveItem(to, item_and_amount) => {
+                    self.pending_inventory_task = Some((true, item_and_amount));
                     let _ = to.send(EntityMessage::GetInventory(self.self_aid.clone()));
                     thread::sleep(TRANSFER_TIME);
                 }
-                SubTask::TakeItem(from, item) => {
-                    self.pending_inventory_task = Some((false, item));
+                SubTask::TakeItem(from, item_and_amount) => {
+                    self.pending_inventory_task = Some((false, item_and_amount));
                     let _ = from.send(EntityMessage::GetInventory(self.self_aid.clone()));
                     thread::sleep(TRANSFER_TIME);
                     //println!("Took 1000 Megaforium");
