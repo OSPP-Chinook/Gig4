@@ -8,14 +8,15 @@ use std::cmp;
 use crate::{
     aid::AID,
     messages::PlayerManagerMessage,
+    EntityMessage,
     world_manager::{HEIGHT, RawWorldArray, Tile, WIDTH, WorldGrid, WorldManagerMessage},
 };
 use crossterm::event::{Event, KeyCode, KeyEventKind, poll, read};
 use ratatui::Frame;
 use ratatui::layout::Constraint::Length;
-use ratatui::layout::{Constraint, Layout, Margin, Rect};
+use ratatui::layout::{Constraint, Layout, Margin, Rect, Offset};
 use ratatui::style::Stylize;
-use ratatui::widgets::{Block, Borders, Paragraph};
+use ratatui::widgets::{Block, Borders, Paragraph, Clear};
 
 // Width and height of a tile on the screen in characters
 // Needs to be u16 for ratatui
@@ -62,6 +63,61 @@ fn get_copy_of_world(world_array: &WorldGrid) -> RawWorldArray {
     return copy;
 }
 
+fn get_next_worker(
+    world_array: &RawWorldArray,
+    selected_aid: Option<AID<EntityMessage>>
+) -> Option<AID<EntityMessage>> {
+    let mut found = match selected_aid {
+        Some(_) => false,
+        None => true,
+    };
+    
+    for y in 0..HEIGHT {
+        for x in 0..WIDTH {
+            let tile = &world_array[y][x];
+            match tile {
+                Tile::Worker(aid) => {
+                    if found {
+                        return Some(aid.clone());
+                    }
+                    match &selected_aid {
+                        Some(sel_aid) => {
+                            if aid == sel_aid {
+                                found = true;
+                            }
+                        },
+                        None => (),
+                    };
+                }
+                _ => (),
+            }
+        }
+    }
+    return None;
+}
+
+fn get_worker_camera(
+    world_array: &RawWorldArray,
+    sel_aid: &AID<EntityMessage>,
+) -> Option<Camera> {
+    for y in 0..HEIGHT {
+        for x in 0..WIDTH {
+            let tile = &world_array[y][x];
+            match tile {
+                Tile::Worker(aid) => {
+                    if aid == sel_aid {
+                        return Some(Camera(x as i32, y as i32));
+                    }
+                }
+                _ => (),
+            }
+        }
+    }
+    // can fail because worker might have died
+    return None;
+}
+
+
 pub fn render_loop(
     aid: AID<PlayerManagerMessage>,
     mailbox: Receiver<PlayerManagerMessage>,
@@ -76,6 +132,8 @@ pub fn render_loop(
         );
 
         let mut old_world = get_copy_of_world(&world_array);
+        
+        let mut selected_aid = None;
 
         loop {
             //read all messages in mailbox
@@ -89,7 +147,7 @@ pub fn render_loop(
             let time_0 = Instant::now();
             let new_world = get_copy_of_world(&world_array);
             let time_1 = Instant::now();
-            terminal.draw(|frame| render(frame, &old_world, &new_world, camera, (time_0, time_1)))?;
+            terminal.draw(|frame| render(frame, &old_world, &new_world, camera, (time_0, time_1), &selected_aid))?;
             old_world = new_world;
             
             // reduce wait time by how much time we spent rendering
@@ -116,6 +174,16 @@ pub fn render_loop(
                             }
                             KeyCode::Char('d') => {
                                 camera.change(MOVE_CAMERA, 0);
+                            }
+                            KeyCode::Char('n') => {
+                                selected_aid = get_next_worker(&old_world, selected_aid);
+                            }
+                            KeyCode::Char('m') => {
+                                if let Some(sel_aid) = &selected_aid {
+                                    if let Some(new_camera) = get_worker_camera(&old_world, &sel_aid) {
+                                        camera = new_camera;
+                                    }
+                                }
                             }
                             _ => {}
                         }
@@ -145,15 +213,76 @@ fn is_same_tile(old_tile: &Tile, new_tile: &Tile) -> bool {
     }
 }
 
+fn get_movement(
+    old_world: &RawWorldArray,
+    tile: &Tile,
+    (x, y): (usize, usize),
+) -> (i32, i32) {
+    let mut dx = 0;
+    let mut dy = 0;
+    if y > 0          && is_same_tile(&old_world[y - 1][x], tile) {dy = -1}
+    if y + 1 < HEIGHT && is_same_tile(&old_world[y + 1][x], tile) {dy = 1}
+    if x > 0          && is_same_tile(&old_world[y][x - 1], tile) {dx = -1}
+    if x + 1 < WIDTH  && is_same_tile(&old_world[y][x + 1], tile) {dx = 1}
+    return (dx, dy);
+}
+
 fn render(
     frame: &mut Frame,
     old_world_array: &RawWorldArray,
     world_array: &RawWorldArray,
     camera: Camera,
     (time_0, time_1): (Instant, Instant),
+    selected_aid: &Option<AID<EntityMessage>>,
 ) {
     let world_area = frame.area();
+    
+    render_world_in_area(frame, &world_area, &old_world_array, &world_array, camera);
+    
+    if let Some(sel_aid) = selected_aid {
+        let (width, height) = (world_area.width / 3, world_area.height / 2);
+        let m = 2; // margin: 2 x border, which doubles as 2 x space for animation
+        if width > m && height > m {
+            // pov_area encloses a whole number of tiles
+            let width = (width - m) / TILE_SIZE.0 * TILE_SIZE.0 + m;
+            let height = (height - m) / TILE_SIZE.1 * TILE_SIZE.1 + m;
+            let pov_area = Rect::new(world_area.width - width, world_area.height - height, width, height);
 
+            frame.render_widget(Clear, pov_area);
+            
+            let pov_area_inner = pov_area.inner(Margin::new(1, 1));
+            if let Some(pov_camera) = get_worker_camera(&world_array, sel_aid) {
+                let Camera(x, y) = pov_camera;
+                let (x, y) = (x as usize, y as usize);
+                let (dx, dy) = get_movement(&old_world_array, &world_array[y][x], (x, y));
+                let pov_area_inner = pov_area_inner.offset(Offset {x: -dx, y: -dy});
+                render_world_in_area(frame, &pov_area_inner, &old_world_array, &world_array, pov_camera);
+            }
+            
+            // render this last so it covers any part of the world sticking out
+            frame.render_widget(
+                Block::new().borders(Borders::ALL).title("─ POV: you're a worker "),
+                pov_area,
+            );
+        }
+    }
+    
+    // return; // don't draw fps
+    let time_2 = Instant::now();
+    render_fps(
+        frame,
+        time_1.duration_since(time_0),
+        time_2.duration_since(time_1),
+    );
+}
+
+fn render_world_in_area(
+    frame: &mut Frame,
+    world_area: &Rect,
+    old_world_array: &RawWorldArray,
+    world_array: &RawWorldArray,
+    camera: Camera,
+) {
     let box_w = world_area.width / TILE_SIZE.0;
     let box_h = world_area.height / TILE_SIZE.1;
     
@@ -283,19 +412,8 @@ fn render(
                 None => continue,
                 Some(rect) => rect,
             };
-
-            if y > 0 && is_same_tile(&old_world_array[y - 1][x], tile) {
-                animation_dy = -1
-            }
-            if y + 1 < HEIGHT && is_same_tile(&old_world_array[y + 1][x], tile) {
-                animation_dy = 1
-            }
-            if x > 0 && is_same_tile(&old_world_array[y][x - 1], tile) {
-                animation_dx = -1
-            }
-            if x + 1 < WIDTH && is_same_tile(&old_world_array[y][x + 1], tile) {
-                animation_dx = 1
-            }
+            
+            let (animation_dx, animation_dy) = get_movement(&old_world_array, tile, (x, y));
 
             rect_at_pos.x = (rect_at_pos.x as i32 + animation_dx) as u16;
             rect_at_pos.y = (rect_at_pos.y as i32 + animation_dy) as u16;
@@ -317,14 +435,6 @@ fn render(
             }
         }
     }
-    
-    // return; // don't draw fps
-    let time_2 = Instant::now();
-    render_fps(
-        frame,
-        time_1.duration_since(time_0),
-        time_2.duration_since(time_1),
-    );
 }
 
 fn render_fps(frame: &mut Frame, dur_copy: Duration, dur_render: Duration) {
