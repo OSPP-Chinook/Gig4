@@ -26,8 +26,8 @@ pub enum TaskManagerMessage {
     CreatePath(Item, Pos, Pos),           //Create a path that delivers Item from A to B
     CreateMoveTask(Pos),
     Quit,
-    // AddTask(Task),
-    // RemoveTask(Task),
+    // AddWorkerTask(TaskDescription),           // Player adds a task that they want workers to start doing
+    // RemoveWorkerTask(TaskDescription),        // Player removes a task, i. e. request workers to stop doing it
 }
 
 pub fn main(aid: AID<TaskManagerMessage>, mailbox: Receiver<TaskManagerMessage>, grid: WorldGrid) {
