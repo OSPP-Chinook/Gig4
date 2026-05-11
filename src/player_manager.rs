@@ -1,4 +1,7 @@
 use rand::{RngExt, SeedableRng, rngs::ChaCha8Rng};
+use ratatui::layout::Direction;
+use ratatui::layout::Spacing;
+use ratatui::symbols::merge::MergeStrategy;
 use std::sync::mpsc::Receiver;
 use std::time::Duration;
 use std::time::Instant;
@@ -147,6 +150,7 @@ pub fn render_loop(
         let mut selected_aid = None;
 
         let mut time_to_wait = 0;
+        let mut show_status: bool = false;
 
         loop {
             //read all messages in mailbox
@@ -180,7 +184,7 @@ pub fn render_loop(
 
             let mut input: Input = Input { mouse_pos: None, mouse_click: MouseClick::None, key: None };
 
-            parse_input_keyboard(&mut input, &key_event, &mut camera, &mut selected_aid, &old_world);
+            parse_input_keyboard(&mut input, &key_event, &mut camera, &mut selected_aid, &old_world, &mut show_status);
             parse_input_mouse(&mut input, &mouse_event);
 
             // terminal.draw(|frame| render(frame, world_array, camera, input))?;
@@ -188,7 +192,7 @@ pub fn render_loop(
             let time_0 = Instant::now();
             let new_world = get_copy_of_world(&world_array);
             let time_1 = Instant::now();
-            terminal.draw(|frame| render(frame, &old_world, &new_world, camera, (time_0, time_1), &selected_aid))?;
+            terminal.draw(|frame| render(frame, &old_world, &new_world, camera, (time_0, time_1), &selected_aid, &show_status))?;
             old_world = new_world;
             
             // reduce wait time by how much time we spent rendering
@@ -206,6 +210,7 @@ fn parse_input_keyboard(
     camera: &mut Camera,
     selected_aid: &mut Option<AID<EntityMessage>>,
     old_world: &RawWorldArray,
+    show_status: &mut bool,
 ) {
     if event_opt.is_none() {return;}
 
@@ -224,6 +229,9 @@ fn parse_input_keyboard(
                     *camera = new_camera;
                 }
             }
+        }
+        KeyCode::Tab => {
+            *show_status = !*show_status;
         }
         _ => {input.key = Some(event.code)}
     }
@@ -288,6 +296,7 @@ fn render(
     camera: Camera,
     (time_0, time_1): (Instant, Instant),
     selected_aid: &Option<AID<EntityMessage>>,
+    show_status: &bool,
 ) {
     let world_area = frame.area();
     
@@ -296,15 +305,32 @@ fn render(
     if let Some(sel_aid) = selected_aid {
         let (width, height) = (world_area.width / 3, world_area.height / 2);
         let m = 2; // margin: 2 x border, which doubles as 2 x space for animation
+
         if width > m && height > m {
             // pov_area encloses a whole number of tiles
             let width = (width - m) / TILE_SIZE.0 * TILE_SIZE.0 + m;
             let height = (height - m) / TILE_SIZE.1 * TILE_SIZE.1 + m;
+
             let pov_area = Rect::new(world_area.width - width, world_area.height - height, width, height);
 
-            frame.render_widget(Clear, pov_area);
+            let horizontal_layout = Layout::horizontal([width])
+                .flex(ratatui::layout::Flex::End)
+                .split(frame.area());
+
+            let layout = Layout::vertical([
+                    Constraint::Length(frame.area().height - height),
+                    Constraint::Length(height),
+                ])
+                .spacing(Spacing::Overlap(1))
+                .split(horizontal_layout[0]);
+
+            if *show_status {
+                frame.render_widget(Clear, layout[0]);
+            }
             
-            let pov_area_inner = pov_area.inner(Margin::new(1, 1));
+            frame.render_widget(Clear, layout[1]);
+            
+            let pov_area_inner = layout[1].inner(Margin::new(1, 1));
             if let Some(pov_camera) = get_worker_camera(&world_array, sel_aid) {
                 let Camera(x, y) = pov_camera;
                 let (x, y) = (x as usize, y as usize);
@@ -315,9 +341,16 @@ fn render(
             
             // render this last so it covers any part of the world sticking out
             frame.render_widget(
-                Block::new().borders(Borders::ALL).title("─ POV: you're a worker "),
-                pov_area,
+                Block::new().borders(Borders::ALL).title("─ POV: you're a worker ").merge_borders(MergeStrategy::Exact),
+                layout[1],
             );
+
+            if *show_status {
+                frame.render_widget(
+                    Block::new().borders(Borders::ALL).title("─ Status ").merge_borders(MergeStrategy::Exact), 
+                    layout[0]
+                );
+            }
         }
     }
     
