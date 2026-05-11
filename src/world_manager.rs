@@ -6,7 +6,8 @@ use std::{
 
 use crate::{
     aid::AID,
-    messages::{EntityMessage, PlayerManagerMessage},
+    player_manager::PlayerManagerMessage,
+    worker::EntityMessage
 };
 
 pub const WIDTH: usize = 320;

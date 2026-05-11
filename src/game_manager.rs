@@ -3,7 +3,6 @@ use crate::{
     building::Building,
     worker::Worker,
     item::Item,
-    messages::PlayerManagerMessage,
     player_manager,
     task_manager::{self, TaskManagerMessage},
     world_manager::{self, WorldManagerMessage, init_world_grid},
@@ -12,7 +11,7 @@ use crate::{
 pub struct GameManager {
     world: AID<WorldManagerMessage>,
     task: AID<TaskManagerMessage>,
-    player: AID<PlayerManagerMessage>,
+    player: AID<player_manager::PlayerManagerMessage>,
 }
 
 impl GameManager {
@@ -81,7 +80,7 @@ impl GameManager {
             (15, 3),
             building.clone(),
         ));
-        let _ = building.send(crate::messages::EntityMessage::Task(
+        let _ = building.send(crate::worker::EntityMessage::Task(
             task_manager::Task::Produce(0),
         ));
 

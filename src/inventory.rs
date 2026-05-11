@@ -2,7 +2,8 @@ use std::{collections::HashMap};
 
 use crate::{
     aid::AID, 
-    item::Item, messages::EntityMessage
+    item::Item,
+    worker::EntityMessage
 };
 
 #[derive(Clone)]

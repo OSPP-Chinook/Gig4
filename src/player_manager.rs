@@ -7,9 +7,8 @@ use std::cmp;
 
 use crate::{
     aid::AID,
-    messages::PlayerManagerMessage,
     EntityMessage,
-    world_manager::{HEIGHT, RawWorldArray, Tile, WIDTH, WorldGrid, WorldManagerMessage},
+    world_manager::{HEIGHT, WIDTH, RawWorldArray, Tile, Pos, WorldGrid, WorldManagerMessage},
 };
 use crossterm::event::{Event, KeyCode, KeyEventKind, poll, read};
 use ratatui::Frame;
@@ -21,6 +20,13 @@ use ratatui::widgets::{Block, Borders, Paragraph, Clear};
 // Width and height of a tile on the screen in characters
 // Needs to be u16 for ratatui
 const TILE_SIZE: (u16, u16) = (3, 2);
+
+#[derive(Clone)]
+pub enum PlayerManagerMessage {
+    ShowTileInfo(Pos, Tile),
+    TileNotFound(Pos),
+    Notification(String), // if we ever want to notify the player of anything special
+}
 
 #[derive(Copy, Clone)]
 struct Camera(i32, i32);

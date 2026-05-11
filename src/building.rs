@@ -4,7 +4,7 @@ use crate::{
     aid::AID,
     inventory::{self, InventoryMessage},
     item::Item,
-    messages::EntityMessage,
+    worker::EntityMessage,
     task_manager::Task,
     world_manager::WorldManagerMessage,
 };

@@ -3,8 +3,10 @@ use std::{
     sync::mpsc::Receiver,
 };
 
-use crate::{aid::AID, messages::EntityMessage, world_manager::Tile};
 use crate::{
+    aid::AID,
+    worker::EntityMessage,
+    world_manager::Tile,
     item::Item,
     world_manager::{Pos, WorldGrid},
 };
@@ -24,6 +26,8 @@ pub enum TaskManagerMessage {
     CreatePath(Item, Pos, Pos),           //Create a path that delivers Item from A to B
     CreateMoveTask(Pos),
     Quit,
+    // AddTask(Task),
+    // RemoveTask(Task),
 }
 
 pub fn main(aid: AID<TaskManagerMessage>, mailbox: Receiver<TaskManagerMessage>, grid: WorldGrid) {

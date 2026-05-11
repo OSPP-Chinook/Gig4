@@ -3,7 +3,6 @@ mod aid;
 mod worker;
 mod building;
 mod task_manager;
-mod messages;
 mod item;
 mod game_manager;
 mod world_manager;
@@ -19,7 +18,7 @@ use inventory::{
 
 use item::Item;
 
-use crate::{game_manager::GameManager, messages::EntityMessage};
+use crate::{game_manager::GameManager, worker::EntityMessage};
 
 fn main() {
     println!("Hello, world!");

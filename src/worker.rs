@@ -1,7 +1,6 @@
 use crate::aid::AID;
 use crate::inventory::{self, InventoryMessage};
 use crate::item::Item;
-use crate::messages::EntityMessage;
 use crate::task_manager::{Task, TaskManagerMessage};
 use crate::world_manager::{Pos, WorldManagerMessage};
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -15,6 +14,18 @@ const IDLE_TIME: Duration = Duration::from_millis(500);
 const MOVE_TIME: Duration = Duration::from_millis(250);
 // duration to wait after transferring items
 const TRANSFER_TIME: Duration = Duration::from_millis(5000);
+
+#[derive(Clone)]
+pub enum EntityMessage {
+    Task(Task),
+    KillYourself,
+    Ok,
+    Err,
+    InventoryOk,
+    InventoryErr,
+    GetInventory(AID<EntityMessage>),
+    SendInventory(AID<InventoryMessage>),
+}
 
 /// Ren logik- och state för en worker.
 ///
@@ -379,8 +390,6 @@ impl Worker {
 
 #[cfg(test)]
 mod tests {
-
-    use crate::messages;
 
     use super::*;
 
