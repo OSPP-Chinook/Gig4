@@ -45,5 +45,29 @@
         "category": "raw-nonmetal",
         "description": "A hunk of raw carbon. Add this to iron to make it stronger.",
         "stackLimit": 256
+    },
+    
+    {
+        "id": "gold-ore",
+        "name": "Gold Ore",
+        "category": "ore",
+        "description": "Raw gold ore that can be turned into ingots at a smelter.",
+        "stackLimit": 256
+    },
+
+    {
+        "id": "gold-ingot",
+        "name": "Gold Ingot",
+        "category": "ingot",
+        "description": "A refined and workable gold ingot. This metal is praised for its rarity, its nobility, and its electrical properties. Pure gold is rather soft compared to some other metals.",
+        "stackLimit": 64
+    },
+    
+    {
+        "id": "gold-wire",
+        "name": "Gold Wire",
+        "category": "processed-goods",
+        "description": "A wire made of gold. Gold's electrical conductivity makes it desirable to use in higher-end circuitry.",
+        "stackLimit": 256
     }
 ]

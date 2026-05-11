@@ -21,5 +21,11 @@
         "id": "worker",
         "name": "Worker",
         "description": "Workers carry items around according to your requests. They're your only way of moving items between buildings, so you may need to deploy more of them as you scale your production."
+    },
+
+    {
+        "id": "processed-goods",
+        "name": "Processed Goods",
+        "description": "The result of processing materials in special-purpose factories. Some of these items may need to be processed even further."
     }
 ]
