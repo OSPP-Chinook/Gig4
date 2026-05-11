@@ -16,9 +16,9 @@ const MOVE_TIME: Duration = Duration::from_millis(250);
 // duration to wait after transferring items
 const TRANSFER_TIME: Duration = Duration::from_millis(5000);
 
-/// Ren logik- och state för en entity.
+/// Ren logik- och state för en worker.
 ///
-/// EntityCore ansvarar för:
+/// WorkerCore ansvarar för:
 /// - att hålla nuvarande position (`current_pos`)
 /// - att lagra en väntande flytt (`pending_move`)
 /// - att behandla inkommande tasks
@@ -26,9 +26,9 @@ const TRANSFER_TIME: Duration = Duration::from_millis(5000);
 /// - att uppdatera state baserat på Ok/Err från WorldManager
 ///
 /// Innehåller ingen actor‑logik.
-/// Används av `Entity` som den faktiska logikdelen.
+/// Används av `Worker` som den faktiska logikdelen.
 #[allow(dead_code)]
-struct EntityCore {
+struct WorkerCore {
     current_pos: Pos,
     pending_move: Option<Pos>,
     sub_tasks: VecDeque<SubTask>,
@@ -69,10 +69,10 @@ fn neighbors(pos: Pos) -> HashSet<Pos> {
 }
 
 #[allow(dead_code)]
-impl EntityCore {
-    // skapar en EntityCore  med given start position
-    fn new(start_pos: Pos) -> EntityCore {
-        EntityCore {
+impl WorkerCore {
+    // skapar en WorkerCore med given start position
+    fn new(start_pos: Pos) -> WorkerCore {
+        WorkerCore {
             current_pos: start_pos,
             pending_move: None,
             sub_tasks: VecDeque::new(),
@@ -155,7 +155,7 @@ impl EntityCore {
     }
 
     /// Behandlar en Task och returnerar eventuell Move-position
-    /// som Entity-aktorn ska skicka till WorldManager.
+    /// som Worker-aktorn ska skicka till WorldManager.
     fn new_task(&mut self, task: Task) {
         match task {
             Task::MoveTo(pos) => {
@@ -213,18 +213,18 @@ impl EntityCore {
     }
 }
 
-/// Actor som representerar en Entity i världen.
+/// Actor som representerar en Worker i världen.
 ///
-/// Entity ansvarar för:
+/// Worker ansvarar för:
 /// - att ta emot `EntityMessage`
-/// - att vidarebefordra tasks till `EntityCore`
+/// - att vidarebefordra tasks till `WorkerCore`
 /// - att skicka `WorldManagerMessage::Move` när core signalerar en flytt
 /// - att uppdatera core-state baserat på Ok/Err från WorldManager
 ///
-/// All logik ligger i `EntityCore`.  
-/// Entity själv hanterar endast actor‑beteende och message‑flow.
-pub struct Entity {
-    core: EntityCore,
+/// All logik ligger i `WorkerCore`.  
+/// Worker själv hanterar endast actor‑beteende och message‑flow.
+pub struct Worker {
+    core: WorkerCore,
     alive: bool,
     waiting: bool,
     pending_inventory_task: Option<(bool, Item)>,
@@ -234,16 +234,16 @@ pub struct Entity {
     self_aid: AID<EntityMessage>,
 }
 
-impl Entity {
+impl Worker {
     pub fn new(
         world: AID<WorldManagerMessage>,
         task: AID<TaskManagerMessage>,
         start_pos: Pos,
     ) -> AID<EntityMessage> {
         AID::new(move |aid, mailbox| {
-            let mut entity = Entity::create(aid.clone(), world, task, start_pos);
+            let mut worker = Worker::create(aid.clone(), world, task, start_pos);
 
-            entity.run(mailbox);
+            worker.run(mailbox);
         })
     }
 
@@ -253,8 +253,8 @@ impl Entity {
         task: AID<TaskManagerMessage>,
         start_pos: Pos,
     ) -> Self {
-        Entity {
-            core: EntityCore::new(start_pos),
+        Worker {
+            core: WorkerCore::new(start_pos),
             alive: true,
             waiting: false,
             pending_inventory_task: None,
@@ -281,7 +281,7 @@ impl Entity {
 
             EntityMessage::Ok => {
                 //world manager godkände flyyten
-                //uppdatera EntityCore-> cunnrent_pos
+                //uppdatera WorkerCore-> cunnrent_pos
                 self.core.apply_ok();
                 self.waiting = false;
                 thread::sleep(MOVE_TIME);
@@ -314,13 +314,13 @@ impl Entity {
                         let _ = self.inventory.send(InventoryMessage::GiveTo(
                             self.self_aid.clone(),
                             inventory,
-                            vec!((item, 10)),
+                            (item, 10),
                         ));
                     } else {
                         let _ = self.inventory.send(InventoryMessage::TakeFrom(
                             self.self_aid.clone(),
                             inventory,
-                            vec!((item, 10)),
+                            (item, 10),
                         ));
                     }
                 }
@@ -387,7 +387,7 @@ mod tests {
     #[test]
     fn apply_task() {
         let start_pos = (1, 1);
-        let mut core = EntityCore::new(start_pos);
+        let mut core = WorkerCore::new(start_pos);
 
         let new_pos = (10, 10);
         let task = Task::MoveTo(new_pos);
@@ -399,7 +399,7 @@ mod tests {
     #[test]
     fn apply_ok() {
         let start_pos = (1, 1);
-        let mut core = EntityCore::new(start_pos);
+        let mut core = WorkerCore::new(start_pos);
 
         let new_pos = (20, 20);
         let task = Task::MoveTo(new_pos);
@@ -412,7 +412,7 @@ mod tests {
     #[test]
     fn apply_err() {
         let start_pos = (1, 1);
-        let mut core = EntityCore::new(start_pos);
+        let mut core = WorkerCore::new(start_pos);
 
         let new_pos = (3, 8);
 
