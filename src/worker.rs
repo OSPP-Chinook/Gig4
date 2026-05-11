@@ -412,7 +412,7 @@ mod tests {
         let mut core = WorkerCore::new(start_pos);
 
         // position utanför världen världen är 32,16
-        let impossible_pos = (100, 100);
+        let impossible_pos = (1000, 1000);
 
         core.new_task(Task::MoveTo(impossible_pos));
 
