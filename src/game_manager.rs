@@ -1,12 +1,12 @@
-use std::{thread, time::Duration};
-
 use crate::{
     aid::AID,
     building::Building,
-    entity::Entity,
-    messages::{PlayerManagerMessage, TaskManagerMessage},
+    worker::Worker,
+    item::Item,
+    messages::PlayerManagerMessage,
     player_manager,
-    world_manager::{self, WorldManagerMessage},
+    task_manager::{self, TaskManagerMessage},
+    world_manager::{self, WorldManagerMessage, init_world_grid},
 };
 
 pub struct GameManager {
@@ -17,12 +17,21 @@ pub struct GameManager {
 
 impl GameManager {
     pub fn new() -> Self {
-        let world = AID::new(world_manager::main);
-        let task = AID::new(|_, _| {});
+        let grid = init_world_grid();
+
+        let world = AID::new({
+            let grid = grid.clone();
+            |aid, mailbox| world_manager::main(aid, mailbox, grid)
+        });
+        let task = AID::new({
+            let grid = grid.clone();
+            |aid, mailbox| task_manager::main(aid, mailbox, grid)
+        });
         let player = AID::new({
             let world = world.clone();
-            move |aid, mailbox| {
-                let _ = player_manager::render_loop(aid, mailbox, world);
+            let grid = grid.clone();
+            |aid, mailbox| {
+                let _ = player_manager::render_loop(aid, mailbox, world, grid);
             }
         });
 
@@ -42,42 +51,48 @@ impl GameManager {
     }
 
     fn demo(&self) {
+        // place obstacles
+        for pos in [
+            (2, 3),
+            (2, 2),
+            (3, 2),
+            (4, 2),
+            (5, 2),
+            (6, 2),
+            (7, 2),
+            (8, 2),
+            (8, 3),
+            (8, 4),
+            (8, 5),
+            (8, 6),
+            (9, 6),
+            (7, 6),
+        ] {
+            let _ = self.world.send(WorldManagerMessage::PlaceObstacle(pos));
+        }
+
         let building = Building::new(self.world.clone());
-        let building2 = Building::new(self.world.clone());
         let _ = self
             .world
-            .send(WorldManagerMessage::PlaceBuilding((3, 3), building.clone()));
+            .send(WorldManagerMessage::PlaceBuilding((3, 5), building.clone()));
+
+        let building = Building::new(self.world.clone());
         let _ = self.world.send(WorldManagerMessage::PlaceBuilding(
             (15, 3),
-            building2.clone(),
+            building.clone(),
+        ));
+        let _ = building.send(crate::messages::EntityMessage::Task(
+            task_manager::Task::Produce(0),
         ));
 
-        let mut x = 10;
-        let y = 3;
-
-        let worker = Entity::new(self.world.clone(), self.task.clone(), (10, 3));
+        let worker = Worker::new(self.world.clone(), self.task.clone(), (10, 3));
         let _ = self
             .world
-            .send(WorldManagerMessage::PlaceWorker((x, y), worker.clone()));
-
-        loop {
-            while x < 14 {
-                thread::sleep(Duration::from_millis(250));
-                x += 1;
-                let _ = worker.send(crate::messages::EntityMessage::Task(
-                    crate::messages::Task::MoveTo((x, y)),
-                ));
-            }
-            thread::sleep(Duration::from_millis(2500));
-
-            while x > 4 {
-                thread::sleep(Duration::from_millis(250));
-                x -= 1;
-                let _ = worker.send(crate::messages::EntityMessage::Task(
-                    crate::messages::Task::MoveTo((x, y)),
-                ));
-            }
-            thread::sleep(Duration::from_millis(2500));
-        }
+            .send(WorldManagerMessage::PlaceWorker((10, 3), worker.clone()));
+        let _ = self.task.send(TaskManagerMessage::CreatePath(
+            Item::Mutexium,
+            (15, 3),
+            (3, 5),
+        ));
     }
 }

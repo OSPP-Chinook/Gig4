@@ -1,10 +1,11 @@
+use rand::{RngExt, SeedableRng, rngs::ChaCha8Rng};
 use std::sync::mpsc::Receiver;
 use std::time::Duration;
 
 use crate::{
     aid::AID,
     messages::PlayerManagerMessage,
-    world_manager::{HEIGHT, Tile, WIDTH, WorldGrid, WorldManagerMessage},
+    world_manager::{HEIGHT, RawWorldArray, Tile, WIDTH, WorldGrid, WorldManagerMessage},
 };
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, MouseButton, MouseEvent, MouseEventKind, poll, read};
 use ratatui::Frame;
@@ -14,7 +15,8 @@ use ratatui::style::Stylize;
 use ratatui::widgets::{Block, Borders, Paragraph};
 
 // Width and height of a tile on the screen in characters
-const TILE_SIZE: usize = 2;
+// Needs to be u16 for ratatui
+const TILE_SIZE: (u16, u16) = (3, 2);
 
 enum MouseClick {
     None,
@@ -37,11 +39,19 @@ impl Camera {
         let height = HEIGHT.try_into().unwrap();
         let mut x = self.0 + dx;
         let mut y = self.1 + dy;
-        if x < 0 {x = 0;}
-        if y < 0 {y = 0;}
-        if x >= width {x = width - 1;}
-        if y >= height {y = height - 1;}
-        
+        if x < 0 {
+            x = 0;
+        }
+        if y < 0 {
+            y = 0;
+        }
+        if x >= width {
+            x = width - 1;
+        }
+        if y >= height {
+            y = height - 1;
+        }
+
         self.0 = x;
         self.1 = y;
     }
@@ -51,28 +61,34 @@ impl Camera {
 // The default setting looks weird now, but it will make sense when the world is more populated.
 const MOVE_CAMERA: i32 = 1;
 
+// We do this for two reasons:
+// 1. To have 2 copies of the world for comparing
+// 2. To not lock the whole world while rendering
+fn get_copy_of_world(world_array: &WorldGrid) -> RawWorldArray {
+    let world = &world_array.lock().unwrap();
+    let copy = world.to_vec();
+    return copy;
+}
+
 pub fn render_loop(
     aid: AID<PlayerManagerMessage>,
     mailbox: Receiver<PlayerManagerMessage>,
     world: AID<WorldManagerMessage>,
+    world_array: WorldGrid,
 ) -> Result<(), Box<dyn std::error::Error>> {
     ratatui::run(|terminal| {
         // camera starts centered on the world
-        let mut camera = Camera((WIDTH / 2).try_into().unwrap(), (HEIGHT / 2).try_into().unwrap());
-        
+        let mut camera = Camera(
+            (WIDTH / 2).try_into().unwrap(),
+            (HEIGHT / 2).try_into().unwrap(),
+        );
+
+        let mut old_world = get_copy_of_world(&world_array);
+
         loop {
-            let _ = world.send(WorldManagerMessage::GetDisplay(aid.clone()));
-
-            let mut world_array: WorldGrid =
-                std::array::from_fn(|_| std::array::from_fn(|_| Tile::Empty));
-
-            for msg in &mailbox {
+            //read all messages in mailbox
+            while let Ok(msg) = mailbox.try_recv() {
                 match msg {
-                    PlayerManagerMessage::WorldUpdate(arr) => {
-                        world_array = arr;
-                        let _ = world.send(WorldManagerMessage::GetDisplay(aid.clone()));
-                        break;
-                    }
                     // TODO: Handle more message types
                     _ => {}
                 }
@@ -80,8 +96,12 @@ pub fn render_loop(
 
             let mut key_event: Option<KeyEvent> = None;
             let mut mouse_event: Option<MouseEvent> = None;
+            let new_world = get_copy_of_world(&world_array);
+            terminal.draw(|frame| render(frame, &old_world, &new_world, camera))?;
+            old_world = new_world;
 
-            if poll(Duration::from_millis(30))? {
+            // 50 ms looks better with animations
+            if poll(Duration::from_millis(50))? {
                 match read()? {
                     Event::Key(event) if event.kind == KeyEventKind::Press => {
                         // Det här måste ske utanför input handler eftersom 
@@ -141,58 +161,161 @@ fn parse_input_mouse(input: &mut Input, event_opt: &Option<MouseEvent>) {
     }
 }
 
-fn render(frame: &mut Frame, world_array: WorldGrid, camera: Camera, input: Input) {
-    let world_area = frame.area().inner(Margin::new(4, 4));
+fn is_same_tile(old_tile: &Tile, new_tile: &Tile) -> bool {
+    match old_tile {
+        Tile::Worker(aid) => match new_tile {
+            Tile::Worker(aid_new) => {
+                return aid == aid_new;
+            }
+            _ => false,
+        },
+        Tile::Building(aid) => match new_tile {
+            Tile::Building(aid_new) => {
+                return aid == aid_new;
+            }
+            _ => false,
+        },
+        _ => false,
+    }
+}
 
-    frame.render_widget(
-        Block::new().borders(Borders::ALL).title("World"),
-        world_area.outer(Margin::new(1, 1)),
-    );
-    
-    let box_w = world_area.width / 2;
-    let box_h = world_area.height / 2;
-    
+fn render(
+    frame: &mut Frame,
+    old_world_array: &RawWorldArray,
+    world_array: &RawWorldArray,
+    camera: Camera,
+) {
+    let world_area = frame.area();
+
+    let box_w = world_area.width / TILE_SIZE.0;
+    let box_h = world_area.height / TILE_SIZE.1;
+
+    // this is repeated several times, so it's a closure here
+    let get_rect_from_world_xy = |x: i32, y: i32| {
+        // divide by 2 to get center of screen
+        let draw_pos = (
+            x + (box_w / 2) as i32 - camera.0,
+            y + (box_h / 2) as i32 - camera.1,
+        );
+        return if 0 <= draw_pos.0
+            && draw_pos.0 < box_w.into()
+            && 0 <= draw_pos.1
+            && draw_pos.1 < box_h.into()
+        {
+            // tile in visible area
+            let rx: i32 = world_area.x as i32 + TILE_SIZE.0 as i32 * draw_pos.0;
+            let ry: i32 = world_area.y as i32 + TILE_SIZE.1 as i32 * draw_pos.1;
+            Some(Rect::new(rx as u16, ry as u16, TILE_SIZE.0, TILE_SIZE.1))
+        } else {
+            // tile outside visible area
+            None
+        };
+    };
+
+    // iterate over visible area
+    // draw solid background if outside world
     for y in 0..box_h {
         for x in 0..box_w {
+            // inverse of draw_pos higher up
+            let world_pos = (
+                x as i32 - (box_w / 2) as i32 + camera.0,
+                y as i32 - (box_h / 2) as i32 + camera.1,
+            );
+
+            if 0 <= world_pos.0
+                && world_pos.0 < WIDTH as i32
+                && 0 <= world_pos.1
+                && world_pos.1 < HEIGHT as i32
+            {
+                // if inside world: skip
+                continue;
+            }
+
             // draw a background in the "World" area
             // this is so the player can tell the difference between buildable area and surrounding borders
-            let rect = Rect::new(world_area.x + 2*x, world_area.y + 2*y, 2, 2);
-            let square = Paragraph::new(".").gray();
+            let rect = Rect::new(
+                world_area.x + TILE_SIZE.0 * x,
+                world_area.y + TILE_SIZE.1 * y,
+                TILE_SIZE.0,
+                TILE_SIZE.1,
+            );
+
+            let border_tile = "...\n...";
+            let square = Paragraph::new(border_tile).gray();
             frame.render_widget(square, rect);
         }
     }
-    
+
+    // aquire lock until it falls out of scope
+    // let world_array = &world_array.lock().unwrap();
+
+    // a set seed gives us the same values in the world every time
+    let mut rng = ChaCha8Rng::seed_from_u64(5);
+
+    // draw background
+    // we do this separately so objects are correctly layered on top of the background
+    for y in 0..HEIGHT {
+        for x in 0..WIDTH {
+            // needs to run on every iteration
+            // skipping an iteration would mess up the order
+            let tile_rand: u16 = rng.random();
+
+            let mut rect_at_pos = match get_rect_from_world_xy(x as i32, y as i32) {
+                None => continue,
+                Some(rect) => rect,
+            };
+
+            let random_tiles = [".", " .", "   .", "\n.", "\n .", "\n  ."];
+
+            // 1/16 chance
+            if tile_rand < 4004 {
+                let square = Paragraph::new(random_tiles[(tile_rand % 6) as usize]).gray();
+                frame.render_widget(square, rect_at_pos);
+            }
+        }
+    }
+
+    // draw world
     for y in 0..HEIGHT {
         for x in 0..WIDTH {
             let tile = &world_array[y][x];
-            
-            let y: i32 = y.try_into().unwrap();
-            let x: i32 = x.try_into().unwrap();
-            let draw_pos = (x + (box_w/2) as i32 - camera.0, y + (box_h/2) as i32 - camera.1);
-            let rect_at_pos = if
-                0 <= draw_pos.0 && draw_pos.0 < box_w.into() &&
-                0 <= draw_pos.1 && draw_pos.1 < box_h.into()
-            {
-                // tile in visible grid
-                Rect::new(world_area.x + (2*draw_pos.0 as u16), world_area.y + (2*draw_pos.1 as u16), 2, 2)
-            } else {
-                continue;
+
+            let mut animation_dx = 0;
+            let mut animation_dy = 0;
+
+            let mut rect_at_pos = match get_rect_from_world_xy(x as i32, y as i32) {
+                None => continue,
+                Some(rect) => rect,
             };
-            
-            
-            
+
+            if y > 0 && is_same_tile(&old_world_array[y - 1][x], tile) {
+                animation_dy = -1
+            }
+            if y + 1 < HEIGHT && is_same_tile(&old_world_array[y + 1][x], tile) {
+                animation_dy = 1
+            }
+            if x > 0 && is_same_tile(&old_world_array[y][x - 1], tile) {
+                animation_dx = -1
+            }
+            if x + 1 < WIDTH && is_same_tile(&old_world_array[y][x + 1], tile) {
+                animation_dx = 1
+            }
+
+            rect_at_pos.x = (rect_at_pos.x as i32 + animation_dx) as u16;
+            rect_at_pos.y = (rect_at_pos.y as i32 + animation_dy) as u16;
+
             match tile {
-                Tile::Empty => {
-                    // overwrite background
-                    let square = Paragraph::new("  \n  ");
+                Tile::Empty => {}
+                Tile::Obstacle => {
+                    let square = Paragraph::new("███\n███").green();
                     frame.render_widget(square, rect_at_pos);
                 }
                 Tile::Worker(_aid) => {
-                    let square = Paragraph::new("╭╮\n╰╯").blue();
+                    let square = Paragraph::new("╭─╮\n╰─╯").blue();
                     frame.render_widget(square, rect_at_pos);
                 }
                 Tile::Building(_aid) => {
-                    let square = Paragraph::new("╔╗\n╚╝").red();
+                    let square = Paragraph::new("╔═╗\n╚═╝").red();
                     frame.render_widget(square, rect_at_pos);
                 }
             }

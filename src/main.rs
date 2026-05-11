@@ -1,7 +1,8 @@
 mod inventory;
 mod aid;
-mod entity;
+mod worker;
 mod building;
+mod task_manager;
 mod messages;
 mod item;
 mod game_manager;
