@@ -149,7 +149,7 @@ pub struct RecipeAsset {
     pub id: String,
     pub inputs: ItemList,
     pub outputs: ItemList,
-    pub time: u32,
+    pub time: usize,
 }
 
 #[derive(Debug, Clone, Deserialize)]
