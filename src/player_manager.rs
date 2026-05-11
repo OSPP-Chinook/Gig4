@@ -1,6 +1,9 @@
 use rand::{RngExt, SeedableRng, rngs::ChaCha8Rng};
 use std::sync::mpsc::Receiver;
 use std::time::Duration;
+use std::time::Instant;
+use std::cmp::Ordering;
+use std::cmp;
 
 use crate::{
     aid::AID,
@@ -83,12 +86,19 @@ pub fn render_loop(
                 }
             }
 
+            let time_0 = Instant::now();
             let new_world = get_copy_of_world(&world_array);
-            terminal.draw(|frame| render(frame, &old_world, &new_world, camera))?;
+            let time_1 = Instant::now();
+            terminal.draw(|frame| render(frame, &old_world, &new_world, camera, (time_0, time_1)))?;
             old_world = new_world;
+            
+            // reduce wait time by how much time we spent rendering
+            // I can't tell if this makes any difference, or if it doesn't work with poll()
+            let time_to_wait = 50;
+            let time_to_wait = cmp::max(0, time_to_wait - time_0.elapsed().as_millis() as i64) as u64;
 
             // 50 ms looks better with animations
-            if poll(Duration::from_millis(50))? {
+            if poll(Duration::from_millis(time_to_wait))? {
                 match read()? {
                     Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
                         match key_event.code {
@@ -140,11 +150,23 @@ fn render(
     old_world_array: &RawWorldArray,
     world_array: &RawWorldArray,
     camera: Camera,
+    (time_0, time_1): (Instant, Instant),
 ) {
     let world_area = frame.area();
 
     let box_w = world_area.width / TILE_SIZE.0;
     let box_h = world_area.height / TILE_SIZE.1;
+    
+    let is_row_in_world = |y: i32| {
+        let draw_y = y + (box_h / 2) as i32 - camera.1;
+        if draw_y < 0 {
+            return Ordering::Less;
+        }
+        if draw_y >= box_h.into() {
+            return Ordering::Greater;
+        }
+        return Ordering::Equal;
+    };
 
     // this is repeated several times, so it's a closure here
     let get_rect_from_world_xy = |x: i32, y: i32| {
@@ -206,15 +228,27 @@ fn render(
     // let world_array = &world_array.lock().unwrap();
 
     // a set seed gives us the same values in the world every time
+    // this rng is used to set the seed for every row
     let mut rng = ChaCha8Rng::seed_from_u64(5);
 
     // draw background
     // we do this separately so objects are correctly layered on top of the background
     for y in 0..HEIGHT {
+        // this rng applies to every row
+        // needs to run on every iteration
+        // skipping an iteration would mess up the order
+        let mut rng_row = ChaCha8Rng::seed_from_u64(rng.random());
+        
+        match is_row_in_world(y as i32) {
+            Ordering::Less => continue,
+            Ordering::Greater => break,
+            _ => (),
+        }
+        
         for x in 0..WIDTH {
             // needs to run on every iteration
             // skipping an iteration would mess up the order
-            let tile_rand: u16 = rng.random();
+            let tile_rand: u16 = rng_row.random();
 
             let mut rect_at_pos = match get_rect_from_world_xy(x as i32, y as i32) {
                 None => continue,
@@ -233,6 +267,12 @@ fn render(
 
     // draw world
     for y in 0..HEIGHT {
+        match is_row_in_world(y as i32) {
+            Ordering::Less => continue,
+            Ordering::Greater => break,
+            _ => (),
+        }
+        
         for x in 0..WIDTH {
             let tile = &world_array[y][x];
 
@@ -277,4 +317,28 @@ fn render(
             }
         }
     }
+    
+    // return; // don't draw fps
+    let time_2 = Instant::now();
+    render_fps(
+        frame,
+        time_1.duration_since(time_0),
+        time_2.duration_since(time_1),
+    );
+}
+
+fn render_fps(frame: &mut Frame, dur_copy: Duration, dur_render: Duration) {
+    let width = frame.area().width;
+    
+    // time to run get_copy_of_world() 
+    let text = format!("{} ms", dur_copy.as_millis());
+    let len = text.len() as u16;
+    let rect = Rect::new(width - len, 0, len, 1);
+    frame.render_widget(Paragraph::new(text), rect);
+    
+    // time to run render()
+    let text = format!("{} ms", dur_render.as_millis());
+    let len = text.len() as u16;
+    let rect = Rect::new(width - len, 1, len, 1);
+    frame.render_widget(Paragraph::new(text), rect);
 }
