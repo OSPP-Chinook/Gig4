@@ -1,4 +1,7 @@
 use rand::{RngExt, SeedableRng, rngs::ChaCha8Rng};
+use ratatui::layout::Direction;
+use ratatui::layout::Spacing;
+use ratatui::symbols::merge::MergeStrategy;
 use std::sync::mpsc::Receiver;
 use std::time::Duration;
 use std::time::Instant;
@@ -135,6 +138,8 @@ pub fn render_loop(
         
         let mut selected_aid = None;
 
+        let mut show_status: bool = false;
+
         loop {
             //read all messages in mailbox
             while let Ok(msg) = mailbox.try_recv() {
@@ -147,7 +152,7 @@ pub fn render_loop(
             let time_0 = Instant::now();
             let new_world = get_copy_of_world(&world_array);
             let time_1 = Instant::now();
-            terminal.draw(|frame| render(frame, &old_world, &new_world, camera, (time_0, time_1), &selected_aid))?;
+            terminal.draw(|frame| render(frame, &old_world, &new_world, camera, (time_0, time_1), &selected_aid, &show_status))?;
             old_world = new_world;
             
             // reduce wait time by how much time we spent rendering
@@ -184,6 +189,9 @@ pub fn render_loop(
                                         camera = new_camera;
                                     }
                                 }
+                            }
+                            KeyCode::Tab => {
+                                show_status = !show_status;
                             }
                             _ => {}
                         }
@@ -234,6 +242,7 @@ fn render(
     camera: Camera,
     (time_0, time_1): (Instant, Instant),
     selected_aid: &Option<AID<EntityMessage>>,
+    show_status: &bool,
 ) {
     let world_area = frame.area();
     
@@ -242,15 +251,32 @@ fn render(
     if let Some(sel_aid) = selected_aid {
         let (width, height) = (world_area.width / 3, world_area.height / 2);
         let m = 2; // margin: 2 x border, which doubles as 2 x space for animation
+
         if width > m && height > m {
             // pov_area encloses a whole number of tiles
             let width = (width - m) / TILE_SIZE.0 * TILE_SIZE.0 + m;
             let height = (height - m) / TILE_SIZE.1 * TILE_SIZE.1 + m;
+
             let pov_area = Rect::new(world_area.width - width, world_area.height - height, width, height);
 
-            frame.render_widget(Clear, pov_area);
+            let horizontal_layout = Layout::horizontal([width])
+                .flex(ratatui::layout::Flex::End)
+                .split(frame.area());
+
+            let layout = Layout::vertical([
+                    Constraint::Length(frame.area().height - height),
+                    Constraint::Length(height),
+                ])
+                .spacing(Spacing::Overlap(1))
+                .split(horizontal_layout[0]);
+
+            if *show_status {
+                frame.render_widget(Clear, layout[0]);
+            }
             
-            let pov_area_inner = pov_area.inner(Margin::new(1, 1));
+            frame.render_widget(Clear, layout[1]);
+            
+            let pov_area_inner = layout[1].inner(Margin::new(1, 1));
             if let Some(pov_camera) = get_worker_camera(&world_array, sel_aid) {
                 let Camera(x, y) = pov_camera;
                 let (x, y) = (x as usize, y as usize);
@@ -261,9 +287,16 @@ fn render(
             
             // render this last so it covers any part of the world sticking out
             frame.render_widget(
-                Block::new().borders(Borders::ALL).title("─ POV: you're a worker "),
-                pov_area,
+                Block::new().borders(Borders::ALL).title("─ POV: you're a worker ").merge_borders(MergeStrategy::Exact),
+                layout[1],
             );
+
+            if *show_status {
+                frame.render_widget(
+                    Block::new().borders(Borders::ALL).title("─ Status ").merge_borders(MergeStrategy::Exact), 
+                    layout[0]
+                );
+            }
         }
     }
     
