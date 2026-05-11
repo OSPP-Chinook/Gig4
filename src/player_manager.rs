@@ -257,8 +257,6 @@ fn render(
             let width = (width - m) / TILE_SIZE.0 * TILE_SIZE.0 + m;
             let height = (height - m) / TILE_SIZE.1 * TILE_SIZE.1 + m;
 
-            let pov_area = Rect::new(world_area.width - width, world_area.height - height, width, height);
-
             let horizontal_layout = Layout::horizontal([width])
                 .flex(ratatui::layout::Flex::End)
                 .split(frame.area());
@@ -273,7 +271,7 @@ fn render(
             if *show_status {
                 frame.render_widget(Clear, layout[0]);
             }
-            
+
             frame.render_widget(Clear, layout[1]);
             
             let pov_area_inner = layout[1].inner(Margin::new(1, 1));
@@ -287,7 +285,7 @@ fn render(
             
             // render this last so it covers any part of the world sticking out
             frame.render_widget(
-                Block::new().borders(Borders::ALL).title("─ POV: you're a worker ").merge_borders(MergeStrategy::Exact),
+                Block::new().borders(Borders::ALL).title("─ POV: you're a worker ").merge_borders(MergeStrategy::Replace),
                 layout[1],
             );
 
