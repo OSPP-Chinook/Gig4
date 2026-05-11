@@ -10,7 +10,7 @@ use crate::{
     EntityMessage,
     world_manager::{HEIGHT, WIDTH, RawWorldArray, Tile, Pos, WorldGrid, WorldManagerMessage},
 };
-use crossterm::event::{Event, KeyCode, KeyEventKind, poll, read};
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, MouseButton, MouseEvent, MouseEventKind, poll, read};
 use ratatui::Frame;
 use ratatui::layout::Constraint::Length;
 use ratatui::layout::{Constraint, Layout, Margin, Rect, Offset};
@@ -26,6 +26,17 @@ pub enum PlayerManagerMessage {
     ShowTileInfo(Pos, Tile),
     TileNotFound(Pos),
     Notification(String), // if we ever want to notify the player of anything special
+}
+
+enum MouseClick {
+    None,
+    Left,
+    Right,
+}
+struct Input {
+    mouse_pos: Option<(u16, u16)>, // (x, y)
+    mouse_click: MouseClick,
+    key: Option<KeyCode>,
 }
 
 #[derive(Copy, Clone)]
@@ -141,6 +152,8 @@ pub fn render_loop(
         
         let mut selected_aid = None;
 
+        let mut time_to_wait = 0;
+
         loop {
             //read all messages in mailbox
             while let Ok(msg) = mailbox.try_recv() {
@@ -149,6 +162,34 @@ pub fn render_loop(
                     _ => {}
                 }
             }
+
+            let mut key_event: Option<KeyEvent> = None;
+            let mut mouse_event: Option<MouseEvent> = None;
+
+            // 50 ms looks better with animations
+            if poll(Duration::from_millis(time_to_wait))? {
+                match read()? {
+                    Event::Key(event) if event.kind == KeyEventKind::Press => {
+                        // Det här måste ske utanför input handler eftersom 
+                        // det ska stänga av loopen
+                        if event.code == KeyCode::Char('q') {
+                            break Ok(());
+                        }
+                        key_event = Some(event);
+                    }
+                    Event::Mouse(event) => {
+                        mouse_event = Some(event);
+                    }
+                    _ => {}
+                }
+            }
+
+            let mut input: Input = Input { mouse_pos: None, mouse_click: MouseClick::None, key: None };
+
+            parse_input_keyboard(&mut input, &key_event, &mut camera, &mut selected_aid, &old_world);
+            parse_input_mouse(&mut input, &mouse_event);
+
+            // terminal.draw(|frame| render(frame, world_array, camera, input))?;
 
             let time_0 = Instant::now();
             let new_world = get_copy_of_world(&world_array);
@@ -161,44 +202,57 @@ pub fn render_loop(
             let time_to_wait = 50;
             let time_to_wait = cmp::max(0, time_to_wait - time_0.elapsed().as_millis() as i64) as u64;
 
-            // 50 ms looks better with animations
-            if poll(Duration::from_millis(time_to_wait))? {
-                match read()? {
-                    Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
-                        match key_event.code {
-                            KeyCode::Char('q') => {
-                                break Ok(());
-                            }
-                            KeyCode::Char('w') => {
-                                camera.change(0, -MOVE_CAMERA);
-                            }
-                            KeyCode::Char('s') => {
-                                camera.change(0, MOVE_CAMERA);
-                            }
-                            KeyCode::Char('a') => {
-                                camera.change(-MOVE_CAMERA, 0);
-                            }
-                            KeyCode::Char('d') => {
-                                camera.change(MOVE_CAMERA, 0);
-                            }
-                            KeyCode::Char('n') => {
-                                selected_aid = get_next_worker(&old_world, selected_aid);
-                            }
-                            KeyCode::Char('m') => {
-                                if let Some(sel_aid) = &selected_aid {
-                                    if let Some(new_camera) = get_worker_camera(&old_world, &sel_aid) {
-                                        camera = new_camera;
-                                    }
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-                    _ => {}
+        }
+    })
+}
+
+fn parse_input_keyboard(
+    input: &mut Input,
+    event_opt: &Option<KeyEvent>,
+    camera: &mut Camera,
+    selected_aid: &mut Option<AID<EntityMessage>>,
+    old_world: &RawWorldArray,
+) {
+    if event_opt.is_none() {return;}
+
+    let event: KeyEvent = event_opt.unwrap();
+    match event.code {
+        KeyCode::Char('w') => {camera.change(0, -MOVE_CAMERA);}
+        KeyCode::Char('s') => {camera.change(0,  MOVE_CAMERA);}
+        KeyCode::Char('a') => {camera.change(-MOVE_CAMERA, 0);}
+        KeyCode::Char('d') => {camera.change( MOVE_CAMERA, 0);}
+        KeyCode::Char('n') => {
+            *selected_aid = get_next_worker(&old_world, selected_aid.clone());
+        }
+        KeyCode::Char('m') => {
+            if let Some(sel_aid) = &selected_aid {
+                if let Some(new_camera) = get_worker_camera(&old_world, &sel_aid) {
+                    *camera = new_camera;
                 }
             }
         }
-    })
+        _ => {input.key = Some(event.code)}
+    }
+}
+
+fn parse_input_mouse(input: &mut Input, event_opt: &Option<MouseEvent>) {
+    if event_opt.is_none() {return;}
+
+    let event: MouseEvent = event_opt.unwrap();
+    match event.kind {
+        MouseEventKind::Moved => {
+            input.mouse_pos = Some((event.column, event.row));
+        }
+        MouseEventKind::Down(MouseButton::Left) => {
+            input.mouse_pos = Some((event.column, event.row));
+            input.mouse_click = MouseClick::Left;
+        }
+        MouseEventKind::Down(MouseButton::Right) => {
+            input.mouse_pos = Some((event.column, event.row));
+            input.mouse_click = MouseClick::Right;
+        }
+        _ => {}
+    }
 }
 
 fn is_same_tile(old_tile: &Tile, new_tile: &Tile) -> bool {
