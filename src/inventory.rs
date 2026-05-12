@@ -1,8 +1,8 @@
-use std::{collections::HashMap};
+use std::{collections::HashMap, ops::Add};
 
 use crate::{
     aid::AID, 
-    item::Item, messages::EntityMessage
+    item::Item, messages::{EntityMessage, PlayerManagerMessage}
 };
 
 #[derive(Clone)]
@@ -13,6 +13,7 @@ pub enum InventoryMessage {
     TakeFrom(AID<EntityMessage>, AID<InventoryMessage>, (Item, usize)), 
     GiveTo(AID<EntityMessage>, AID<InventoryMessage>, (Item, usize)),
     PrintInventory(String),
+    GiveStatus(AID<PlayerManagerMessage>),
     Kill,
 
     // The following are sent by another inventory (private)
@@ -70,6 +71,18 @@ impl Inventory {
         return false; // FIX: not needed for minimal viable product
     }
 
+    fn to_string(&self) -> String {        
+        let mut string: String = String::from("Inventory");
+
+        for (key, value) in &self.items {
+            if value.0 > 0 {
+                string.push_str(format!("\n{0} - {1}/{2}", key.to_str(), value.0, value.1).as_str());
+            }
+        }
+
+        return string;
+    }
+
     // For debugging as of now
     fn print_inv(&self, name: String) {
         println!("{0}:", name);
@@ -108,6 +121,10 @@ fn inventory_loop(
 
             InventoryMessage::PrintInventory(name) => inventory.print_inv(name),
             
+            InventoryMessage::GiveStatus(pm_aid) => {
+                _ = pm_aid.send(PlayerManagerMessage::InventoryStatusResult(inventory.to_string()));
+            }
+
             InventoryMessage::Kill => return, 
 
 

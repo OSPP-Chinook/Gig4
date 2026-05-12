@@ -325,6 +325,10 @@ impl Worker {
                     }
                 }
             }
+
+            EntityMessage::FetchInventoryStatus(pm_aid) => {
+                _ = self.inventory.send(InventoryMessage::GiveStatus(pm_aid));
+            }
         }
     }
 

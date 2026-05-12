@@ -1,13 +1,18 @@
 use rand::{RngExt, SeedableRng, rngs::ChaCha8Rng};
+use ratatui::layout::Alignment;
 use ratatui::layout::Direction;
 use ratatui::layout::Spacing;
 use ratatui::symbols::merge::MergeStrategy;
+use ratatui::widgets::Padding;
+use std::fmt::format;
 use std::sync::mpsc::Receiver;
 use std::time::Duration;
 use std::time::Instant;
 use std::cmp::Ordering;
 use std::cmp;
 
+use crate::inventory;
+use crate::inventory::InventoryMessage;
 use crate::{
     aid::AID,
     messages::PlayerManagerMessage,
@@ -151,12 +156,15 @@ pub fn render_loop(
 
         let mut time_to_wait = 0;
         let mut show_status: bool = false;
+        let mut inventory_string: Option<String> = None;
 
         loop {
+
             //read all messages in mailbox
             while let Ok(msg) = mailbox.try_recv() {
                 match msg {
                     // TODO: Handle more message types
+                    PlayerManagerMessage::InventoryStatusResult(inv_string) => { inventory_string = Some(inv_string) },
                     _ => {}
                 }
             }
@@ -188,11 +196,23 @@ pub fn render_loop(
             parse_input_mouse(&mut input, &mouse_event);
 
             // terminal.draw(|frame| render(frame, world_array, camera, input))?;
+            if show_status && let Some(selected_aid) = selected_aid.clone() {
+                _ = selected_aid.send(EntityMessage::FetchInventoryStatus(aid.clone())); 
+            }
 
             let time_0 = Instant::now();
             let new_world = get_copy_of_world(&world_array);
             let time_1 = Instant::now();
-            terminal.draw(|frame| render(frame, &old_world, &new_world, camera, (time_0, time_1), &selected_aid, &show_status))?;
+            terminal.draw(|frame| render(
+                frame, 
+                &old_world, 
+                &new_world, 
+                camera, 
+                (time_0, time_1), 
+                &selected_aid, 
+                &inventory_string,
+                &show_status,
+            ))?;
             old_world = new_world;
             
             // reduce wait time by how much time we spent rendering
@@ -296,6 +316,7 @@ fn render(
     camera: Camera,
     (time_0, time_1): (Instant, Instant),
     selected_aid: &Option<AID<EntityMessage>>,
+    inventory_string: &Option<String>,
     show_status: &bool,
 ) {
     let world_area = frame.area();
@@ -343,7 +364,18 @@ fn render(
                 layout[1],
             );
 
+            // Status things
             if *show_status {
+                // let sub_layout = Layout::vertical().split(layout[0])
+
+                if let Some(inventory_string) = inventory_string {
+                    frame.render_widget(Paragraph::new(inventory_string.clone()).block(Block::new().padding(Padding::uniform(2))).alignment(Alignment::Center), layout[0]);
+                } 
+                
+                else {
+                    frame.render_widget(Paragraph::new(format!("Fetching Data...")).block(Block::new().padding(Padding::uniform(2))).alignment(Alignment::Center), layout[0]);
+                } 
+
                 frame.render_widget(
                     Block::new().borders(Borders::ALL).title("─ Status ").merge_borders(MergeStrategy::Exact), 
                     layout[0]
