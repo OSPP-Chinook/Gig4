@@ -4,6 +4,7 @@ use std::{hash::Hash};
 pub enum Item {
     Mutexium,
     Semaphorite,
+    Actorisite,
 }
 
 impl Item {
@@ -11,6 +12,7 @@ impl Item {
         match self {
             Item::Mutexium => return "Mutexium",
             Item::Semaphorite => return "Semaphorite",
+            Item::Actorisite => return "Actorisite",
         };
     }
 }
