@@ -305,14 +305,14 @@ impl Worker {
                         let _ = self.inventory.send(InventoryMessage::GiveTo(
                             self.self_aid.clone(),
                             inventory,
-                            item_and_amount,
+                            vec![item_and_amount],
                         ));
                     } else {
                         // Worker ska få svar
                         let _ = self.inventory.send(InventoryMessage::TakeFrom(
                             self.self_aid.clone(),
                             inventory,
-                            item_and_amount,
+                            vec![item_and_amount],
                         ));
                     }
                 }
