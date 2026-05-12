@@ -298,7 +298,17 @@ fn render(
         }
     }
     
-    // return; // don't draw fps
+    frame.render_widget(
+        Block::new().borders(Borders::ALL).title("Visible").white(),
+        Rect::new(
+            ((world_area.width / 2) as i32 - 20) as u16,
+            ((world_area.height / 2) as i32 - 10) as u16,
+            40,
+            20,
+        ),
+    );
+    
+    return; // don't draw fps
     let time_2 = Instant::now();
     render_fps(
         frame,
@@ -379,7 +389,7 @@ fn render_world_in_area(
             );
 
             let border_tile = "...\n...";
-            let square = Paragraph::new(border_tile).gray();
+            let square = Paragraph::new(border_tile).white();
             frame.render_widget(square, rect);
         }
     }
@@ -419,7 +429,7 @@ fn render_world_in_area(
 
             // 1/16 chance
             if tile_rand < 4004 {
-                let square = Paragraph::new(random_tiles[(tile_rand % 6) as usize]).gray();
+                let square = Paragraph::new(random_tiles[(tile_rand % 6) as usize]).white();
                 frame.render_widget(square, rect_at_pos);
             }
         }
