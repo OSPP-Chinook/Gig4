@@ -1,22 +1,19 @@
-mod inventory;
 mod aid;
-mod worker;
-mod building;
-mod task_manager;
-mod messages;
 mod assets;
-mod item;
+mod building;
 mod game_manager;
-mod world_manager;
+mod inventory;
+mod item;
+mod messages;
 mod player_manager;
-
+mod task_manager;
+mod worker;
+mod world_manager;
 
 use core::time;
 use std::thread::sleep;
 
-use inventory::{
-    InventoryMessage,
-};
+use inventory::InventoryMessage;
 
 use item::Item;
 
@@ -28,11 +25,11 @@ fn main() {
     if let Ok(gm) = gm {
         gm.run();
     }
-    //test_inventory();
+    // test_inventory();
 }
 
 fn do_nothing(_aid: aid::AID<EntityMessage>, _mailbox: std::sync::mpsc::Receiver<EntityMessage>) {
-    loop {};
+    loop {}
 }
 
 fn test_inventory() {
@@ -42,26 +39,50 @@ fn test_inventory() {
     let factory_aid1: aid::AID<InventoryMessage> = inventory::init();
     let factory_aid2: aid::AID<InventoryMessage> = inventory::init();
 
-    println!("Creating mutexium in factory 1");
-    _ = factory_aid1.send( // Factory 1 produces 8 mutexium
-        InventoryMessage::Add(sender.clone(), (Item::Semaphorite, 8))
-    ); 
-    
-    println!("Taking 8 mutexium from factory 1 to worker");
-    _ = worker_aid.send( // Worker takes 8 Mutexium from factory 1
-        InventoryMessage::TakeFrom(sender.clone(), factory_aid1.clone(), (Item::Semaphorite, 8))
-    ); 
+    println!("Give Factory 1 8 mutexium and 8 semaphorite");
+    _ = factory_aid1.send(InventoryMessage::Add(
+        sender.clone(),
+        vec![(Item::Mutexium, 8), (Item::Semaphorite, 8)],
+    ));
 
-    println!("Giving 8 mutexium from worker to factory 2");
-    _ = worker_aid.send( // Worker gives 8 Mutexium to factory 2
-        InventoryMessage::GiveTo(sender.clone(), factory_aid2.clone(), (Item::Semaphorite, 8))
-    ); 
+    println!("Converting mutexium and semaphorite to Actorisite");
+    for _ in 1..9 {
+        _ = factory_aid1.send(InventoryMessage::Remove(
+            sender.clone(),
+            vec![(Item::Mutexium, 1), (Item::Semaphorite, 1)],
+        ));
 
-    print_system_status(worker_aid.clone(), factory_aid1.clone(), factory_aid2.clone());
+        _ = factory_aid1.send(InventoryMessage::Add(
+            sender.clone(),
+            vec![(Item::Actorisite, 1)],
+        ));
+    }
+
+    println!("Taking 8 actorisite from factory 1 to worker, should be in waiting queue");
+    _ = worker_aid.send(InventoryMessage::TakeFrom(
+        sender.clone(),
+        factory_aid1.clone(),
+        vec![(Item::Actorisite, 8)],
+    ));
+
+    println!("Giving 8 actorisite from worker to factory 2");
+    _ = worker_aid.send(InventoryMessage::GiveTo(
+        sender.clone(),
+        factory_aid2.clone(),
+        vec![(Item::Actorisite, 8)],
+    ));
+
+    sleep(time::Duration::from_millis(500));
+
+    print_system_status(
+        worker_aid.clone(),
+        factory_aid1.clone(),
+        factory_aid2.clone(),
+    );
 }
 
 fn print_system_status(
-    worker_aid: aid::AID<InventoryMessage>, 
+    worker_aid: aid::AID<InventoryMessage>,
     factory_aid1: aid::AID<InventoryMessage>,
     factory_aid2: aid::AID<InventoryMessage>,
 ) {
