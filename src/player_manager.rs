@@ -1,22 +1,23 @@
 use rand::{RngExt, SeedableRng, rngs::ChaCha8Rng};
+use std::cmp::Ordering;
 use std::sync::mpsc::Receiver;
 use std::time::Duration;
 use std::time::Instant;
-use std::cmp::Ordering;
-use std::cmp;
 
+use crate::game_manager::GameManagerMessage;
 use crate::{
+    EntityMessage,
     aid::AID,
     messages::PlayerManagerMessage,
-    EntityMessage,
     world_manager::{HEIGHT, RawWorldArray, Tile, WIDTH, WorldGrid, WorldManagerMessage},
 };
-use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, MouseButton, MouseEvent, MouseEventKind, poll, read};
+use crossterm::event::{
+    Event, KeyCode, KeyEvent, KeyEventKind, MouseButton, MouseEvent, MouseEventKind, poll, read,
+};
 use ratatui::Frame;
-use ratatui::layout::Constraint::Length;
-use ratatui::layout::{Constraint, Layout, Margin, Rect, Offset};
+use ratatui::layout::{Margin, Offset, Rect};
 use ratatui::style::Stylize;
-use ratatui::widgets::{Block, Borders, Paragraph, Clear};
+use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 
 // Width and height of a tile on the screen in characters
 // Needs to be u16 for ratatui
@@ -76,13 +77,13 @@ fn get_copy_of_world(world_array: &WorldGrid) -> RawWorldArray {
 
 fn get_next_worker(
     world_array: &RawWorldArray,
-    selected_aid: Option<AID<EntityMessage>>
+    selected_aid: Option<AID<EntityMessage>>,
 ) -> Option<AID<EntityMessage>> {
     let mut found = match selected_aid {
         Some(_) => false,
         None => true,
     };
-    
+
     for y in 0..HEIGHT {
         for x in 0..WIDTH {
             let tile = &world_array[y][x];
@@ -96,7 +97,7 @@ fn get_next_worker(
                             if aid == sel_aid {
                                 found = true;
                             }
-                        },
+                        }
                         None => (),
                     };
                 }
@@ -107,10 +108,7 @@ fn get_next_worker(
     return None;
 }
 
-fn get_worker_camera(
-    world_array: &RawWorldArray,
-    sel_aid: &AID<EntityMessage>,
-) -> Option<Camera> {
+fn get_worker_camera(world_array: &RawWorldArray, sel_aid: &AID<EntityMessage>) -> Option<Camera> {
     for y in 0..HEIGHT {
         for x in 0..WIDTH {
             let tile = &world_array[y][x];
@@ -128,10 +126,10 @@ fn get_worker_camera(
     return None;
 }
 
-
 pub fn render_loop(
     aid: AID<PlayerManagerMessage>,
     mailbox: Receiver<PlayerManagerMessage>,
+    gm: AID<GameManagerMessage>,
     world: AID<WorldManagerMessage>,
     world_array: WorldGrid,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -143,7 +141,7 @@ pub fn render_loop(
         );
 
         let mut old_world = get_copy_of_world(&world_array);
-        
+
         let mut selected_aid = None;
 
         let mut time_to_wait = 0;
@@ -164,9 +162,10 @@ pub fn render_loop(
             if poll(Duration::from_millis(time_to_wait))? {
                 match read()? {
                     Event::Key(event) if event.kind == KeyEventKind::Press => {
-                        // Det här måste ske utanför input handler eftersom 
+                        // Det här måste ske utanför input handler eftersom
                         // det ska stänga av loopen
                         if event.code == KeyCode::Char('q') {
+                            let _ = gm.send(GameManagerMessage::Quit);
                             break Ok(());
                         }
                         key_event = Some(event);
@@ -178,9 +177,19 @@ pub fn render_loop(
                 }
             }
 
-            let mut input: Input = Input { mouse_pos: None, mouse_click: MouseClick::None, key: None };
+            let mut input: Input = Input {
+                mouse_pos: None,
+                mouse_click: MouseClick::None,
+                key: None,
+            };
 
-            parse_input_keyboard(&mut input, &key_event, &mut camera, &mut selected_aid, &old_world);
+            parse_input_keyboard(
+                &mut input,
+                &key_event,
+                &mut camera,
+                &mut selected_aid,
+                &old_world,
+            );
             parse_input_mouse(&mut input, &mouse_event);
 
             // terminal.draw(|frame| render(frame, world_array, camera, input))?;
@@ -188,14 +197,24 @@ pub fn render_loop(
             let time_0 = Instant::now();
             let new_world = get_copy_of_world(&world_array);
             let time_1 = Instant::now();
-            terminal.draw(|frame| render(frame, &old_world, &new_world, camera, (time_0, time_1), &selected_aid))?;
+            terminal.draw(|frame| {
+                render(
+                    frame,
+                    &old_world,
+                    &new_world,
+                    camera,
+                    (time_0, time_1),
+                    &selected_aid,
+                )
+            })?;
             old_world = new_world;
-            
+
             // reduce wait time by how much time we spent rendering
             // I can't tell if this makes any difference, or if it doesn't work with poll()
-            let time_to_wait = 50;
-            let time_to_wait = cmp::max(0, time_to_wait - time_0.elapsed().as_millis() as i64) as u64;
-
+            time_to_wait = 50;
+            time_to_wait = time_to_wait
+                .checked_sub(time_0.elapsed().as_millis() as u64)
+                .unwrap_or(0);
         }
     })
 }
@@ -207,14 +226,24 @@ fn parse_input_keyboard(
     selected_aid: &mut Option<AID<EntityMessage>>,
     old_world: &RawWorldArray,
 ) {
-    if event_opt.is_none() {return;}
+    if event_opt.is_none() {
+        return;
+    }
 
     let event: KeyEvent = event_opt.unwrap();
     match event.code {
-        KeyCode::Char('w') => {camera.change(0, -MOVE_CAMERA);}
-        KeyCode::Char('s') => {camera.change(0,  MOVE_CAMERA);}
-        KeyCode::Char('a') => {camera.change(-MOVE_CAMERA, 0);}
-        KeyCode::Char('d') => {camera.change( MOVE_CAMERA, 0);}
+        KeyCode::Char('w') => {
+            camera.change(0, -MOVE_CAMERA);
+        }
+        KeyCode::Char('s') => {
+            camera.change(0, MOVE_CAMERA);
+        }
+        KeyCode::Char('a') => {
+            camera.change(-MOVE_CAMERA, 0);
+        }
+        KeyCode::Char('d') => {
+            camera.change(MOVE_CAMERA, 0);
+        }
         KeyCode::Char('n') => {
             *selected_aid = get_next_worker(&old_world, selected_aid.clone());
         }
@@ -225,12 +254,14 @@ fn parse_input_keyboard(
                 }
             }
         }
-        _ => {input.key = Some(event.code)}
+        _ => input.key = Some(event.code),
     }
 }
 
 fn parse_input_mouse(input: &mut Input, event_opt: &Option<MouseEvent>) {
-    if event_opt.is_none() {return;}
+    if event_opt.is_none() {
+        return;
+    }
 
     let event: MouseEvent = event_opt.unwrap();
     match event.kind {
@@ -267,17 +298,21 @@ fn is_same_tile(old_tile: &Tile, new_tile: &Tile) -> bool {
     }
 }
 
-fn get_movement(
-    old_world: &RawWorldArray,
-    tile: &Tile,
-    (x, y): (usize, usize),
-) -> (i32, i32) {
+fn get_movement(old_world: &RawWorldArray, tile: &Tile, (x, y): (usize, usize)) -> (i32, i32) {
     let mut dx = 0;
     let mut dy = 0;
-    if y > 0          && is_same_tile(&old_world[y - 1][x], tile) {dy = -1}
-    if y + 1 < HEIGHT && is_same_tile(&old_world[y + 1][x], tile) {dy = 1}
-    if x > 0          && is_same_tile(&old_world[y][x - 1], tile) {dx = -1}
-    if x + 1 < WIDTH  && is_same_tile(&old_world[y][x + 1], tile) {dx = 1}
+    if y > 0 && is_same_tile(&old_world[y - 1][x], tile) {
+        dy = -1
+    }
+    if y + 1 < HEIGHT && is_same_tile(&old_world[y + 1][x], tile) {
+        dy = 1
+    }
+    if x > 0 && is_same_tile(&old_world[y][x - 1], tile) {
+        dx = -1
+    }
+    if x + 1 < WIDTH && is_same_tile(&old_world[y][x + 1], tile) {
+        dx = 1
+    }
     return (dx, dy);
 }
 
@@ -290,9 +325,9 @@ fn render(
     selected_aid: &Option<AID<EntityMessage>>,
 ) {
     let world_area = frame.area();
-    
+
     render_world_in_area(frame, &world_area, &old_world_array, &world_array, camera);
-    
+
     if let Some(sel_aid) = selected_aid {
         let (width, height) = (world_area.width / 3, world_area.height / 2);
         let m = 2; // margin: 2 x border, which doubles as 2 x space for animation
@@ -300,27 +335,40 @@ fn render(
             // pov_area encloses a whole number of tiles
             let width = (width - m) / TILE_SIZE.0 * TILE_SIZE.0 + m;
             let height = (height - m) / TILE_SIZE.1 * TILE_SIZE.1 + m;
-            let pov_area = Rect::new(world_area.width - width, world_area.height - height, width, height);
+            let pov_area = Rect::new(
+                world_area.width - width,
+                world_area.height - height,
+                width,
+                height,
+            );
 
             frame.render_widget(Clear, pov_area);
-            
+
             let pov_area_inner = pov_area.inner(Margin::new(1, 1));
             if let Some(pov_camera) = get_worker_camera(&world_array, sel_aid) {
                 let Camera(x, y) = pov_camera;
                 let (x, y) = (x as usize, y as usize);
                 let (dx, dy) = get_movement(&old_world_array, &world_array[y][x], (x, y));
-                let pov_area_inner = pov_area_inner.offset(Offset {x: -dx, y: -dy});
-                render_world_in_area(frame, &pov_area_inner, &old_world_array, &world_array, pov_camera);
+                let pov_area_inner = pov_area_inner.offset(Offset { x: -dx, y: -dy });
+                render_world_in_area(
+                    frame,
+                    &pov_area_inner,
+                    &old_world_array,
+                    &world_array,
+                    pov_camera,
+                );
             }
-            
+
             // render this last so it covers any part of the world sticking out
             frame.render_widget(
-                Block::new().borders(Borders::ALL).title("─ POV: you're a worker "),
+                Block::new()
+                    .borders(Borders::ALL)
+                    .title("─ POV: you're a worker "),
                 pov_area,
             );
         }
     }
-    
+
     // return; // don't draw fps
     let time_2 = Instant::now();
     render_fps(
@@ -339,7 +387,7 @@ fn render_world_in_area(
 ) {
     let box_w = world_area.width / TILE_SIZE.0;
     let box_h = world_area.height / TILE_SIZE.1;
-    
+
     let is_row_in_world = |y: i32| {
         let draw_y = y + (box_h / 2) as i32 - camera.1;
         if draw_y < 0 {
@@ -421,19 +469,19 @@ fn render_world_in_area(
         // needs to run on every iteration
         // skipping an iteration would mess up the order
         let mut rng_row = ChaCha8Rng::seed_from_u64(rng.random());
-        
+
         match is_row_in_world(y as i32) {
             Ordering::Less => continue,
             Ordering::Greater => break,
             _ => (),
         }
-        
+
         for x in 0..WIDTH {
             // needs to run on every iteration
             // skipping an iteration would mess up the order
             let tile_rand: u16 = rng_row.random();
 
-            let mut rect_at_pos = match get_rect_from_world_xy(x as i32, y as i32) {
+            let rect_at_pos = match get_rect_from_world_xy(x as i32, y as i32) {
                 None => continue,
                 Some(rect) => rect,
             };
@@ -455,18 +503,15 @@ fn render_world_in_area(
             Ordering::Greater => break,
             _ => (),
         }
-        
+
         for x in 0..WIDTH {
             let tile = &world_array[y][x];
-
-            let mut animation_dx = 0;
-            let mut animation_dy = 0;
 
             let mut rect_at_pos = match get_rect_from_world_xy(x as i32, y as i32) {
                 None => continue,
                 Some(rect) => rect,
             };
-            
+
             let (animation_dx, animation_dy) = get_movement(&old_world_array, tile, (x, y));
 
             rect_at_pos.x = (rect_at_pos.x as i32 + animation_dx) as u16;
@@ -493,13 +538,13 @@ fn render_world_in_area(
 
 fn render_fps(frame: &mut Frame, dur_copy: Duration, dur_render: Duration) {
     let width = frame.area().width;
-    
-    // time to run get_copy_of_world() 
+
+    // time to run get_copy_of_world()
     let text = format!("{} ms", dur_copy.as_millis());
     let len = text.len() as u16;
     let rect = Rect::new(width - len, 0, len, 1);
     frame.render_widget(Paragraph::new(text), rect);
-    
+
     // time to run render()
     let text = format!("{} ms", dur_render.as_millis());
     let len = text.len() as u16;

@@ -12,9 +12,22 @@ pub struct AID<T> {
     channel: mpsc::Sender<T>,
 }
 
+pub type AIDHandle = thread::JoinHandle<()>;
+
 impl<T> AID<T> {
     // creates a channel and spawns a thread running f
     pub fn new<F>(f: F) -> Self
+    where
+        F: FnOnce(AID<T>, mpsc::Receiver<T>),
+        F: Send + 'static,
+        T: Send + 'static,
+    {
+        return Self::new_joinable(f).0;
+    }
+
+    // creates a channel and spawns a thread running f
+    // additionally returns the join handle of the new thread
+    pub fn new_joinable<F>(f: F) -> (Self, AIDHandle)
     where
         F: FnOnce(AID<T>, mpsc::Receiver<T>),
         F: Send + 'static,
@@ -31,8 +44,29 @@ impl<T> AID<T> {
                 f(aid, reciever)
             }
         });
-        return AID {
+        let aid = AID {
             tid: handle.thread().id(),
+            channel: sender,
+        };
+        return (aid, handle);
+    }
+
+    // creates a channel and runs f in the current thread
+    pub fn new_threadless<F>(f: F) -> Self
+    where
+        F: FnOnce(AID<T>, mpsc::Receiver<T>),
+        F: Send + 'static,
+        T: Send + 'static,
+    {
+        let (sender, reciever) = mpsc::channel();
+        let tid = thread::current().id();
+        let aid = AID {
+            tid,
+            channel: sender.clone(),
+        };
+        f(aid, reciever);
+        return AID {
+            tid,
             channel: sender,
         };
     }

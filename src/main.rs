@@ -1,86 +1,98 @@
-mod inventory;
 mod aid;
-mod worker;
 mod building;
-mod task_manager;
-mod messages;
-mod item;
 mod game_manager;
-mod world_manager;
+mod inventory;
+mod item;
+mod messages;
 mod player_manager;
+mod task_manager;
+mod worker;
+mod world_manager;
 
-
-use core::time;
-use std::thread::sleep;
-
-use inventory::{
-    InventoryMessage,
-};
-
-use item::Item;
-
-use crate::{game_manager::GameManager, messages::EntityMessage};
+use crate::{aid::AID, messages::EntityMessage};
 
 fn main() {
     println!("Hello, world!");
-    let gm = GameManager::new();
-    gm.run();
-    // test_inventory();
+    let _gm = AID::new_threadless(game_manager::main);
 }
 
-fn do_nothing(_aid: aid::AID<EntityMessage>, _mailbox: std::sync::mpsc::Receiver<EntityMessage>) {
-    loop {};
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::item::Item;
+    use core::time;
+    use inventory::InventoryMessage;
+    use std::thread::sleep;
 
-fn test_inventory() {
-    let sender: aid::AID<EntityMessage> = aid::AID::new(do_nothing);
+    fn do_nothing(
+        _aid: aid::AID<EntityMessage>,
+        _mailbox: std::sync::mpsc::Receiver<EntityMessage>,
+    ) {
+        loop {}
+    }
 
-    let worker_aid: aid::AID<InventoryMessage> = inventory::init();
-    let factory_aid1: aid::AID<InventoryMessage> = inventory::init();
-    let factory_aid2: aid::AID<InventoryMessage> = inventory::init();
+    #[test]
+    fn test_inventory() {
+        let sender: aid::AID<EntityMessage> = aid::AID::new(do_nothing);
 
-    println!("Give Factory 1 8 mutexium and 8 semaphorite");
-    _ = factory_aid1.send(
-        InventoryMessage::Add(sender.clone(), vec!((Item::Mutexium, 8), (Item::Semaphorite, 8)))
-    ); 
+        let worker_aid: aid::AID<InventoryMessage> = inventory::init();
+        let factory_aid1: aid::AID<InventoryMessage> = inventory::init();
+        let factory_aid2: aid::AID<InventoryMessage> = inventory::init();
 
-    println!("Converting mutexium and semaphorite to Actorisite");
-    for _ in 1..9 {
-        _ = factory_aid1.send(
-            InventoryMessage::Remove(sender.clone(), vec!((Item::Mutexium, 1), (Item::Semaphorite, 1)))
-        );
+        println!("Give Factory 1 8 mutexium and 8 semaphorite");
+        _ = factory_aid1.send(InventoryMessage::Add(
+            sender.clone(),
+            vec![(Item::Mutexium, 8), (Item::Semaphorite, 8)],
+        ));
 
-        _ = factory_aid1.send(
-            InventoryMessage::Add(sender.clone(), vec!((Item::Actorisite, 1)))
+        println!("Converting mutexium and semaphorite to Actorisite");
+        for _ in 1..9 {
+            _ = factory_aid1.send(InventoryMessage::Remove(
+                sender.clone(),
+                vec![(Item::Mutexium, 1), (Item::Semaphorite, 1)],
+            ));
+
+            _ = factory_aid1.send(InventoryMessage::Add(
+                sender.clone(),
+                vec![(Item::Actorisite, 1)],
+            ));
+        }
+
+        println!("Taking 8 actorisite from factory 1 to worker, should be in waiting queue");
+        _ = worker_aid.send(InventoryMessage::TakeFrom(
+            sender.clone(),
+            factory_aid1.clone(),
+            vec![(Item::Actorisite, 8)],
+        ));
+
+        println!("Giving 8 actorisite from worker to factory 2");
+        _ = worker_aid.send(InventoryMessage::GiveTo(
+            sender.clone(),
+            factory_aid2.clone(),
+            vec![(Item::Actorisite, 8)],
+        ));
+
+        sleep(time::Duration::from_millis(500));
+
+        print_system_status(
+            worker_aid.clone(),
+            factory_aid1.clone(),
+            factory_aid2.clone(),
         );
     }
-    
-    println!("Taking 8 actorisite from factory 1 to worker, should be in waiting queue");
-    _ = worker_aid.send(
-        InventoryMessage::TakeFrom(sender.clone(), factory_aid1.clone(), vec!((Item::Actorisite, 8)))
-    ); 
 
-    println!("Giving 8 actorisite from worker to factory 2");
-    _ = worker_aid.send(
-        InventoryMessage::GiveTo(sender.clone(), factory_aid2.clone(), vec!((Item::Actorisite, 8)))
-    ); 
+    fn print_system_status(
+        worker_aid: aid::AID<InventoryMessage>,
+        factory_aid1: aid::AID<InventoryMessage>,
+        factory_aid2: aid::AID<InventoryMessage>,
+    ) {
+        _ = worker_aid.send(InventoryMessage::PrintInventory(String::from("Worker")));
+        sleep(time::Duration::from_millis(500));
 
-    sleep(time::Duration::from_millis(500));
-    
-    print_system_status(worker_aid.clone(), factory_aid1.clone(), factory_aid2.clone());    
-}
+        _ = factory_aid1.send(InventoryMessage::PrintInventory(String::from("Factory 1")));
+        sleep(time::Duration::from_millis(500));
 
-fn print_system_status(
-    worker_aid: aid::AID<InventoryMessage>, 
-    factory_aid1: aid::AID<InventoryMessage>,
-    factory_aid2: aid::AID<InventoryMessage>,
-) {
-    _ = worker_aid.send(InventoryMessage::PrintInventory(String::from("Worker")));
-    sleep(time::Duration::from_millis(500));
-
-    _ = factory_aid1.send(InventoryMessage::PrintInventory(String::from("Factory 1")));
-    sleep(time::Duration::from_millis(500));
-
-    _ = factory_aid2.send(InventoryMessage::PrintInventory(String::from("Factory 2")));
-    sleep(time::Duration::from_millis(500));
+        _ = factory_aid2.send(InventoryMessage::PrintInventory(String::from("Factory 2")));
+        sleep(time::Duration::from_millis(500));
+    }
 }

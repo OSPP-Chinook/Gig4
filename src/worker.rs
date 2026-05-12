@@ -273,9 +273,6 @@ impl Worker {
             }
 
             EntityMessage::KillYourself => {
-                let _ = self
-                    .world_aid
-                    .send(WorldManagerMessage::KillMe(self.self_aid.clone()));
                 self.alive = false;
             }
 
@@ -314,13 +311,13 @@ impl Worker {
                         let _ = self.inventory.send(InventoryMessage::GiveTo(
                             self.self_aid.clone(),
                             inventory,
-                            vec!((item, 10)),
+                            vec![(item, 10)],
                         ));
                     } else {
                         let _ = self.inventory.send(InventoryMessage::TakeFrom(
                             self.self_aid.clone(),
                             inventory,
-                            vec!((item, 10)),
+                            vec![(item, 10)],
                         ));
                     }
                 }
@@ -379,8 +376,6 @@ impl Worker {
 
 #[cfg(test)]
 mod tests {
-
-    use crate::messages;
 
     use super::*;
 

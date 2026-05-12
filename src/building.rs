@@ -47,9 +47,6 @@ impl Building {
             while let Ok(msg) = self.mailbox.try_recv() {
                 match msg {
                     EntityMessage::KillYourself => {
-                        let _ = self
-                            .world_aid
-                            .send(WorldManagerMessage::KillMe(self.self_aid.clone()));
                         break 'outer;
                     }
                     EntityMessage::InventoryOk => {
@@ -105,7 +102,7 @@ impl Building {
                     waiting = true;
                 }
             }
-          
+
             if let Some(time_left) = current_process {
                 if time_left == 0 {
                     _ = self.inventory.send(InventoryMessage::Add(
@@ -123,6 +120,7 @@ impl Building {
     }
 }
 
+#[cfg(test)]
 mod tests {
     use super::*;
 
