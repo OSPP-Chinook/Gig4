@@ -155,11 +155,11 @@ impl GameManager {
         let _ = self
             .world
             .send(WorldManagerMessage::PlaceWorker((10, 3), worker.clone()));
-        let worker = Entity::new(self.world.clone(), self.task.clone(), (7, 10));
+        let worker = Worker::new(self.world.clone(), self.task.clone(), (7, 10));
         let _ = self
             .world
             .send(WorldManagerMessage::PlaceWorker((7, 10), worker.clone()));
-        let worker = Entity::new(self.world.clone(), self.task.clone(), (60, 40));
+        let worker = Worker::new(self.world.clone(), self.task.clone(), (60, 40));
         let _ = self
             .world
             .send(WorldManagerMessage::PlaceWorker((60, 40), worker.clone()));
