@@ -34,6 +34,7 @@ struct WorkerCore {
     sub_tasks: VecDeque<SubTask>,
     open_neighbors: HashSet<Pos>,
     heuristic: HashMap<Pos, usize>,
+    carry_capacity: usize,
 }
 
 #[derive(Clone)]
@@ -71,10 +72,11 @@ fn neighbors(pos: Pos) -> HashSet<Pos> {
 #[allow(dead_code)]
 impl WorkerCore {
     // skapar en WorkerCore med given start position
-    fn new(start_pos: Pos) -> WorkerCore {
+    fn new(start_pos: Pos, carry_capacity: usize) -> WorkerCore {
         WorkerCore {
             current_pos: start_pos,
             pending_move: None,
+            carry_capacity:carry_capacity,
             sub_tasks: VecDeque::new(),
             open_neighbors: neighbors(start_pos),
             heuristic: HashMap::new(),
@@ -166,13 +168,13 @@ impl WorkerCore {
             Task::MoveTo(pos) => {
                 self.sub_tasks.push_back(SubTask::Move(pos));
             }
-            Task::DeliverItem(item, amount, (from_aid, from), (to_aid, to)) => {
+            Task::DeliverItem(item,(from_aid, from), (to_aid, to)) => {
                 self.sub_tasks.push_back(SubTask::Move(from));
                 self.sub_tasks
-                    .push_back(SubTask::TakeItem(from_aid.clone(), (item, amount)));
+                    .push_back(SubTask::TakeItem(from_aid.clone(), (item, self.carry_capacity)));
                 self.sub_tasks.push_back(SubTask::Move(to));
                 self.sub_tasks
-                    .push_back(SubTask::GiveItem(to_aid.clone(), (item, amount)));
+                    .push_back(SubTask::GiveItem(to_aid.clone(), (item, self.carry_capacity)));
             }
             Task::Idle => {
                 self.sub_tasks.push_back(SubTask::Idle);
@@ -225,9 +227,10 @@ impl Worker {
         world: AID<WorldManagerMessage>,
         task: AID<TaskManagerMessage>,
         start_pos: Pos,
+        carry_capacity: usize,
     ) -> AID<EntityMessage> {
         AID::new(move |aid, mailbox| {
-            let mut worker = Worker::create(aid.clone(), world, task, start_pos);
+            let mut worker = Worker::create(aid.clone(), world, task, start_pos, carry_capacity);
 
             worker.run(mailbox);
         })
@@ -238,9 +241,10 @@ impl Worker {
         world: AID<WorldManagerMessage>,
         task: AID<TaskManagerMessage>,
         start_pos: Pos,
+        carry_capacity: usize
     ) -> Self {
         Worker {
-            core: WorkerCore::new(start_pos),
+            core: WorkerCore::new(start_pos,carry_capacity),
             alive: true,
             waiting: false,
             pending_inventory_task: None,
@@ -381,7 +385,7 @@ mod tests {
     #[test]
     fn process_task_done() {
         let start_pos = (1, 1);
-        let mut core = WorkerCore::new(start_pos);
+        let mut core = WorkerCore::new(start_pos,10);
 
         let result = core.process_task();
 
@@ -391,7 +395,7 @@ mod tests {
     #[test]
     fn process_task_move() {
         let start_pos = (1, 1);
-        let mut core = WorkerCore::new(start_pos);
+        let mut core = WorkerCore::new(start_pos,10);
 
         let new_pos = (10, 10);
         core.new_task(Task::MoveTo(new_pos));
@@ -409,7 +413,7 @@ mod tests {
     #[test]
     fn process_task_idle() {
         let start_pos = (1, 1);
-        let mut core = WorkerCore::new(start_pos);
+        let mut core = WorkerCore::new(start_pos,10);
 
         // position utanför världen världen är 32,16
         let impossible_pos = (1000, 1000);
@@ -423,7 +427,7 @@ mod tests {
     #[test]
     fn new_task_move_to() {
         let start_pos = (1, 1);
-        let mut core = WorkerCore::new(start_pos);
+        let mut core = WorkerCore::new(start_pos,10);
 
         let new_pos = (10, 10);
         let task = Task::MoveTo(new_pos);
@@ -440,7 +444,7 @@ mod tests {
     #[test]
     fn new_task_deliveritem() {
         let start_pos = (1, 1);
-        let mut worker = Worker::create(dummy(), dummy(), dummy(), start_pos);
+        let mut worker = Worker::create(dummy(), dummy(), dummy(), start_pos,10);
 
         let item = Item::Mutexium;
         let amount = 10;
@@ -453,7 +457,6 @@ mod tests {
 
         let task = Task::DeliverItem(
             item,
-            amount,
             (from_aid.clone(), fram_pos),
             (to_aid.clone(), to_pos),
         );
@@ -489,7 +492,7 @@ mod tests {
     fn new_task_idle() {
         let start_pos = (1, 1);
 
-        let mut core = WorkerCore::new(start_pos);
+        let mut core = WorkerCore::new(start_pos,10);
 
         let task = Task::Idle;
         core.new_task(task);
@@ -504,7 +507,7 @@ mod tests {
     #[test]
     fn apply_ok() {
         let start_pos = (1, 1);
-        let mut core = WorkerCore::new(start_pos);
+        let mut core = WorkerCore::new(start_pos,10);
 
         let new_pos = (12, 12);
         let task = Task::MoveTo(new_pos);
@@ -517,7 +520,7 @@ mod tests {
     #[test]
     fn apply_err() {
         let start_pos = (1, 1);
-        let mut core = WorkerCore::new(start_pos);
+        let mut core = WorkerCore::new(start_pos,10);
 
         let new_pos = (3, 8);
 

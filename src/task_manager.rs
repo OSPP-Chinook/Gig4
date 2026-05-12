@@ -14,7 +14,6 @@ pub enum Task {
     MoveTo(Pos),
     DeliverItem(
         Item,
-        usize,
         (AID<EntityMessage>, Pos),
         (AID<EntityMessage>, Pos), 
     ), //Deliver Item from A to B.
@@ -57,7 +56,6 @@ pub fn main(aid: AID<TaskManagerMessage>, mailbox: Receiver<TaskManagerMessage>,
                 {
                     task_queue.push_back(Task::DeliverItem(
                         item,
-                        1,// TEMPORÄR mängd tills vi vet mer (varifrån mängden ska komma,om mängden ska vara konstant)
                         (from_aid.clone(), from),
                         (to_aid.clone(), to),
                     ));
