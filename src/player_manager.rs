@@ -122,6 +122,12 @@ fn get_worker_camera(
                         return Some(Camera(x as i32, y as i32));
                     }
                 }
+                Tile::Building(aid) => {
+                    if aid == sel_aid {
+                        return Some(Camera(x as i32, y as i32));
+                    }
+                 }
+
                 _ => (),
             }
         }
@@ -190,7 +196,7 @@ pub fn render_loop(
             let mut input: Input = Input { mouse_pos: None, mouse_click: MouseClick::None, key: None };
 
             parse_input_keyboard(&mut input, &key_event, &mut camera, &mut selected_aid, &old_world);
-            parse_input_mouse(&mut input, &mouse_event);
+            parse_input_mouse(&mut input, &mouse_event, &mut selected_aid, camera, &old_world, &terminal.get_frame().area());
 
             // terminal.draw(|frame| render(frame, world_array, camera, input))?;
 
@@ -198,6 +204,7 @@ pub fn render_loop(
             let new_world = get_copy_of_world(&world_array);
             let time_1 = Instant::now();
             terminal.draw(|frame| render(frame, &old_world, &new_world, camera, (time_0, time_1, fps), &selected_aid))?;
+            frames += 1;
             old_world = new_world;
             
             //count frames per second
@@ -214,6 +221,16 @@ pub fn render_loop(
 
         }
     })
+}
+
+
+fn mouse_to_grid_pos((x, y): (u16, u16), world_area: &Rect, camera: Camera) -> (i32, i32) {
+    let box_w = world_area.width / TILE_SIZE.0;
+    let box_h = world_area.height / TILE_SIZE.1;
+    return (
+                (x / TILE_SIZE.0) as i32 - (box_w / 2) as i32 + camera.0,
+                (y / TILE_SIZE.1) as i32 - (box_h / 2) as i32 + camera.1,
+            );
 }
 
 fn parse_input_keyboard(
@@ -245,7 +262,7 @@ fn parse_input_keyboard(
     }
 }
 
-fn parse_input_mouse(input: &mut Input, event_opt: &Option<MouseEvent>) {
+fn parse_input_mouse(input: &mut Input, event_opt: &Option<MouseEvent>, selected_aid: &mut Option<AID<EntityMessage>>, camera: Camera, old_world: &RawWorldArray, world_area: &Rect) {
     if event_opt.is_none() {return;}
 
     let event: MouseEvent = event_opt.unwrap();
@@ -256,6 +273,22 @@ fn parse_input_mouse(input: &mut Input, event_opt: &Option<MouseEvent>) {
         MouseEventKind::Down(MouseButton::Left) => {
             input.mouse_pos = Some((event.column, event.row));
             input.mouse_click = MouseClick::Left;
+            let (x, y) = mouse_to_grid_pos((event.column, event.row), world_area, camera);
+            if x >= 0 && x < WIDTH as i32 && y >= 0 && y < HEIGHT as i32 {
+                let tile = &old_world[y as usize][x as usize];
+                if let Tile::Building(aid) = tile {
+                    *selected_aid = Some(aid.clone());
+                }
+                else if let Tile::Worker(aid) = tile {
+                    *selected_aid = Some(aid.clone());
+                }
+                else {
+                    *selected_aid = None;
+                }
+            } 
+            else {
+                *selected_aid = None;
+            }
         }
         MouseEventKind::Down(MouseButton::Right) => {
             input.mouse_pos = Some((event.column, event.row));
