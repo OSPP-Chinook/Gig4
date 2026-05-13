@@ -194,48 +194,18 @@ pub fn render_loop(
         );
 
         let mut old_world = get_copy_of_world(&world_array);
-        
         let mut selected_aid = None;
-
         let mut time_to_wait = 0;
         let mut inventory_string: Option<String> = None;
 
         loop {
+            check_mailbox(&mailbox, &mut inventory_string);
 
-            //read all messages in mailbox
-            while let Ok(msg) = mailbox.try_recv() {
-                match msg {
-                    // TODO: Handle more message types
-                    PlayerManagerMessage::InventoryStatusResult(inv_string) => { inventory_string = Some(inv_string) },
-                    _ => {}
-                }
+            if let Some(shut_down) = get_inputs(&mut camera, &mut selected_aid, &old_world, time_to_wait) 
+                && shut_down 
+            {
+                break Ok(());
             }
-
-            let mut key_event: Option<KeyEvent> = None;
-            let mut mouse_event: Option<MouseEvent> = None;
-
-            // 50 ms looks better with animations
-            if poll(Duration::from_millis(time_to_wait))? {
-                match read()? {
-                    Event::Key(event) if event.kind == KeyEventKind::Press => {
-                        // Det här måste ske utanför input handler eftersom 
-                        // det ska stänga av loopen
-                        if event.code == KeyCode::Char('q') {
-                            break Ok(());
-                        }
-                        key_event = Some(event);
-                    }
-                    Event::Mouse(event) => {
-                        mouse_event = Some(event);
-                    }
-                    _ => {}
-                }
-            }
-
-            let mut input: Input = Input { mouse_pos: None, mouse_click: MouseClick::None, key: None };
-
-            parse_input_keyboard(&mut input, &key_event, &mut camera, &mut selected_aid, &old_world);
-            parse_input_mouse(&mut input, &mouse_event);
 
             // terminal.draw(|frame| render(frame, world_array, camera, input))?;
             if let Some(selected_aid) = selected_aid.clone() {
@@ -263,6 +233,52 @@ pub fn render_loop(
 
         }
     })
+}
+
+fn check_mailbox(mailbox: &Receiver<PlayerManagerMessage>, inventory_string: &mut Option<String>) {
+    //read all messages in mailbox
+    while let Ok(msg) = mailbox.try_recv() {
+        match msg {
+            // TODO: Handle more message types
+            PlayerManagerMessage::InventoryStatusResult(inv_string) => { *inventory_string = Some(inv_string) },
+            _ => {}
+        }
+    }
+}
+
+fn get_inputs(
+    camera: &mut Camera, 
+    selected_aid: &mut Option<AID<EntityMessage>>, 
+    old_world: &RawWorldArray, 
+    time_to_wait: u64
+) -> Option<bool> {
+    let mut key_event: Option<KeyEvent> = None;
+    let mut mouse_event: Option<MouseEvent> = None;
+
+    // 50 ms looks better with animations
+    if poll(Duration::from_millis(time_to_wait)).ok()? {
+        match read().ok()? {
+            Event::Key(event) if event.kind == KeyEventKind::Press => {
+                // Det här måste ske utanför input handler eftersom 
+                // det ska stänga av loopen
+                if event.code == KeyCode::Char('q') {
+                    return Some(true); // Break
+                }
+                key_event = Some(event);
+            }
+            Event::Mouse(event) => {
+                mouse_event = Some(event);
+            }
+            _ => {}
+        }
+    }
+
+    let mut input: Input = Input { mouse_pos: None, mouse_click: MouseClick::None, key: None };
+
+    parse_input_keyboard(&mut input, &key_event, camera, selected_aid, &old_world);
+    parse_input_mouse(&mut input, &mouse_event);
+
+    return Some(false);
 }
 
 fn parse_input_keyboard(
