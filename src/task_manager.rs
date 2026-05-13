@@ -34,14 +34,14 @@ pub fn main(aid: AID<TaskManagerMessage>, mailbox: Receiver<TaskManagerMessage>,
     for msg in mailbox {
         match msg {
             TaskManagerMessage::GiveMeNewTask(aid) => {
-                let _ = aid.send(EntityMessage::Task(assign_task(
+                let _ = aid.send(EntityMessage::TaskResponse(Ok(assign_task(
                     aid.clone(),
                     &mut task_queue,
                     &mut task_list,
-                )));
+                ))));
             }
             TaskManagerMessage::GiveTaskTo(task, to) => {
-                let _ = to.send(EntityMessage::Task(task));
+                let _ = to.send(EntityMessage::TaskResponse(Ok(task)));
             }
             TaskManagerMessage::CreatePath(item, from, to) => {
                 let grid = &grid.lock().unwrap();
@@ -78,7 +78,6 @@ fn assign_task(
 ) -> Task {
     //if had a task assigned previously
     if let Some(prev_task) = task_list.get(&aid) {
-        if let Task::MoveTo(pos) = prev_task {}
         task_queue.push_back(prev_task.clone());
     }
     //if there are some new task available
@@ -93,15 +92,12 @@ fn assign_task(
 #[cfg(test)]
 mod tests {
     use std::{
-        sync::{
-            Arc, Mutex,
-            mpsc::{SendError, channel},
-        },
+        sync::{Arc, Mutex},
         thread,
         time::Duration,
     };
 
-    use crate::{task_manager, world_manager::Tile};
+    use crate::world_manager::Tile;
 
     use super::*;
 
@@ -126,7 +122,7 @@ mod tests {
             AID::new(|aid, mailbox| main(aid, mailbox, grid));
         let (fake_worker, fake_worker_mailbox) = AID::<EntityMessage>::mock();
         let _ = task_manager.send(TaskManagerMessage::GiveMeNewTask(fake_worker.clone()));
-        if let Ok(EntityMessage::Task(Task::Idle)) = fake_worker_mailbox.recv() {
+        if let Ok(EntityMessage::TaskResponse(Ok(Task::Idle))) = fake_worker_mailbox.recv() {
         } else {
             panic!();
         }
@@ -141,12 +137,12 @@ mod tests {
         let (fake_worker, fake_worker_mailbox) = AID::<EntityMessage>::mock();
         let _ = task_manager.send(TaskManagerMessage::CreateMoveTask((0, 0)));
         let _ = task_manager.send(TaskManagerMessage::GiveMeNewTask(fake_worker.clone()));
-        if let Ok(EntityMessage::Task(Task::MoveTo(_))) = fake_worker_mailbox.recv() {
+        if let Ok(EntityMessage::TaskResponse(Ok(Task::MoveTo(_)))) = fake_worker_mailbox.recv() {
         } else {
             panic!("First")
         }
         let _ = task_manager.send(TaskManagerMessage::GiveMeNewTask(fake_worker.clone()));
-        if let Ok(EntityMessage::Task(Task::MoveTo(_))) = fake_worker_mailbox.recv() {
+        if let Ok(EntityMessage::TaskResponse(Ok(Task::MoveTo(_)))) = fake_worker_mailbox.recv() {
         } else {
             panic!("Second")
         }
@@ -163,11 +159,11 @@ mod tests {
         let _ = task_manager.send(TaskManagerMessage::CreateMoveTask((0, 0)));
         let _ = task_manager.send(TaskManagerMessage::GiveMeNewTask(fake_worker.clone()));
         let _ = task_manager.send(TaskManagerMessage::GiveMeNewTask(fake_worker2.clone()));
-        if let Ok(EntityMessage::Task(Task::MoveTo(_))) = fake_worker_mailbox.recv() {
+        if let Ok(EntityMessage::TaskResponse(Ok(Task::MoveTo(_)))) = fake_worker_mailbox.recv() {
         } else {
             panic!("First")
         }
-        if let Ok(EntityMessage::Task(Task::Idle)) = fake_worker_mailbox2.recv() {
+        if let Ok(EntityMessage::TaskResponse(Ok(Task::Idle))) = fake_worker_mailbox2.recv() {
         } else {
             panic!("Second")
         }

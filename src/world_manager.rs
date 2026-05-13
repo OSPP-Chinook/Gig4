@@ -7,7 +7,7 @@ use std::{
 use crate::{
     aid::AID,
     building::Building,
-    messages::EntityMessage,
+    messages::{EntityMessage, MoveError},
     task_manager::{Task, TaskManagerMessage},
     worker::Worker,
 };
@@ -60,7 +60,7 @@ fn move_entity(
         && let Tile::Empty = *dest
         && let Some(old_pos) = entity_lookup.get(&aid)
     {
-        let _ = aid.send(EntityMessage::Ok);
+        let _ = aid.send(EntityMessage::MoveResponse(Ok(pos)));
 
         // all positions in entity_lookup are valid so unwrap will never panic
         let old_tile = get_tile(grid, *old_pos).unwrap();
@@ -71,7 +71,7 @@ fn move_entity(
         *get_tile(grid, pos).unwrap() = temp;
         entity_lookup.insert(aid, pos);
     } else {
-        let _ = aid.send(EntityMessage::Err);
+        let _ = aid.send(EntityMessage::MoveResponse(Err(MoveError::Occupied(pos))));
     }
 }
 
@@ -116,7 +116,7 @@ pub fn main(
                     let aid = Building::new(this.clone());
                     // temporary until buildings can get tasks some other way
                     if assign_task {
-                        let _ = aid.send(EntityMessage::Task(Task::Produce(0)));
+                        let _ = aid.send(EntityMessage::TaskResponse(Ok(Task::Produce(0))));
                     }
                     *dest = Tile::Building(aid.clone());
                     entity_lookup.insert(aid, pos);

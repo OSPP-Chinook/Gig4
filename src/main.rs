@@ -8,6 +8,7 @@ mod player_manager;
 mod task_manager;
 mod worker;
 mod world_manager;
+mod zombie;
 
 use crate::{aid::AID, messages::EntityMessage};
 

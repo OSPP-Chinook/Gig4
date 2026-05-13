@@ -4,9 +4,10 @@ use crate::{
     aid::AID,
     inventory::{self, InventoryMessage},
     item::Item,
-    messages::EntityMessage,
+    messages::{EntityMessage, ItemTransferError, TaskError},
     task_manager::Task,
     world_manager::WorldManagerMessage,
+    zombie,
 };
 
 const MACHINE_TICK_SPEED: Duration = Duration::from_secs(1);
@@ -21,67 +22,88 @@ pub struct Recipe {
 pub struct Building {
     world_aid: AID<WorldManagerMessage>,
     self_aid: AID<EntityMessage>,
-    mailbox: Receiver<EntityMessage>,
     inventory: AID<InventoryMessage>,
 }
 
 impl Building {
     pub fn new(world: AID<WorldManagerMessage>) -> AID<EntityMessage> {
         return AID::new(move |aid, mailbox| {
-            let mut building = Building {
-                world_aid: world,
-                self_aid: aid.clone(),
-                mailbox: mailbox,
-                inventory: inventory::init(),
-            };
-            building.run();
+            let mut building = Building::create(aid, world);
+            building.run(&mailbox);
+
+            building.destroy();
+            zombie::entity_zombie(mailbox);
         });
     }
 
-    fn run(&mut self) {
+    fn create(self_aid: AID<EntityMessage>, world_aid: AID<WorldManagerMessage>) -> Self {
+        Building {
+            world_aid,
+            self_aid,
+            inventory: inventory::init(),
+        }
+    }
+
+    fn destroy(self) {
+        let _ = self.inventory.send(InventoryMessage::KillYourself);
+        drop(self);
+    }
+
+    fn run(&mut self, mailbox: &Receiver<EntityMessage>) {
         let mut active_recipe: Option<Recipe> = None;
         let mut current_process: Option<usize> = None;
         let mut waiting = false;
         'outer: loop {
             //read all messages in mailbox
-            while let Ok(msg) = self.mailbox.try_recv() {
+            while let Ok(msg) = mailbox.try_recv() {
                 match msg {
                     EntityMessage::KillYourself => {
                         break 'outer;
                     }
-                    EntityMessage::InventoryOk => {
-                        if let Some(recipe) = &active_recipe
-                            && waiting
-                            && current_process == None
-                        {
-                            current_process = Some(recipe.recipe_time);
+                    EntityMessage::ItemTransferResponse(res) => match res {
+                        Ok(()) => {
+                            if let Some(recipe) = &active_recipe
+                                && waiting
+                                && current_process == None
+                            {
+                                current_process = Some(recipe.recipe_time);
+                            }
+                            if let Some(time) = &current_process
+                                && waiting
+                            {
+                                current_process = None;
+                            }
+                            waiting = false;
                         }
-                        if let Some(time) = &current_process
-                            && waiting
-                        {
+                        Err(
+                            ItemTransferError::RecipeChange | ItemTransferError::InsufficientItems,
+                        ) => {
                             current_process = None;
+                            waiting = false;
                         }
-                        waiting = false;
-                    }
-                    EntityMessage::InventoryErr => {
-                        current_process = None;
-                        waiting = false;
-                    }
+                        Err(ItemTransferError::ImDead | ItemTransferError::TheyreDead) => {} // TODO: something went wrong
+                    },
 
-                    EntityMessage::Task(task) => {
-                        if let Task::Produce(index) = task {
-                            //get recipes from static data.
-                            active_recipe = Some(Recipe {
-                                input: vec![],
-                                output: vec![(Item::Mutexium, 10)],
-                                recipe_time: 5,
-                            })
+                    EntityMessage::TaskResponse(res) => match res {
+                        Ok(task) => {
+                            if let Task::Produce(index) = task {
+                                //get recipes from static data.
+                                active_recipe = Some(Recipe {
+                                    input: vec![],
+                                    output: vec![(Item::Mutexium, 10)],
+                                    recipe_time: 5,
+                                });
+
+                                // inform waitign of recipe change
+                                let _ = self.inventory.send(InventoryMessage::ChangeRecipe);
+                            }
                         }
-                    } //Update task
-                    EntityMessage::Ok => {}
-                    EntityMessage::Err => {}
+                        Err(TaskError::ImDead) => {} // should receive KillYourself shortly
+                    }, //Update task
                     EntityMessage::GetInventory(aid) => {
-                        let _ = aid.send(EntityMessage::SendInventory(self.inventory.clone()));
+                        let _ = aid.send(EntityMessage::GetInventoryResponse(Ok(self
+                            .inventory
+                            .clone())));
                     }
                     _ => {}
                 }

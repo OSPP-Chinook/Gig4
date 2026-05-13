@@ -1,9 +1,10 @@
 use crate::aid::AID;
 use crate::inventory::{self, InventoryMessage};
 use crate::item::Item;
-use crate::messages::EntityMessage;
+use crate::messages::{EntityMessage, GetInventoryError, ItemTransferError, MoveError, TaskError};
 use crate::task_manager::{Task, TaskManagerMessage};
 use crate::world_manager::{Pos, WorldManagerMessage};
+use crate::zombie;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::mpsc::Receiver;
 use std::thread;
@@ -30,7 +31,6 @@ const TRANSFER_TIME: Duration = Duration::from_millis(5000);
 #[allow(dead_code)]
 struct WorkerCore {
     current_pos: Pos,
-    pending_move: Option<Pos>,
     sub_tasks: VecDeque<SubTask>,
     open_neighbors: HashSet<Pos>,
     heuristic: HashMap<Pos, usize>,
@@ -74,7 +74,6 @@ impl WorkerCore {
     fn new(start_pos: Pos) -> WorkerCore {
         WorkerCore {
             current_pos: start_pos,
-            pending_move: None,
             sub_tasks: VecDeque::new(),
             open_neighbors: neighbors(start_pos),
             heuristic: HashMap::new(),
@@ -143,7 +142,6 @@ impl WorkerCore {
             }
 
             if let Some(target) = self.pathfind(*pos) {
-                self.pending_move = Some(target);
                 return SubTask::Move(target);
             } else {
                 // completely stuck
@@ -195,21 +193,17 @@ impl WorkerCore {
         }
     }
     /// Anropas när WorldManager godkänner en flytt.
-    /// Uppdaterar current_pos och tömmer pending_move.
-    fn apply_ok(&mut self) {
-        if let Some(pos) = self.pending_move.take() {
-            self.current_pos = pos;
-            // recalculate neighbors
-            self.open_neighbors = neighbors(pos);
-        }
+    /// Uppdaterar current_pos och open_neighbors.
+    fn apply_ok(&mut self, pos: Pos) {
+        self.current_pos = pos;
+        // open all neighbors
+        self.open_neighbors = neighbors(pos);
     }
     /// Anropas när WorldManager nekar en flytt.
-    /// Tömmer pending_move utan att ändra current_pos.
-    fn apply_err(&mut self) {
-        if let Some(pos) = self.pending_move.take() {
-            // pos is not open
-            self.open_neighbors.remove(&pos);
-        }
+    /// Uppdaterar open_neighbors.
+    fn apply_err(&mut self, pos: Pos) {
+        // pos is not open
+        self.open_neighbors.remove(&pos);
     }
 }
 
@@ -241,9 +235,11 @@ impl Worker {
         start_pos: Pos,
     ) -> AID<EntityMessage> {
         AID::new(move |aid, mailbox| {
-            let mut worker = Worker::create(aid.clone(), world, task, start_pos);
+            let mut worker = Worker::create(aid, world, task, start_pos);
+            worker.run(&mailbox);
 
-            worker.run(mailbox);
+            worker.destroy();
+            zombie::entity_zombie(mailbox);
         })
     }
 
@@ -265,67 +261,86 @@ impl Worker {
         }
     }
 
+    fn destroy(self) {
+        let _ = self.inventory.send(InventoryMessage::KillYourself);
+        drop(self);
+    }
+
     fn msg_handler(&mut self, msg: EntityMessage) {
         match msg {
-            EntityMessage::Task(task) => {
-                self.core.new_task(task);
-                self.waiting = false;
-            }
-
             EntityMessage::KillYourself => {
                 self.alive = false;
             }
 
-            EntityMessage::Ok => {
-                //world manager godkände flyyten
-                //uppdatera WorkerCore-> cunnrent_pos
-                self.core.apply_ok();
-                self.waiting = false;
-                thread::sleep(MOVE_TIME);
-            }
+            EntityMessage::TaskResponse(res) => match res {
+                Ok(task) => {
+                    self.core.new_task(task);
+                    self.waiting = false;
+                }
+                Err(TaskError::ImDead) => {} // should receive KillYourself shortly
+            },
 
-            EntityMessage::Err => {
-                // world manager neckade flytten
-                // ingen ändring i pos
-                self.core.apply_err();
-                self.waiting = false;
-            }
+            EntityMessage::MoveResponse(res) => match res {
+                Ok(pos) => {
+                    //world manager godkände flyyten
+                    //uppdatera WorkerCore-> current_pos
+                    self.core.apply_ok(pos);
+                    self.waiting = false;
+                    thread::sleep(MOVE_TIME);
+                }
+                Err(MoveError::Occupied(pos)) => {
+                    // world manager neckade flytten
+                    // ingen ändring i pos
+                    self.core.apply_err(pos);
+                    self.waiting = false;
+                }
+                Err(MoveError::ImDead) => {} // should receive KillYourself shortly
+            },
 
-            EntityMessage::InventoryOk => {
-                self.core.sub_tasks.pop_front();
-                self.pending_inventory_task = None;
-                self.waiting = false;
-            }
-
-            EntityMessage::InventoryErr => {
-                self.waiting = false;
-            }
+            EntityMessage::ItemTransferResponse(res) => match res {
+                Ok(()) => {
+                    self.core.sub_tasks.pop_front();
+                    self.pending_inventory_task = None;
+                    self.waiting = false;
+                }
+                Err(ItemTransferError::InsufficientItems) => {
+                    self.waiting = false;
+                }
+                Err(ItemTransferError::RecipeChange | ItemTransferError::TheyreDead) => {} // TODO: invalidate task, it is impossible
+                Err(ItemTransferError::ImDead) => {} // TODO: something went wrong
+            },
 
             EntityMessage::GetInventory(aid) => {
-                let _ = aid.send(EntityMessage::SendInventory(self.inventory.clone()));
+                // workers should't need to transfer items between eachother
+                let _ = aid.send(EntityMessage::GetInventoryResponse(Err(
+                    GetInventoryError::ImWorker,
+                )));
             }
 
-            EntityMessage::SendInventory(inventory) => {
-                if let Some((send, item)) = self.pending_inventory_task {
-                    if send {
-                        let _ = self.inventory.send(InventoryMessage::GiveTo(
-                            self.self_aid.clone(),
-                            inventory,
-                            vec![(item, 10)],
-                        ));
-                    } else {
-                        let _ = self.inventory.send(InventoryMessage::TakeFrom(
-                            self.self_aid.clone(),
-                            inventory,
-                            vec![(item, 10)],
-                        ));
+            EntityMessage::GetInventoryResponse(res) => match res {
+                Ok(inventory) => {
+                    if let Some((send, item)) = self.pending_inventory_task {
+                        if send {
+                            let _ = self.inventory.send(InventoryMessage::GiveTo(
+                                self.self_aid.clone(),
+                                inventory,
+                                vec![(item, 10)],
+                            ));
+                        } else {
+                            let _ = self.inventory.send(InventoryMessage::TakeFrom(
+                                self.self_aid.clone(),
+                                inventory,
+                                vec![(item, 10)],
+                            ));
+                        }
                     }
                 }
-            }
+                Err(GetInventoryError::ImWorker | GetInventoryError::ImDead) => {} // TODO: invalidate task, it is impossible
+            },
         }
     }
 
-    fn run(&mut self, mailbox: Receiver<EntityMessage>) {
+    fn run(&mut self, mailbox: &Receiver<EntityMessage>) {
         loop {
             while self.waiting {
                 if let Ok(msg) = mailbox.recv() {
@@ -361,13 +376,14 @@ impl Worker {
                 SubTask::GiveItem(to, item) => {
                     self.pending_inventory_task = Some((true, item));
                     let _ = to.send(EntityMessage::GetInventory(self.self_aid.clone()));
+                    self.waiting = true;
                     thread::sleep(TRANSFER_TIME);
                 }
                 SubTask::TakeItem(from, item) => {
                     self.pending_inventory_task = Some((false, item));
                     let _ = from.send(EntityMessage::GetInventory(self.self_aid.clone()));
+                    self.waiting = true;
                     thread::sleep(TRANSFER_TIME);
-                    //println!("Took 1000 Megaforium");
                 }
             }
         }
@@ -376,7 +392,6 @@ impl Worker {
 
 #[cfg(test)]
 mod tests {
-
     use super::*;
 
     #[test]
@@ -400,7 +415,7 @@ mod tests {
         let task = Task::MoveTo(new_pos);
         core.new_task(task);
         core.process_task();
-        core.apply_ok();
+        core.apply_ok(new_pos);
         assert_ne!(core.current_pos, start_pos);
     }
 
@@ -410,14 +425,10 @@ mod tests {
         let mut core = WorkerCore::new(start_pos);
 
         let new_pos = (3, 8);
-
         let task = Task::MoveTo(new_pos);
-
         core.new_task(task);
         core.process_task();
-        core.apply_err();
-
+        core.apply_err(new_pos);
         assert_eq!(core.current_pos, start_pos);
-        assert_eq!(core.pending_move, None);
     }
 }
