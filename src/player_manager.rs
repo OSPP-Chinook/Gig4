@@ -230,7 +230,6 @@ pub fn render_loop(
             // I can't tell if this makes any difference, or if it doesn't work with poll()
             let time_to_wait = 50;
             let time_to_wait = cmp::max(0, time_to_wait - time_0.elapsed().as_millis() as i64) as u64;
-
         }
     })
 }
@@ -376,41 +375,14 @@ fn render(
     render_world_in_area(frame, &world_area, &old_world_array, &world_array, camera);
     
     if let Some(sel_aid) = selected_aid {
-        let (width, height) = (world_area.width / 3, world_area.height / 2);
-        let m = 2; // margin: 2 x border, which doubles as 2 x space for animation
-
-        if width > m && height > m {
-            // pov_area encloses a whole number of tiles
-            let width = (width - m) / TILE_SIZE.0 * TILE_SIZE.0 + m;
-            let height = (height - m) / TILE_SIZE.1 * TILE_SIZE.1 + m;
-
-            let horizontal_layout = Layout::horizontal([width])
-                .flex(ratatui::layout::Flex::End)
-                .split(frame.area());
-
-            let layout = Layout::vertical([
-                    Constraint::Length(frame.area().height - height),
-                    Constraint::Length(height),
-                ])
-                .spacing(Spacing::Overlap(1))
-                .split(horizontal_layout[0]);
-
-            frame.render_widget(Clear, layout[0]);
-            frame.render_widget(Clear, layout[1]);
-            
-            if let Some(pov_camera) = get_worker_camera(&world_array, sel_aid) {
-                render_pov(frame, pov_camera, &layout, world_array, old_world_array);
-            }
-            
-            // render this last so it covers any part of the world sticking out
-            frame.render_widget(
-                Block::new().borders(Borders::ALL).title("─ POV: you're a worker ").merge_borders(MergeStrategy::Replace),
-                layout[1],
-            );
-
-            // Status things
-            render_status(frame, layout, inventory_string);
-        }
+        render_selected_info(
+            frame, 
+            sel_aid, 
+            &world_area, 
+            world_array, 
+            old_world_array, 
+            inventory_string
+        );
     }
     
     // return; // don't draw fps
@@ -420,6 +392,51 @@ fn render(
         time_1.duration_since(time_0),
         time_2.duration_since(time_1),
     );
+}
+
+fn render_selected_info(
+    frame: &mut Frame, 
+    sel_aid: &AID<EntityMessage>, 
+    world_area: &Rect, 
+    world_array: &RawWorldArray, 
+    old_world_array: &RawWorldArray, 
+    inventory_string: &Option<String>
+) {
+    let (width, height) = (world_area.width / 3, world_area.height / 2);
+    let m = 2; // margin: 2 x border, which doubles as 2 x space for animation
+
+    if width > m && height > m {
+        // pov_area encloses a whole number of tiles
+        let width = (width - m) / TILE_SIZE.0 * TILE_SIZE.0 + m;
+        let height = (height - m) / TILE_SIZE.1 * TILE_SIZE.1 + m;
+
+        let horizontal_layout = Layout::horizontal([width])
+            .flex(ratatui::layout::Flex::End)
+            .split(frame.area());
+
+        let layout = Layout::vertical([
+                Constraint::Length(frame.area().height - height),
+                Constraint::Length(height),
+            ])
+            .spacing(Spacing::Overlap(1))
+            .split(horizontal_layout[0]);
+
+        frame.render_widget(Clear, layout[0]);
+        frame.render_widget(Clear, layout[1]);
+        
+        if let Some(pov_camera) = get_worker_camera(&world_array, sel_aid) {
+            render_pov(frame, pov_camera, &layout, world_array, old_world_array);
+        }
+        
+        // render this last so it covers any part of the world sticking out
+        frame.render_widget(
+            Block::new().borders(Borders::ALL).title("─ POV: you're a worker ").merge_borders(MergeStrategy::Replace),
+            layout[1],
+        );
+
+        // Status things
+        render_status(frame, layout, inventory_string);
+    }
 }
 
 fn render_pov(
