@@ -1,30 +1,59 @@
-use rand::{RngExt, SeedableRng, rngs::ChaCha8Rng};
-use ratatui::layout::Alignment;
-use ratatui::layout::Direction;
-use ratatui::layout::Spacing;
-use ratatui::symbols::merge::MergeStrategy;
-use ratatui::widgets::Padding;
-use std::fmt::format;
-use std::sync::mpsc::Receiver;
-use std::time::Duration;
-use std::time::Instant;
-use std::cmp::Ordering;
-use std::cmp;
+use rand::{
+    RngExt, 
+    SeedableRng, 
+    rngs::ChaCha8Rng
+};
 
-use crate::inventory;
-use crate::inventory::InventoryMessage;
+use crossterm::event::{
+    Event, 
+    KeyCode, 
+    KeyEvent, 
+    KeyEventKind, 
+    MouseButton, 
+    MouseEvent, 
+    MouseEventKind, 
+    poll, 
+    read
+};
+
+use ratatui::{
+    layout::{
+        Alignment,
+        Spacing,
+        {Constraint, Layout, Margin, Rect, Offset},
+    },
+
+    widgets::{
+        Padding,
+        Block, 
+        Borders, 
+        Paragraph, 
+        Clear,
+    },
+
+    symbols::merge::MergeStrategy,
+    Frame,
+    style::Stylize,
+};
+
+use std::{
+    sync::mpsc::Receiver,
+    time::{
+        Duration,
+        Instant,
+    },
+    cmp::{self, 
+        Ordering,
+    },
+    rc::Rc,
+};
+
 use crate::{
     aid::AID,
     messages::PlayerManagerMessage,
     EntityMessage,
     world_manager::{HEIGHT, RawWorldArray, Tile, WIDTH, WorldGrid, WorldManagerMessage},
 };
-use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, MouseButton, MouseEvent, MouseEventKind, poll, read};
-use ratatui::Frame;
-use ratatui::layout::Constraint::Length;
-use ratatui::layout::{Constraint, Layout, Margin, Rect, Offset};
-use ratatui::style::Stylize;
-use ratatui::widgets::{Block, Borders, Paragraph, Clear};
 
 // Width and height of a tile on the screen in characters
 // Needs to be u16 for ratatui
@@ -365,22 +394,8 @@ fn render(
             );
 
             // Status things
-            if *show_status {
-                // let sub_layout = Layout::vertical().split(layout[0])
-
-                if let Some(inventory_string) = inventory_string {
-                    frame.render_widget(Paragraph::new(inventory_string.clone()).block(Block::new().padding(Padding::uniform(2))).alignment(Alignment::Center), layout[0]);
-                } 
-                
-                else {
-                    frame.render_widget(Paragraph::new(format!("Fetching Data...")).block(Block::new().padding(Padding::uniform(2))).alignment(Alignment::Center), layout[0]);
-                } 
-
-                frame.render_widget(
-                    Block::new().borders(Borders::ALL).title("─ Status ").merge_borders(MergeStrategy::Exact), 
-                    layout[0]
-                );
-            }
+            
+            render_status(frame, layout, inventory_string);
         }
     }
     
@@ -393,6 +408,23 @@ fn render(
     );
 }
 
+fn render_status(frame: &mut Frame, layout: Rc<[Rect]>, inventory_string: &Option<String>) {
+    // let sub_layout = Layout::vertical().split(layout[0])
+
+    if let Some(inventory_string) = inventory_string {
+        frame.render_widget(Paragraph::new(inventory_string.clone()).block(Block::new().padding(Padding::uniform(2))).alignment(Alignment::Center), layout[0]);
+    } 
+    
+    else {
+        frame.render_widget(Paragraph::new(format!("Fetching Data...")).block(Block::new().padding(Padding::uniform(2))).alignment(Alignment::Center), layout[0]);
+    } 
+
+    frame.render_widget(
+        Block::new().borders(Borders::ALL).title("─ Status ").merge_borders(MergeStrategy::Exact), 
+        layout[0]
+    );
+}
+ 
 fn render_world_in_area(
     frame: &mut Frame,
     world_area: &Rect,
