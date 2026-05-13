@@ -40,18 +40,14 @@ use ratatui::{
     style::Stylize,
 };
 
+use core::task;
 use std::{    
-    time::{
-        Duration,
-        Instant,
-    },
-
     cmp::{self, 
         Ordering,
-    },
-
-    sync::mpsc::Receiver,
-    rc::Rc,
+    }, fmt::format, rc::Rc, sync::mpsc::Receiver, time::{
+        Duration,
+        Instant,
+    }, usize
 };
 
 use crate::{
@@ -64,6 +60,7 @@ use crate::{
         WorldManagerMessage
     },
 
+    task_manager::Task,
     aid::AID,
     messages::PlayerManagerMessage,
     EntityMessage,
@@ -196,10 +193,13 @@ pub fn render_loop(
         let mut old_world = get_copy_of_world(&world_array);
         let mut selected_aid = None;
         let mut time_to_wait = 0;
+        
+        // For Status information
         let mut inventory_string: Option<String> = None;
+        let mut task: Option<Task> = None;
 
         loop {
-            check_mailbox(&mailbox, &mut inventory_string);
+            check_mailbox(&mailbox, &mut inventory_string, &mut task);
 
             if let Some(shut_down) = get_inputs(&mut camera, &mut selected_aid, &old_world, time_to_wait) 
                 && shut_down 
@@ -210,6 +210,7 @@ pub fn render_loop(
             // terminal.draw(|frame| render(frame, world_array, camera, input))?;
             if let Some(selected_aid) = selected_aid.clone() {
                 _ = selected_aid.send(EntityMessage::FetchInventoryStatus(aid.clone())); 
+                _ = selected_aid.send(EntityMessage::FetchCurrentTask(aid.clone()));
             }
 
             let time_0 = Instant::now();
@@ -223,6 +224,7 @@ pub fn render_loop(
                 (time_0, time_1), 
                 &selected_aid, 
                 &inventory_string,
+                &task,
             ))?;
             old_world = new_world;
             
@@ -234,12 +236,21 @@ pub fn render_loop(
     })
 }
 
-fn check_mailbox(mailbox: &Receiver<PlayerManagerMessage>, inventory_string: &mut Option<String>) {
+fn check_mailbox(
+    mailbox: &Receiver<PlayerManagerMessage>, 
+    inventory_string: &mut Option<String>,
+    task: &mut Option<Task>,
+) {
     //read all messages in mailbox
     while let Ok(msg) = mailbox.try_recv() {
         match msg {
             // TODO: Handle more message types
-            PlayerManagerMessage::InventoryStatusResult(inv_string) => { *inventory_string = Some(inv_string) },
+            PlayerManagerMessage::InventoryStatusResult(inv_string) => { 
+                *inventory_string = Some(inv_string) 
+            },
+            PlayerManagerMessage::CurrentTaskResult(t) => {
+                *task = Some(t);
+            }
             _ => {}
         }
     }
@@ -369,6 +380,7 @@ fn render(
     (time_0, time_1): (Instant, Instant),
     selected_aid: &Option<AID<EntityMessage>>,
     inventory_string: &Option<String>,
+    task: &Option<Task>,
 ) {
     let world_area = frame.area();
     
@@ -381,7 +393,8 @@ fn render(
             &world_area, 
             world_array, 
             old_world_array, 
-            inventory_string
+            inventory_string,
+            task,
         );
     }
     
@@ -400,7 +413,8 @@ fn render_selected_info(
     world_area: &Rect, 
     world_array: &RawWorldArray, 
     old_world_array: &RawWorldArray, 
-    inventory_string: &Option<String>
+    inventory_string: &Option<String>,
+    task: &Option<Task>,
 ) {
     let (width, height) = (world_area.width / 3, world_area.height / 2);
     let m = 2; // margin: 2 x border, which doubles as 2 x space for animation
@@ -430,12 +444,14 @@ fn render_selected_info(
         
         // render this last so it covers any part of the world sticking out
         frame.render_widget(
-            Block::new().borders(Borders::ALL).title("─ POV: you're a worker ").merge_borders(MergeStrategy::Replace),
+            Block::new()
+                .borders(Borders::ALL)
+                .title("─ POV: you're a worker ")
+                .merge_borders(MergeStrategy::Replace),
             layout[1],
         );
 
-        // Status things
-        render_status(frame, layout, inventory_string);
+        render_status(frame, layout, inventory_string, task);
     }
 }
 
@@ -451,24 +467,85 @@ fn render_pov(
     let (x, y) = (x as usize, y as usize);
     let (dx, dy) = get_movement(&old_world_array, &world_array[y][x], (x, y));
     let pov_area_inner = pov_area_inner.offset(Offset {x: -dx, y: -dy});
-    render_world_in_area(frame, &pov_area_inner, &old_world_array, &world_array, pov_camera);
+    render_world_in_area(
+        frame, 
+        &pov_area_inner, 
+        &old_world_array, 
+        &world_array, 
+        pov_camera
+    );
 }
 
-fn render_status(frame: &mut Frame, layout: Rc<[Rect]>, inventory_string: &Option<String>) {
-    // let sub_layout = Layout::vertical().split(layout[0])
+fn render_status(
+    frame: &mut Frame, 
+    layout: Rc<[Rect]>, 
+    inventory_string: &Option<String>,
+    task: &Option<Task>,
+) {
+    let sub_layout = Layout::vertical([
+        Constraint::Length(7), 
+        Constraint::Percentage(75)
+    ]).split(layout[0]);
+
+    if let Some(task) = task {
+        frame.render_widget(
+            Paragraph::new(parse_task(task))
+                .block(Block::new().padding(Padding::uniform(2)))
+                .alignment(Alignment::Center), sub_layout[0]);
+    }
+
+    else {
+        frame.render_widget(
+            Paragraph::new(format!("Fetching Task..."))
+                .block(Block::new().padding(Padding::uniform(2)))
+                .alignment(Alignment::Center), sub_layout[0]);
+    } 
 
     if let Some(inventory_string) = inventory_string {
-        frame.render_widget(Paragraph::new(inventory_string.clone()).block(Block::new().padding(Padding::uniform(2))).alignment(Alignment::Center), layout[0]);
+        frame.render_widget(
+            Paragraph::new(inventory_string.clone())
+                .block(Block::new().padding(Padding::uniform(2)))
+                .alignment(Alignment::Center), sub_layout[1]);
     } 
     
     else {
-        frame.render_widget(Paragraph::new(format!("Fetching Data...")).block(Block::new().padding(Padding::uniform(2))).alignment(Alignment::Center), layout[0]);
+        frame.render_widget(
+            Paragraph::new(format!("Fetching Data..."))
+                .block(Block::new().padding(Padding::uniform(2)))
+                .alignment(Alignment::Center), sub_layout[1]);
     } 
 
     frame.render_widget(
-        Block::new().borders(Borders::ALL).title("─ Status ").merge_borders(MergeStrategy::Exact), 
+        Block::new()
+            .borders(Borders::ALL)
+            .title("─ Status ")
+            .merge_borders(MergeStrategy::Exact), 
         layout[0]
     );
+}
+
+fn parse_task(task: &Task) -> String {
+    let mut parsed_task: String = String::from("Current Task:\n");
+
+    match task {
+        Task::MoveTo(pos) => {
+            parsed_task.push_str(format!("Moving to ({0}, {1})", pos.0, pos.1).as_str());
+        },
+        Task::DeliverItem(item, from, to) => {
+            parsed_task.push_str(format!(
+                "Delivering {0} from ({1}, {2}) to ({3}, {4})"
+                , item.to_str(), from.1.0, from.1.1, to.1.0, to.1.1
+            ).as_str());
+        },
+        Task::Idle => {
+            parsed_task.push_str("Idling...");
+        },
+        Task::Produce(amount) => {
+            parsed_task.push_str(format!("Producing {} things", amount).as_str());
+        },
+    }
+
+    return parsed_task;
 }
  
 fn render_world_in_area(
