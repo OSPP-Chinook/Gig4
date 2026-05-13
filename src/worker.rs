@@ -325,13 +325,13 @@ impl Worker {
                         let _ = self.inventory.send(InventoryMessage::GiveTo(
                             self.self_aid.clone(),
                             inventory,
-                            (item, 10),
+                            vec!((item, 10)),
                         ));
                     } else {
                         let _ = self.inventory.send(InventoryMessage::TakeFrom(
                             self.self_aid.clone(),
                             inventory,
-                            (item, 10),
+                            vec!((item, 10)),
                         ));
                     }
                 }

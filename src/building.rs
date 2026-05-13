@@ -89,6 +89,7 @@ impl Building {
                     _ => {}
                 }
             }
+
             if let Some(recipe) = &active_recipe
                 && current_process == None
                 && !waiting
@@ -97,18 +98,19 @@ impl Building {
                     current_process = Some(recipe.recipe_time);
                     waiting = false;
                 } else {
-                    let _ = self.inventory.send(InventoryMessage::Remove(
+                    _ = self.inventory.send(InventoryMessage::Remove(
                         self.self_aid.clone(),
-                        recipe.input[0],
+                        recipe.input.clone(),
                     ));
                     waiting = true;
                 }
             }
+          
             if let Some(time_left) = current_process {
                 if time_left == 0 {
-                    let _ = self.inventory.send(InventoryMessage::Add(
+                    _ = self.inventory.send(InventoryMessage::Add(
                         self.self_aid.clone(),
-                        active_recipe.as_ref().unwrap().output[0],
+                        active_recipe.as_ref().unwrap().output.clone(),
                     ));
                     current_process = None;
                     continue;
