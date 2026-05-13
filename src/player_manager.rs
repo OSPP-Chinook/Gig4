@@ -20,7 +20,11 @@ use ratatui::{
     layout::{
         Alignment,
         Spacing,
-        {Constraint, Layout, Margin, Rect, Offset},
+        Constraint, 
+        Layout, 
+        Margin, 
+        Rect, 
+        Offset,
     },
 
     widgets::{
@@ -36,28 +40,42 @@ use ratatui::{
     style::Stylize,
 };
 
-use std::{
-    sync::mpsc::Receiver,
+use std::{    
     time::{
         Duration,
         Instant,
     },
+
     cmp::{self, 
         Ordering,
     },
+
+    sync::mpsc::Receiver,
     rc::Rc,
 };
 
 use crate::{
+    world_manager::{
+        WIDTH, 
+        HEIGHT, 
+        RawWorldArray, 
+        Tile, 
+        WorldGrid, 
+        WorldManagerMessage
+    },
+
     aid::AID,
     messages::PlayerManagerMessage,
     EntityMessage,
-    world_manager::{HEIGHT, RawWorldArray, Tile, WIDTH, WorldGrid, WorldManagerMessage},
 };
 
 // Width and height of a tile on the screen in characters
 // Needs to be u16 for ratatui
 const TILE_SIZE: (u16, u16) = (3, 2);
+
+// Default: 1. Set to -1 for inverted movement.
+// The default setting looks weird now, but it will make sense when the world is more populated.
+const MOVE_CAMERA: i32 = 1;
 
 enum MouseClick {
     None,
@@ -97,10 +115,6 @@ impl Camera {
         self.1 = y;
     }
 }
-
-// Default: 1. Set to -1 for inverted movement.
-// The default setting looks weird now, but it will make sense when the world is more populated.
-const MOVE_CAMERA: i32 = 1;
 
 // We do this for two reasons:
 // 1. To have 2 copies of the world for comparing
@@ -184,7 +198,6 @@ pub fn render_loop(
         let mut selected_aid = None;
 
         let mut time_to_wait = 0;
-        let mut show_status: bool = false;
         let mut inventory_string: Option<String> = None;
 
         loop {
@@ -221,11 +234,11 @@ pub fn render_loop(
 
             let mut input: Input = Input { mouse_pos: None, mouse_click: MouseClick::None, key: None };
 
-            parse_input_keyboard(&mut input, &key_event, &mut camera, &mut selected_aid, &old_world, &mut show_status);
+            parse_input_keyboard(&mut input, &key_event, &mut camera, &mut selected_aid, &old_world);
             parse_input_mouse(&mut input, &mouse_event);
 
             // terminal.draw(|frame| render(frame, world_array, camera, input))?;
-            if show_status && let Some(selected_aid) = selected_aid.clone() {
+            if let Some(selected_aid) = selected_aid.clone() {
                 _ = selected_aid.send(EntityMessage::FetchInventoryStatus(aid.clone())); 
             }
 
@@ -240,7 +253,6 @@ pub fn render_loop(
                 (time_0, time_1), 
                 &selected_aid, 
                 &inventory_string,
-                &show_status,
             ))?;
             old_world = new_world;
             
@@ -259,7 +271,6 @@ fn parse_input_keyboard(
     camera: &mut Camera,
     selected_aid: &mut Option<AID<EntityMessage>>,
     old_world: &RawWorldArray,
-    show_status: &mut bool,
 ) {
     if event_opt.is_none() {return;}
 
@@ -278,9 +289,6 @@ fn parse_input_keyboard(
                     *camera = new_camera;
                 }
             }
-        }
-        KeyCode::Tab => {
-            *show_status = !*show_status;
         }
         _ => {input.key = Some(event.code)}
     }
@@ -346,7 +354,6 @@ fn render(
     (time_0, time_1): (Instant, Instant),
     selected_aid: &Option<AID<EntityMessage>>,
     inventory_string: &Option<String>,
-    show_status: &bool,
 ) {
     let world_area = frame.area();
     
@@ -372,19 +379,11 @@ fn render(
                 .spacing(Spacing::Overlap(1))
                 .split(horizontal_layout[0]);
 
-            if *show_status {
-                frame.render_widget(Clear, layout[0]);
-            }
-
+            frame.render_widget(Clear, layout[0]);
             frame.render_widget(Clear, layout[1]);
             
-            let pov_area_inner = layout[1].inner(Margin::new(1, 1));
             if let Some(pov_camera) = get_worker_camera(&world_array, sel_aid) {
-                let Camera(x, y) = pov_camera;
-                let (x, y) = (x as usize, y as usize);
-                let (dx, dy) = get_movement(&old_world_array, &world_array[y][x], (x, y));
-                let pov_area_inner = pov_area_inner.offset(Offset {x: -dx, y: -dy});
-                render_world_in_area(frame, &pov_area_inner, &old_world_array, &world_array, pov_camera);
+                render_pov(frame, pov_camera, &layout, world_array, old_world_array);
             }
             
             // render this last so it covers any part of the world sticking out
@@ -394,7 +393,6 @@ fn render(
             );
 
             // Status things
-            
             render_status(frame, layout, inventory_string);
         }
     }
@@ -406,6 +404,21 @@ fn render(
         time_1.duration_since(time_0),
         time_2.duration_since(time_1),
     );
+}
+
+fn render_pov(
+    frame: &mut Frame, 
+    pov_camera: Camera , 
+    layout: &Rc<[Rect]>,
+    world_array: &RawWorldArray, 
+    old_world_array: &RawWorldArray, 
+) {
+    let pov_area_inner = layout[1].inner(Margin::new(1, 1));
+    let Camera(x, y) = pov_camera;
+    let (x, y) = (x as usize, y as usize);
+    let (dx, dy) = get_movement(&old_world_array, &world_array[y][x], (x, y));
+    let pov_area_inner = pov_area_inner.offset(Offset {x: -dx, y: -dy});
+    render_world_in_area(frame, &pov_area_inner, &old_world_array, &world_array, pov_camera);
 }
 
 fn render_status(frame: &mut Frame, layout: Rc<[Rect]>, inventory_string: &Option<String>) {
