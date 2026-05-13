@@ -1,4 +1,6 @@
+use crossterm::execute;
 use rand::{RngExt, SeedableRng, rngs::ChaCha8Rng};
+use std::io::stdout;
 use std::sync::mpsc::Receiver;
 use std::time::Duration;
 use std::time::Instant;
@@ -11,7 +13,7 @@ use crate::{
     EntityMessage,
     world_manager::{HEIGHT, RawWorldArray, Tile, WIDTH, WorldGrid, WorldManagerMessage},
 };
-use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, MouseButton, MouseEvent, MouseEventKind, poll, read};
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, MouseButton, MouseEvent, MouseEventKind, poll, read, EnableMouseCapture, DisableMouseCapture};
 use ratatui::Frame;
 use ratatui::layout::Constraint::Length;
 use ratatui::layout::{Constraint, Layout, Margin, Rect, Offset};
@@ -142,13 +144,19 @@ pub fn render_loop(
             (HEIGHT / 2).try_into().unwrap(),
         );
 
+        let _ = execute!(stdout(), EnableMouseCapture);
+
         let mut old_world = get_copy_of_world(&world_array);
         
         let mut selected_aid = None;
 
+        let mut fps: f32 = 0.;
+        let mut second_counter = Instant::now();
+        let mut frames = 0;
+
         let mut time_to_wait = 0;
 
-        loop {
+        loop{
             //read all messages in mailbox
             while let Ok(msg) = mailbox.try_recv() {
                 match msg {
@@ -167,6 +175,7 @@ pub fn render_loop(
                         // Det här måste ske utanför input handler eftersom 
                         // det ska stänga av loopen
                         if event.code == KeyCode::Char('q') {
+                            let _ = execute!(stdout(), DisableMouseCapture);
                             break Ok(());
                         }
                         key_event = Some(event);
@@ -188,8 +197,15 @@ pub fn render_loop(
             let time_0 = Instant::now();
             let new_world = get_copy_of_world(&world_array);
             let time_1 = Instant::now();
-            terminal.draw(|frame| render(frame, &old_world, &new_world, camera, (time_0, time_1), &selected_aid))?;
+            terminal.draw(|frame| render(frame, &old_world, &new_world, camera, (time_0, time_1, fps), &selected_aid))?;
             old_world = new_world;
+            
+            //count frames per second
+            if second_counter.elapsed() >= Duration::from_secs(1) {
+                fps = frames as f32 / second_counter.elapsed().as_secs_f32();
+                frames = 0;
+                second_counter = Instant::now();
+            }
             
             // reduce wait time by how much time we spent rendering
             // I can't tell if this makes any difference, or if it doesn't work with poll()
@@ -286,7 +302,7 @@ fn render(
     old_world_array: &RawWorldArray,
     world_array: &RawWorldArray,
     camera: Camera,
-    (time_0, time_1): (Instant, Instant),
+    (time_0, time_1, fps): (Instant, Instant, f32),
     selected_aid: &Option<AID<EntityMessage>>,
 ) {
     let world_area = frame.area();
@@ -327,6 +343,7 @@ fn render(
         frame,
         time_1.duration_since(time_0),
         time_2.duration_since(time_1),
+        fps
     );
 }
 
@@ -491,7 +508,7 @@ fn render_world_in_area(
     }
 }
 
-fn render_fps(frame: &mut Frame, dur_copy: Duration, dur_render: Duration) {
+fn render_fps(frame: &mut Frame, dur_copy: Duration, dur_render: Duration, fps: f32) {
     let width = frame.area().width;
     
     // time to run get_copy_of_world() 
@@ -504,5 +521,10 @@ fn render_fps(frame: &mut Frame, dur_copy: Duration, dur_render: Duration) {
     let text = format!("{} ms", dur_render.as_millis());
     let len = text.len() as u16;
     let rect = Rect::new(width - len, 1, len, 1);
+    frame.render_widget(Paragraph::new(text), rect);
+
+    let text = format!("FPS: {:.2}", fps);
+    let len = text.len() as u16;
+    let rect = Rect::new(width - len, 2, len, 1);
     frame.render_widget(Paragraph::new(text), rect);
 }
