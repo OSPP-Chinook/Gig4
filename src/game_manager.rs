@@ -1,12 +1,11 @@
 use crate::{
     aid::AID,
-    assets::{AssetError, Assets},
+    assets::{AssetError, Assets, BuildingId, ItemId, RecipeId, WorkerId},
     building::Building,
-    worker::Worker,
-    item::Item,
     messages::PlayerManagerMessage,
     player_manager,
     task_manager::{self, TaskManagerMessage},
+    worker::Worker,
     world_manager::{self, WorldManagerMessage, init_world_grid},
 };
 use std::{path::Path, sync::Arc};
@@ -75,26 +74,40 @@ impl GameManager {
             let _ = self.world.send(WorldManagerMessage::PlaceObstacle(pos));
         }
 
-        let building = Building::new(self.world.clone());
+        let building = Building::new(
+            self.world.clone(),
+            self.assets.clone(),
+            BuildingId::from("factory"),
+        );
         let _ = self
             .world
             .send(WorldManagerMessage::PlaceBuilding((3, 5), building.clone()));
 
-        let building = Building::new(self.world.clone());
+        let building = Building::new(
+            self.world.clone(),
+            self.assets.clone(),
+            BuildingId::from("factory"),
+        );
         let _ = self.world.send(WorldManagerMessage::PlaceBuilding(
             (15, 3),
             building.clone(),
         ));
         let _ = building.send(crate::messages::EntityMessage::Task(
-            task_manager::Task::Produce(0),
+            task_manager::Task::Produce(RecipeId::from("recipe_mutexium")),
         ));
 
-        let worker = Worker::new(self.world.clone(), self.task.clone(), (10, 3));
+        let worker = Worker::new(
+            self.world.clone(),
+            self.task.clone(),
+            (10, 3),
+            self.assets.clone(),
+            WorkerId::from("worker"),
+        );
         let _ = self
             .world
             .send(WorldManagerMessage::PlaceWorker((10, 3), worker.clone()));
         let _ = self.task.send(TaskManagerMessage::CreatePath(
-            Item::Mutexium,
+            ItemId::from("mutexium"),
             (15, 3),
             (3, 5),
         ));

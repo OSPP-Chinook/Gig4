@@ -3,21 +3,19 @@ mod assets;
 mod building;
 mod game_manager;
 mod inventory;
-mod item;
 mod messages;
 mod player_manager;
 mod task_manager;
 mod worker;
 mod world_manager;
 
-use core::time;
-use std::thread::sleep;
-
-use inventory::InventoryMessage;
-
-use item::Item;
-
-use crate::{game_manager::GameManager, messages::EntityMessage};
+use crate::{
+    assets::{Assets, ItemId},
+    game_manager::GameManager,
+    inventory::InventoryMessage,
+    messages::EntityMessage,
+};
+use std::{path::Path, sync::Arc, thread::sleep, time::Duration};
 
 fn main() {
     println!("Hello, world!");
@@ -33,28 +31,36 @@ fn do_nothing(_aid: aid::AID<EntityMessage>, _mailbox: std::sync::mpsc::Receiver
 }
 
 fn test_inventory() {
+    let assets = Arc::new(Assets::load(Path::new("assets")).unwrap());
+
     let sender: aid::AID<EntityMessage> = aid::AID::new(do_nothing);
 
-    let worker_aid: aid::AID<InventoryMessage> = inventory::init();
-    let factory_aid1: aid::AID<InventoryMessage> = inventory::init();
-    let factory_aid2: aid::AID<InventoryMessage> = inventory::init();
+    let worker_aid: aid::AID<InventoryMessage> = inventory::init(assets.clone(), 10);
+    let factory_aid1: aid::AID<InventoryMessage> = inventory::init(assets.clone(), 10);
+    let factory_aid2: aid::AID<InventoryMessage> = inventory::init(assets.clone(), 10);
 
     println!("Give Factory 1 8 mutexium and 8 semaphorite");
     _ = factory_aid1.send(InventoryMessage::Add(
         sender.clone(),
-        vec![(Item::Mutexium, 8), (Item::Semaphorite, 8)],
+        vec![
+            (ItemId::from("mutexium"), 8),
+            (ItemId::from("semaphorite"), 8),
+        ],
     ));
 
     println!("Converting mutexium and semaphorite to Actorisite");
     for _ in 1..9 {
         _ = factory_aid1.send(InventoryMessage::Remove(
             sender.clone(),
-            vec![(Item::Mutexium, 1), (Item::Semaphorite, 1)],
+            vec![
+                (ItemId::from("mutexium"), 1),
+                (ItemId::from("semaphorite"), 1),
+            ],
         ));
 
         _ = factory_aid1.send(InventoryMessage::Add(
             sender.clone(),
-            vec![(Item::Actorisite, 1)],
+            vec![(ItemId::from("actorisite"), 1)],
         ));
     }
 
@@ -62,17 +68,17 @@ fn test_inventory() {
     _ = worker_aid.send(InventoryMessage::TakeFrom(
         sender.clone(),
         factory_aid1.clone(),
-        vec![(Item::Actorisite, 8)],
+        vec![(ItemId::from("actorisite"), 8)],
     ));
 
     println!("Giving 8 actorisite from worker to factory 2");
     _ = worker_aid.send(InventoryMessage::GiveTo(
         sender.clone(),
         factory_aid2.clone(),
-        vec![(Item::Actorisite, 8)],
+        vec![(ItemId::from("actorisite"), 8)],
     ));
 
-    sleep(time::Duration::from_millis(500));
+    sleep(Duration::from_millis(500));
 
     print_system_status(
         worker_aid.clone(),
@@ -87,11 +93,11 @@ fn print_system_status(
     factory_aid2: aid::AID<InventoryMessage>,
 ) {
     _ = worker_aid.send(InventoryMessage::PrintInventory(String::from("Worker")));
-    sleep(time::Duration::from_millis(500));
+    sleep(Duration::from_millis(500));
 
     _ = factory_aid1.send(InventoryMessage::PrintInventory(String::from("Factory 1")));
-    sleep(time::Duration::from_millis(500));
+    sleep(Duration::from_millis(500));
 
     _ = factory_aid2.send(InventoryMessage::PrintInventory(String::from("Factory 2")));
-    sleep(time::Duration::from_millis(500));
+    sleep(Duration::from_millis(500));
 }
