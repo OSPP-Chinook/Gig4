@@ -146,6 +146,12 @@ pub struct ItemStack {
     pub count: usize,
 }
 
+impl ItemStack {
+    pub fn new(id: ItemId, count: usize) -> Self {
+        Self { id, count }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct ItemAsset {
     pub id: ItemId,

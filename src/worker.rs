@@ -1,5 +1,5 @@
 use crate::aid::AID;
-use crate::assets::{Assets, ItemId, WorkerId};
+use crate::assets::{Assets, ItemId, ItemStack, WorkerId};
 use crate::inventory::{self, InventoryMessage};
 use crate::messages::EntityMessage;
 use crate::task_manager::{Task, TaskManagerMessage};
@@ -328,13 +328,13 @@ impl Worker {
                         let _ = self.inventory.send(InventoryMessage::GiveTo(
                             self.self_aid.clone(),
                             inventory,
-                            vec![(item, 10)],
+                            vec![ItemStack::new(item, 10)],
                         ));
                     } else {
                         let _ = self.inventory.send(InventoryMessage::TakeFrom(
                             self.self_aid.clone(),
                             inventory,
-                            vec![(item, 10)],
+                            vec![ItemStack::new(item, 10)],
                         ));
                     }
                 }

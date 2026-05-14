@@ -104,11 +104,7 @@ impl Building {
                 } else {
                     _ = self.inventory.send(InventoryMessage::Remove(
                         self.self_aid.clone(),
-                        recipe
-                            .inputs
-                            .iter()
-                            .map(|s| (s.id.clone(), s.count))
-                            .collect(),
+                        recipe.inputs.clone(),
                     ));
                     waiting = true;
                 }
@@ -118,13 +114,7 @@ impl Building {
                 if time_left.is_zero() {
                     _ = self.inventory.send(InventoryMessage::Add(
                         self.self_aid.clone(),
-                        active_recipe
-                            .as_ref()
-                            .unwrap()
-                            .outputs
-                            .iter()
-                            .map(|s| (s.id.clone(), s.count))
-                            .collect(),
+                        active_recipe.as_ref().unwrap().outputs.clone(),
                     ));
                     current_process = None;
                     continue;

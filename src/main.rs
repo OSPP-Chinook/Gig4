@@ -10,7 +10,7 @@ mod worker;
 mod world_manager;
 
 use crate::{
-    assets::{Assets, ItemId},
+    assets::{Assets, ItemId, ItemStack},
     game_manager::GameManager,
     inventory::InventoryMessage,
     messages::EntityMessage,
@@ -43,8 +43,8 @@ fn test_inventory() {
     _ = factory_aid1.send(InventoryMessage::Add(
         sender.clone(),
         vec![
-            (ItemId::from("mutexium"), 8),
-            (ItemId::from("semaphorite"), 8),
+            ItemStack::new(ItemId::from("mutexium"), 8),
+            ItemStack::new(ItemId::from("semaphorite"), 8),
         ],
     ));
 
@@ -53,14 +53,14 @@ fn test_inventory() {
         _ = factory_aid1.send(InventoryMessage::Remove(
             sender.clone(),
             vec![
-                (ItemId::from("mutexium"), 1),
-                (ItemId::from("semaphorite"), 1),
+                ItemStack::new(ItemId::from("mutexium"), 1),
+                ItemStack::new(ItemId::from("semaphorite"), 1),
             ],
         ));
 
         _ = factory_aid1.send(InventoryMessage::Add(
             sender.clone(),
-            vec![(ItemId::from("actorisite"), 1)],
+            vec![ItemStack::new(ItemId::from("actorisite"), 1)],
         ));
     }
 
@@ -68,14 +68,14 @@ fn test_inventory() {
     _ = worker_aid.send(InventoryMessage::TakeFrom(
         sender.clone(),
         factory_aid1.clone(),
-        vec![(ItemId::from("actorisite"), 8)],
+        vec![ItemStack::new(ItemId::from("actorisite"), 8)],
     ));
 
     println!("Giving 8 actorisite from worker to factory 2");
     _ = worker_aid.send(InventoryMessage::GiveTo(
         sender.clone(),
         factory_aid2.clone(),
-        vec![(ItemId::from("actorisite"), 8)],
+        vec![ItemStack::new(ItemId::from("actorisite"), 8)],
     ));
 
     sleep(Duration::from_millis(500));

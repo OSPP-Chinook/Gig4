@@ -1,6 +1,6 @@
 use crate::{
     aid::AID,
-    assets::{Assets, ItemId},
+    assets::{Assets, ItemId, ItemList, ItemStack},
     messages::EntityMessage,
 };
 use std::{
@@ -11,37 +11,18 @@ use std::{
 #[derive(Clone)]
 pub enum InventoryMessage {
     // The following are sent by owner (entity) (public)
-    Add(AID<EntityMessage>, Vec<(ItemId, usize)>),
-    Remove(AID<EntityMessage>, Vec<(ItemId, usize)>),
-    TakeFrom(
-        AID<EntityMessage>,
-        AID<InventoryMessage>,
-        Vec<(ItemId, usize)>,
-    ),
-    GiveTo(
-        AID<EntityMessage>,
-        AID<InventoryMessage>,
-        Vec<(ItemId, usize)>,
-    ),
+    Add(AID<EntityMessage>, ItemList),
+    Remove(AID<EntityMessage>, ItemList),
+    TakeFrom(AID<EntityMessage>, AID<InventoryMessage>, ItemList),
+    GiveTo(AID<EntityMessage>, AID<InventoryMessage>, ItemList),
     PrintInventory(String),
     Kill,
 
     // The following are sent by another inventory (private)
-    GiveMeItems(
-        AID<EntityMessage>,
-        AID<InventoryMessage>,
-        Vec<(ItemId, usize)>,
-    ), // From TakeFrom
-    GiveMeItemResult(
-        AID<EntityMessage>,
-        Result<Vec<(ItemId, usize)>, &'static str>,
-    ), // From GiveMeItems
-    TakeMyItems(
-        AID<EntityMessage>,
-        AID<InventoryMessage>,
-        Vec<(ItemId, usize)>,
-    ), // From GiveTo
-    TakeMyItemsResult(AID<EntityMessage>, Result<(), Vec<(ItemId, usize)>>), // From TakeMyItems
+    GiveMeItems(AID<EntityMessage>, AID<InventoryMessage>, ItemList), // From TakeFrom
+    GiveMeItemResult(AID<EntityMessage>, Result<ItemList, &'static str>), // From GiveMeItems
+    TakeMyItems(AID<EntityMessage>, AID<InventoryMessage>, ItemList), // From GiveTo
+    TakeMyItemsResult(AID<EntityMessage>, Result<(), ItemList>),      // From TakeMyItems
 }
 
 struct Inventory {
@@ -63,19 +44,19 @@ impl Inventory {
         }
     }
 
-    fn add(&mut self, (item, count): (ItemId, usize)) {
-        *self.items.entry(item).or_insert(0) += count;
+    fn add(&mut self, stack: ItemStack) {
+        *self.items.entry(stack.id).or_insert(0) += stack.count;
     }
 
     // Assumes no duplicates in the items vector
-    fn can_add(&self, items: &[(ItemId, usize)]) -> bool {
+    fn can_add(&self, items: &[ItemStack]) -> bool {
         let mut slots = 0;
 
-        for (item, count) in items {
-            let current = self.items.get(item).copied().unwrap_or(0);
-            let limit = self.assets.items[item].stack_limit;
+        for stack in items {
+            let current = self.items.get(&stack.id).copied().unwrap_or(0);
+            let limit = self.assets.items[&stack.id].stack_limit;
 
-            if current + count > limit {
+            if current + stack.count > limit {
                 return false;
             }
 
@@ -86,20 +67,20 @@ impl Inventory {
         self.items.len() + slots <= self.size
     }
 
-    fn remove(&mut self, (item, count): (ItemId, usize)) {
-        if let Some(value) = self.items.get_mut(&item) {
-            *value -= count;
+    fn remove(&mut self, stack: ItemStack) {
+        if let Some(value) = self.items.get_mut(&stack.id) {
+            *value -= stack.count;
             if *value == 0 {
-                self.items.remove(&item);
+                self.items.remove(&stack.id);
             }
         }
     }
 
     // Assumes no duplicates in the items vector
-    fn can_remove(&self, items: &[(ItemId, usize)]) -> bool {
-        for (item, count) in items {
-            let avail = self.items.get(item).copied().unwrap_or(0);
-            if avail < *count {
+    fn can_remove(&self, items: &[ItemStack]) -> bool {
+        for stack in items {
+            let avail = self.items.get(&stack.id).copied().unwrap_or(0);
+            if avail < stack.count {
                 return false;
             }
         }
@@ -194,7 +175,7 @@ fn match_message(message: InventoryMessage, inventory: &mut Inventory) {
 /// * 'sender'    - AID of entity that sent the Add message
 /// * 'inventory' - Mutable reference to the inventory to increase
 /// * 'item'      - Tuple of Item and amount to take
-fn add(sender: AID<EntityMessage>, inventory: &mut Inventory, items: Vec<(ItemId, usize)>) {
+fn add(sender: AID<EntityMessage>, inventory: &mut Inventory, items: ItemList) {
     if !inventory.can_add(&items) {
         let _ = sender.send(EntityMessage::InventoryErr);
         return;
@@ -214,7 +195,7 @@ fn add(sender: AID<EntityMessage>, inventory: &mut Inventory, items: Vec<(ItemId
 /// * 'sender'    - AID of entity that sent the Remove message
 /// * 'inventory' - Mutable reference to the inventory to take from
 /// * 'item'      - Tuple of Item and amount to take
-fn remove(sender: AID<EntityMessage>, inventory: &mut Inventory, items: Vec<(ItemId, usize)>) {
+fn remove(sender: AID<EntityMessage>, inventory: &mut Inventory, items: ItemList) {
     if !inventory.can_remove(&items) {
         let _ = sender.send(EntityMessage::InventoryErr);
         return;
@@ -239,7 +220,7 @@ fn take_from(
     sender: AID<EntityMessage>,
     inventory: &Inventory,
     aid: AID<InventoryMessage>,
-    items: Vec<(ItemId, usize)>,
+    items: ItemList,
 ) {
     if !inventory.can_add(&items) {
         return; // Should send an error or whatever
@@ -265,7 +246,7 @@ fn give_to(
     sender: AID<EntityMessage>,
     inventory: &mut Inventory,
     aid: AID<InventoryMessage>,
-    items: Vec<(ItemId, usize)>,
+    items: ItemList,
 ) {
     if !inventory.can_remove(&items) {
         inventory
@@ -297,7 +278,7 @@ fn give_me_items(
     sender: AID<EntityMessage>,
     inventory: &mut Inventory,
     sending_inventory: AID<InventoryMessage>,
-    items: Vec<(ItemId, usize)>,
+    items: ItemList,
 ) {
     if !inventory.can_remove(&items) {
         // println!("had too few items");
@@ -330,7 +311,7 @@ fn give_me_items(
 fn give_me_items_result(
     sender: AID<EntityMessage>,
     inventory: &mut Inventory,
-    result: Result<Vec<(ItemId, usize)>, &'static str>,
+    result: Result<ItemList, &'static str>,
 ) {
     match result {
         Ok(items) => {
@@ -360,7 +341,7 @@ fn take_my_items(
     sender: AID<EntityMessage>,
     inventory: &mut Inventory,
     sending_inventory: AID<InventoryMessage>,
-    items: Vec<(ItemId, usize)>,
+    items: ItemList,
 ) {
     if !inventory.can_add(&items) {
         inventory.waiting.push_back(InventoryMessage::TakeMyItems(
@@ -394,7 +375,7 @@ fn take_my_items(
 fn take_my_items_result(
     sender: AID<EntityMessage>,
     inventory: &mut Inventory,
-    result: Result<(), Vec<(ItemId, usize)>>,
+    result: Result<(), ItemList>,
 ) {
     match result {
         Ok(_) => {
@@ -426,31 +407,31 @@ mod tests {
         let mut inv = mock(1);
         let m = ItemId::from("mutexium");
 
-        assert!(inv.can_add(&vec![(m.clone(), 100)])); // Within limits
-        assert!(!inv.can_add(&vec![(m.clone(), 257)])); // Exceeds stack limit
+        assert!(inv.can_add(&vec![ItemStack::new(m.clone(), 100)])); // Within limits
+        assert!(!inv.can_add(&vec![ItemStack::new(m.clone(), 257)])); // Exceeds stack limit
 
-        inv.add((m.clone(), 200));
+        inv.add(ItemStack::new(m.clone(), 200));
         assert_eq!(inv.items.len(), 1);
 
-        assert!(inv.can_add(&vec![(m.clone(), 56)])); // 200 + 56 <= 256
-        assert!(!inv.can_add(&vec![(m.clone(), 57)])); // 200 + 57 > 256 (exceeds limit existing)
+        assert!(inv.can_add(&vec![ItemStack::new(m.clone(), 56)])); // 200 + 56 <= 256
+        assert!(!inv.can_add(&vec![ItemStack::new(m.clone(), 57)])); // 200 + 57 > 256 (exceeds limit existing)
 
         // Exceeds inventory slot size limit
-        assert!(!inv.can_add(&vec![(ItemId::from("semaphorite"), 1)]));
+        assert!(!inv.can_add(&vec![ItemStack::new(ItemId::from("semaphorite"), 1)]));
     }
 
     #[test]
     fn test_remove() {
         let mut inv = mock(2);
         let s = ItemId::from("semaphorite");
-        inv.add((s.clone(), 50));
+        inv.add(ItemStack::new(s.clone(), 50));
 
-        assert!(inv.can_remove(&vec![(s.clone(), 30)]));
-        inv.remove((s.clone(), 30));
+        assert!(inv.can_remove(&vec![ItemStack::new(s.clone(), 30)]));
+        inv.remove(ItemStack::new(s.clone(), 30));
         assert_eq!(*inv.items.get(&s).unwrap(), 20);
 
-        assert!(inv.can_remove(&vec![(s.clone(), 20)]));
-        inv.remove((s.clone(), 20));
+        assert!(inv.can_remove(&vec![ItemStack::new(s.clone(), 20)]));
+        inv.remove(ItemStack::new(s.clone(), 20));
         assert!(inv.items.is_empty());
     }
 }
