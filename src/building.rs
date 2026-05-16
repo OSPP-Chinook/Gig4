@@ -1,7 +1,7 @@
 use std::{sync::mpsc::Receiver, thread, time::Duration};
 
 use crate::{
-    aid::AID,
+    aid::{AID, AIDHandle},
     inventory::{self, InventoryMessage},
     item::Item,
     messages::{EntityMessage, ItemTransferError, TaskError},
@@ -27,7 +27,11 @@ pub struct Building {
 
 impl Building {
     pub fn new(world: AID<WorldManagerMessage>) -> AID<EntityMessage> {
-        return AID::new(move |aid, mailbox| {
+        return Building::new_joinable(world).0;
+    }
+
+    pub fn new_joinable(world: AID<WorldManagerMessage>) -> (AID<EntityMessage>, AIDHandle) {
+        return AID::new_joinable(move |aid, mailbox| {
             let mut building = Building::create(aid, world);
             building.run(&mailbox);
 

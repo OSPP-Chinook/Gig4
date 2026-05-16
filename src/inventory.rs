@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    aid::AID,
+    aid::{AID, AIDHandle},
     item::Item,
     messages::{EntityMessage, ItemTransferError},
     zombie,
@@ -168,7 +168,11 @@ impl Inventory {
 
 /// Initializes a new inventory and returns its AID
 pub fn init() -> AID<InventoryMessage> {
-    return AID::new(inventory_loop);
+    return init_joinable().0;
+}
+
+pub fn init_joinable() -> (AID<InventoryMessage>, AIDHandle) {
+    return AID::new_joinable(inventory_loop);
 }
 
 fn inventory_loop(

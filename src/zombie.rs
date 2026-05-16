@@ -58,3 +58,92 @@ pub fn inventory_zombie(mailbox: impl IntoIterator<Item = InventoryMessage>) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::{thread, time::Duration};
+
+    use crate::{
+        aid::AID,
+        building::Building,
+        inventory::{self, InventoryMessage, TakeMyItemsError},
+        item::Item,
+        messages::{EntityMessage, GetInventoryError},
+        worker::Worker,
+    };
+
+    #[test]
+    fn worker_dies() {
+        let world = AID::mock().0;
+        let task = AID::mock().0;
+        let (mock, mailbox) = AID::mock();
+
+        let (worker_aid, worker_handle) = Worker::new_joinable(world, task, (0, 0));
+
+        let _ = worker_aid.send(EntityMessage::KillYourself).is_ok();
+        thread::sleep(Duration::from_millis(250));
+        assert!(worker_aid.send(EntityMessage::GetInventory(mock)).is_ok());
+        assert!(matches!(
+            mailbox.recv(),
+            Ok(EntityMessage::GetInventoryResponse(Err(
+                GetInventoryError::ImDead
+            )))
+        ));
+
+        drop(worker_aid);
+        thread::sleep(Duration::from_millis(250));
+        let _ = worker_handle.join();
+    }
+
+    #[test]
+    fn building_dies() {
+        let world = AID::mock().0;
+        let (mock, mailbox) = AID::mock();
+
+        let (building_aid, building_handle) = Building::new_joinable(world);
+
+        let _ = building_aid.send(EntityMessage::KillYourself).is_ok();
+        thread::sleep(Duration::from_millis(250));
+        assert!(building_aid.send(EntityMessage::GetInventory(mock)).is_ok());
+        assert!(matches!(
+            mailbox.recv(),
+            Ok(EntityMessage::GetInventoryResponse(Err(
+                GetInventoryError::ImDead
+            )))
+        ));
+
+        drop(building_aid);
+        thread::sleep(Duration::from_millis(250));
+        let _ = building_handle.join();
+    }
+
+    #[test]
+    fn inventory_dies() {
+        let mock_sender = AID::mock().0;
+        let (mock_inv, mailbox) = AID::mock();
+
+        let (inventory_aid, inventory_handle) = inventory::init_joinable();
+
+        let _ = inventory_aid.send(InventoryMessage::KillYourself).is_ok();
+        thread::sleep(Duration::from_millis(250));
+        assert!(
+            inventory_aid
+                .send(InventoryMessage::TakeMyItems(
+                    mock_sender.clone(),
+                    mock_inv,
+                    vec![(Item::Mutexium, 10)]
+                ))
+                .is_ok()
+        );
+
+        assert!(
+            matches!(mailbox.recv(), Ok(InventoryMessage::TakeMyItemsResult(
+            sender,
+            Err((items, TakeMyItemsError::ImDead)))) if sender == mock_sender && items == vec![(Item::Mutexium, 10)])
+        );
+
+        drop(inventory_aid);
+        thread::sleep(Duration::from_millis(250));
+        let _ = inventory_handle.join();
+    }
+}

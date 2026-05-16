@@ -210,11 +210,9 @@ pub fn render_loop(
             old_world = new_world;
 
             // reduce wait time by how much time we spent rendering
-            // I can't tell if this makes any difference, or if it doesn't work with poll()
-            time_to_wait = 50;
-            time_to_wait = time_to_wait
-                .checked_sub(time_0.elapsed().as_millis() as u64)
-                .unwrap_or(0);
+            time_to_wait = 50u128
+                .checked_sub(time_0.elapsed().as_millis())
+                .unwrap_or(0) as u64;
         }
     })
 }

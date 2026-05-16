@@ -1,4 +1,4 @@
-use crate::aid::AID;
+use crate::aid::{AID, AIDHandle};
 use crate::inventory::{self, InventoryMessage};
 use crate::item::Item;
 use crate::messages::{EntityMessage, GetInventoryError, ItemTransferError, MoveError, TaskError};
@@ -234,7 +234,15 @@ impl Worker {
         task: AID<TaskManagerMessage>,
         start_pos: Pos,
     ) -> AID<EntityMessage> {
-        AID::new(move |aid, mailbox| {
+        Worker::new_joinable(world, task, start_pos).0
+    }
+
+    pub fn new_joinable(
+        world: AID<WorldManagerMessage>,
+        task: AID<TaskManagerMessage>,
+        start_pos: Pos,
+    ) -> (AID<EntityMessage>, AIDHandle) {
+        AID::new_joinable(move |aid, mailbox| {
             let mut worker = Worker::create(aid, world, task, start_pos);
             worker.run(&mailbox);
 
