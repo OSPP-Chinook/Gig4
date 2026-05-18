@@ -104,27 +104,11 @@ fn assign_task(
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        sync::{Arc, Mutex},
-        thread,
-        time::Duration,
-    };
+    use std::sync::{Arc, Mutex};
 
     use crate::{task_manager, world_manager::Tile};
 
     use super::*;
-
-    #[test]
-    fn create_destroy() {
-        let grid: WorldGrid = Arc::new(Mutex::new(vec![vec![Tile::Empty; 10]; 10]));
-        let task_manager = task_manager::new_joinable(grid).0;
-        let _ = task_manager.send(TaskManagerMessage::Quit);
-        thread::sleep(Duration::from_secs(1));
-        //panic if can send message after quit
-        let _ = task_manager
-            .send(TaskManagerMessage::Quit)
-            .inspect(|_| panic!());
-    }
 
     //worker get idle when no tasks exist
     #[test]

@@ -115,8 +115,11 @@ mod tests {
         building::Building,
         inventory::{self, InventoryMessage, TakeMyItemsError},
         item::Item,
-        messages::{EntityMessage, GetInventoryError},
+        messages::{EntityMessage, GetInventoryError, MoveError, PlayerManagerMessage, TaskError},
+        player_manager,
+        task_manager::{self, TaskManagerMessage},
         worker::Worker,
+        world_manager::{self, WorldManagerMessage},
     };
 
     #[test]
@@ -127,7 +130,7 @@ mod tests {
 
         let (worker_aid, worker_handle) = Worker::new_joinable(world, task, (0, 0));
 
-        let _ = worker_aid.send(EntityMessage::KillYourself).is_ok();
+        let _ = worker_aid.send(EntityMessage::KillYourself);
         thread::sleep(Duration::from_millis(250));
         assert!(worker_aid.send(EntityMessage::GetInventory(mock)).is_ok());
         assert!(matches!(
@@ -138,7 +141,6 @@ mod tests {
         ));
 
         drop(worker_aid);
-        thread::sleep(Duration::from_millis(250));
         let _ = worker_handle.join();
     }
 
@@ -149,7 +151,7 @@ mod tests {
 
         let (building_aid, building_handle) = Building::new_joinable(world);
 
-        let _ = building_aid.send(EntityMessage::KillYourself).is_ok();
+        let _ = building_aid.send(EntityMessage::KillYourself);
         thread::sleep(Duration::from_millis(250));
         assert!(building_aid.send(EntityMessage::GetInventory(mock)).is_ok());
         assert!(matches!(
@@ -160,7 +162,6 @@ mod tests {
         ));
 
         drop(building_aid);
-        thread::sleep(Duration::from_millis(250));
         let _ = building_handle.join();
     }
 
@@ -171,7 +172,7 @@ mod tests {
 
         let (inventory_aid, inventory_handle) = inventory::init_joinable();
 
-        let _ = inventory_aid.send(InventoryMessage::KillYourself).is_ok();
+        let _ = inventory_aid.send(InventoryMessage::KillYourself);
         thread::sleep(Duration::from_millis(250));
         assert!(
             inventory_aid
@@ -190,7 +191,65 @@ mod tests {
         );
 
         drop(inventory_aid);
-        thread::sleep(Duration::from_millis(250));
         let _ = inventory_handle.join();
+    }
+
+    #[test]
+    fn world_dies() {
+        let (mock, mailbox) = AID::mock();
+        let task = AID::mock().0;
+        let grid = world_manager::init_world_grid();
+        let (world_aid, world_handle) = world_manager::new_joinable(grid, task);
+
+        let _ = world_aid.send(WorldManagerMessage::Quit);
+        thread::sleep(Duration::from_millis(250));
+        assert!(
+            world_aid
+                .send(WorldManagerMessage::Move((0, 0), mock))
+                .is_ok()
+        );
+
+        assert!(matches!(
+            mailbox.recv(),
+            Ok(EntityMessage::MoveResponse(Err(MoveError::ImDead)))
+        ));
+
+        drop(world_aid);
+        let _ = world_handle.join();
+    }
+
+    #[test]
+    fn task_dies() {
+        let (mock, mailbox) = AID::mock();
+        let grid = world_manager::init_world_grid();
+        let (task_aid, task_handle) = task_manager::new_joinable(grid);
+
+        let _ = task_aid.send(TaskManagerMessage::Quit);
+        thread::sleep(Duration::from_millis(250));
+        assert!(
+            task_aid
+                .send(TaskManagerMessage::GiveMeNewTask(mock))
+                .is_ok()
+        );
+
+        assert!(matches!(
+            mailbox.recv(),
+            Ok(EntityMessage::TaskResponse(Err(TaskError::ImDead)))
+        ));
+
+        drop(task_aid);
+        let _ = task_handle.join();
+    }
+
+    #[test]
+    fn player_dies() {
+        let world = AID::mock().0;
+        let game = AID::mock().0;
+        let grid = world_manager::init_world_grid();
+        let (player_aid, player_handle) = player_manager::new_joinable(grid, world, game);
+
+        let _ = player_aid.send(PlayerManagerMessage::Quit);
+        drop(player_aid);
+        let _ = player_handle.join();
     }
 }
