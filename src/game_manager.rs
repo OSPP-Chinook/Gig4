@@ -68,31 +68,49 @@ impl GameManager {
             (9, 6),
             (7, 6),
         ] {
-            let _ = self.world.send(WorldManagerMessage::PlaceObstacle(pos));
+            _ = self.world.send(WorldManagerMessage::PlaceObstacle(pos));
         }
 
         let building = Building::new(self.world.clone());
-        let _ = self
+        _ = self
             .world
             .send(WorldManagerMessage::PlaceBuilding((3, 5), building.clone()));
+        _ = building.send(crate::messages::EntityMessage::Task(
+            task_manager::Task::Produce(0),
+        ));
 
         let building = Building::new(self.world.clone());
-        let _ = self.world.send(WorldManagerMessage::PlaceBuilding(
+        _ = self.world.send(WorldManagerMessage::PlaceBuilding(
             (15, 3),
             building.clone(),
         ));
-        let _ = building.send(crate::messages::EntityMessage::Task(
+        _ = building.send(crate::messages::EntityMessage::Task(
+            task_manager::Task::Produce(0),
+        ));
+
+        let building = Building::new(self.world.clone());
+        _ = self.world.send(WorldManagerMessage::PlaceBuilding(
+            (20, 4),
+            building.clone(),
+        ));
+        _ = building.send(crate::messages::EntityMessage::Task(
             task_manager::Task::Produce(0),
         ));
 
         let worker = Worker::new(self.world.clone(), self.task.clone(), (10, 3));
-        let _ = self
+        _ = self
             .world
             .send(WorldManagerMessage::PlaceWorker((10, 3), worker.clone()));
-        let _ = self.task.send(TaskManagerMessage::CreatePath(
+        _ = self.task.send(TaskManagerMessage::CreatePath(
+            Item::Mutexium, 
+            (3, 5), 
+            (15, 3)
+        ));
+
+        _ = self.task.send(TaskManagerMessage::CreatePath(
             Item::Mutexium,
             (15, 3),
-            (3, 5),
+            (20, 4),
         ));
     }
 }
