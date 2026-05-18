@@ -24,6 +24,8 @@ pub enum Task {
 
 #[derive(Clone)]
 pub enum TaskManagerMessage {
+    KillMe(AID<EntityMessage>), //Tasks involving entity will no longer be fulfillable
+    RemoveMyTask(AID<EntityMessage>), //Entitys current task is no longer fulfillable
     GiveMeNewTask(AID<EntityMessage>), //Worker at pos A requests a new task
     GiveTaskTo(Task, AID<EntityMessage>), //Give some entity a task (if player wants a building to produce etc)
     CreatePath(Item, Pos, Pos),           //Create a path that delivers Item from A to B
@@ -38,6 +40,22 @@ fn main(aid: AID<TaskManagerMessage>, mailbox: &Receiver<TaskManagerMessage>, gr
     let mut task_queue: VecDeque<Task> = VecDeque::new();
     for msg in mailbox {
         match msg {
+            TaskManagerMessage::KillMe(aid) => {
+                // remove current task
+                match task_list.remove(&aid) {
+                    None | Some(Task::Idle | Task::Produce(_)) => {}
+                    Some(task) => task_queue.push_back(task),
+                }
+
+                // remove tasks delivering to entity
+                task_queue.retain(|task| match task {
+                    Task::DeliverItem(_, (from, _), (to, _)) if *from == aid || *to == aid => false,
+                    _ => true,
+                });
+            }
+            TaskManagerMessage::RemoveMyTask(aid) => {
+                task_list.remove(&aid);
+            }
             TaskManagerMessage::GiveMeNewTask(aid) => {
                 let _ = aid.send(EntityMessage::TaskResponse(Ok(assign_task(
                     aid.clone(),

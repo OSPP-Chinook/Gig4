@@ -114,7 +114,7 @@ fn main(
                 if let Some(dest) = get_tile(grid, pos)
                     && let Tile::Empty = *dest
                 {
-                    let aid = Building::new(this.clone());
+                    let aid = Building::new(this.clone(), task.clone());
                     // temporary until buildings can get tasks some other way
                     if assign_task {
                         let _ = aid.send(EntityMessage::TaskResponse(Ok(Task::Produce(0))));

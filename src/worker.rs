@@ -271,7 +271,17 @@ impl Worker {
 
     fn destroy(self) {
         let _ = self.inventory.send(InventoryMessage::KillYourself);
-        drop(self);
+        let _ = self
+            .task_aid
+            .send(TaskManagerMessage::KillMe(self.self_aid.clone()));
+    }
+
+    fn invalid_task(&mut self) {
+        self.core.sub_tasks.clear();
+        self.waiting = false;
+        let _ = self
+            .task_aid
+            .send(TaskManagerMessage::RemoveMyTask(self.self_aid.clone()));
     }
 
     fn msg_handler(&mut self, msg: EntityMessage) {
@@ -314,8 +324,10 @@ impl Worker {
                 Err(ItemTransferError::InsufficientItems) => {
                     self.waiting = false;
                 }
-                Err(ItemTransferError::RecipeChange | ItemTransferError::TheyreDead) => {} // TODO: invalidate task, it is impossible
-                Err(ItemTransferError::ImDead) => {} // TODO: something went wrong
+                Err(ItemTransferError::RecipeChange | ItemTransferError::TheyreDead) => {
+                    self.invalid_task()
+                }
+                Err(ItemTransferError::ImDead) => self.alive = false, // something has gone very wrong
             },
 
             EntityMessage::GetInventory(aid) => {
@@ -343,7 +355,7 @@ impl Worker {
                         }
                     }
                 }
-                Err(GetInventoryError::ImWorker | GetInventoryError::ImDead) => {} // TODO: invalidate task, it is impossible
+                Err(GetInventoryError::ImWorker | GetInventoryError::ImDead) => self.invalid_task(),
             },
         }
     }

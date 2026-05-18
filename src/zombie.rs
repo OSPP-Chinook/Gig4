@@ -84,6 +84,8 @@ pub fn task_manager_zombie(mailbox: impl IntoIterator<Item = TaskManagerMessage>
     for msg in mailbox {
         match msg {
             TaskManagerMessage::Quit => {}
+            TaskManagerMessage::KillMe(_) => {}
+            TaskManagerMessage::RemoveMyTask(_) => {}
             TaskManagerMessage::GiveTaskTo(_, _) => {}
             TaskManagerMessage::CreatePath(_, _, _) => {}
             TaskManagerMessage::CreateMoveTask(_) => {}
@@ -142,9 +144,10 @@ mod tests {
     #[test]
     fn building_dies() {
         let world = AID::mock().0;
+        let task = AID::mock().0;
         let (mock, mailbox) = AID::mock();
 
-        let (building_aid, building_handle) = Building::new_joinable(world);
+        let (building_aid, building_handle) = Building::new_joinable(world, task);
 
         let _ = building_aid.send(EntityMessage::KillYourself);
         thread::sleep(Duration::from_millis(250));

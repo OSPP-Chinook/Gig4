@@ -5,7 +5,7 @@ use crate::{
     inventory::{self, InventoryMessage},
     item::Item,
     messages::{EntityMessage, ItemTransferError, TaskError},
-    task_manager::Task,
+    task_manager::{Task, TaskManagerMessage},
     world_manager::WorldManagerMessage,
     zombie,
 };
@@ -21,18 +21,25 @@ pub struct Recipe {
 
 pub struct Building {
     world_aid: AID<WorldManagerMessage>,
+    task_aid: AID<TaskManagerMessage>,
     self_aid: AID<EntityMessage>,
     inventory: AID<InventoryMessage>,
 }
 
 impl Building {
-    pub fn new(world: AID<WorldManagerMessage>) -> AID<EntityMessage> {
-        return Building::new_joinable(world).0;
+    pub fn new(
+        world: AID<WorldManagerMessage>,
+        task: AID<TaskManagerMessage>,
+    ) -> AID<EntityMessage> {
+        return Building::new_joinable(world, task).0;
     }
 
-    pub fn new_joinable(world: AID<WorldManagerMessage>) -> (AID<EntityMessage>, AIDHandle) {
+    pub fn new_joinable(
+        world: AID<WorldManagerMessage>,
+        task: AID<TaskManagerMessage>,
+    ) -> (AID<EntityMessage>, AIDHandle) {
         return AID::new_joinable(move |aid, mailbox| {
-            let mut building = Building::create(aid, world);
+            let mut building = Building::create(aid, world, task);
             building.run(&mailbox);
 
             building.destroy();
@@ -40,9 +47,14 @@ impl Building {
         });
     }
 
-    fn create(self_aid: AID<EntityMessage>, world_aid: AID<WorldManagerMessage>) -> Self {
+    fn create(
+        self_aid: AID<EntityMessage>,
+        world_aid: AID<WorldManagerMessage>,
+        task_aid: AID<TaskManagerMessage>,
+    ) -> Self {
         Building {
             world_aid,
+            task_aid,
             self_aid,
             inventory: inventory::init(),
         }
@@ -50,6 +62,9 @@ impl Building {
 
     fn destroy(self) {
         let _ = self.inventory.send(InventoryMessage::KillYourself);
+        let _ = self
+            .task_aid
+            .send(TaskManagerMessage::KillMe(self.self_aid.clone()));
         drop(self);
     }
 
@@ -85,7 +100,9 @@ impl Building {
                             current_process = None;
                             waiting = false;
                         }
-                        Err(ItemTransferError::ImDead | ItemTransferError::TheyreDead) => {} // TODO: something went wrong
+                        Err(ItemTransferError::ImDead | ItemTransferError::TheyreDead) => {
+                            break 'outer;
+                        } // something has gone very wrong
                     },
 
                     EntityMessage::TaskResponse(res) => match res {
@@ -152,8 +169,9 @@ mod tests {
 
     #[test]
     fn create_building() {
-        let world: AID<WorldManagerMessage> = AID::new(|_, _| ());
-        let building = Building::new(world);
+        let world = AID::mock().0;
+        let task = AID::mock().0;
+        let building = Building::new(world, task);
         let _ = building.send(EntityMessage::KillYourself);
     }
 }

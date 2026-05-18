@@ -360,14 +360,11 @@ fn give_me_items(
     items: Vec<(Item, usize)>,
 ) {
     if !inventory.can_remove(&items) {
-        // println!("had too few items");
         inventory.waiting.push_back(InventoryMessage::GiveMeItems(
             sender.clone(),
             sending_inventory.clone(),
             items,
         ));
-        // TODO: Figure out how to know if an inventory of a factory has changed production rules,
-        //       making the request impossible to fulfill. Should send error in that case.
         return;
     }
 
