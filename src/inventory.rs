@@ -6,17 +6,13 @@ use crate::{
 };
 use std::{
     collections::{HashMap, VecDeque},
-    sync::{
-        Arc,
-        mpsc::{RecvError, TryRecvError},
-    },
+    sync::Arc,
 };
 
 #[derive(Clone)]
 pub enum GiveMeItemsError {
     ImDead,
     RecipeChange,
-    InsufficientItems,
 }
 
 #[derive(Clone)]
@@ -404,11 +400,6 @@ fn give_me_items_result(
         Err(GiveMeItemsError::RecipeChange) => {
             let _ = sender.send(EntityMessage::ItemTransferResponse(Err(
                 ItemTransferError::RecipeChange,
-            )));
-        }
-        Err(GiveMeItemsError::InsufficientItems) => {
-            let _ = sender.send(EntityMessage::ItemTransferResponse(Err(
-                ItemTransferError::InsufficientItems,
             )));
         }
         Err(GiveMeItemsError::ImDead) => {
