@@ -534,7 +534,7 @@ fn parse_task(task: &Task) -> String {
         Task::DeliverItem(item, from, to) => {
             parsed_task.push_str(format!(
                 "Delivering {0} from ({1}, {2}) to ({3}, {4})"
-                , item.to_str(), from.1.0, from.1.1, to.1.0, to.1.1
+                , item.to_string(), from.1.0, from.1.1, to.1.0, to.1.1
             ).as_str());
         },
         Task::Idle => {

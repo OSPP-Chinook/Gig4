@@ -2,7 +2,7 @@ use crate::{
     aid::AID,
     assets::{AssetError, Assets, BuildingId, ItemId, RecipeId, WorkerId},
     building::Building,
-    messages::PlayerManagerMessage,
+    messages::{PlayerManagerMessage, EntityMessage},
     player_manager,
     task_manager::{self, TaskManagerMessage},
     worker::Worker,
@@ -82,8 +82,8 @@ impl GameManager {
         let _ = self
             .world
             .send(WorldManagerMessage::PlaceBuilding((3, 5), building.clone()));
-        _ = building.send(crate::messages::EntityMessage::Task(
-            task_manager::Task::Produce(0),
+        _ = building.send(EntityMessage::Task(
+            task_manager::Task::Produce(RecipeId::from("recipe_mutexium")),
         ));
 
         let building = Building::new(
@@ -95,7 +95,7 @@ impl GameManager {
             (15, 3),
             building.clone(),
         ));
-        let _ = building.send(crate::messages::EntityMessage::Task(
+        let _ = building.send(EntityMessage::Task(
             task_manager::Task::Produce(RecipeId::from("recipe_mutexium")),
         ));
 
@@ -109,10 +109,10 @@ impl GameManager {
         let _ = self
             .world
             .send(WorldManagerMessage::PlaceWorker((10, 3), worker.clone()));
-        let _ = self.task.send(TaskManagerMessage::CreatePath(
+        _ = self.task.send(TaskManagerMessage::CreatePath(
             ItemId::from("mutexium"),
             (15, 3),
-            (20, 4),
+            (3, 5),
         ));
     }
 }

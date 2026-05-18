@@ -1,7 +1,7 @@
 use crate::{
     aid::AID,
     assets::{Assets, ItemId, ItemList, ItemStack},
-    messages::EntityMessage,
+    messages::{EntityMessage, PlayerManagerMessage},
 };
 use std::{
     collections::{HashMap, VecDeque},
@@ -92,8 +92,8 @@ impl Inventory {
         let mut string: String = String::from("Inventory");
 
         for (key, value) in &self.items {
-            if value.0 > 0 {
-                string.push_str(format!("\n{0} - {1}/{2}", key.to_str(), value.0, value.1).as_str());
+            if *value > 0 {
+                string.push_str(format!("\n{0} - {1}", &key, value).as_str());
             }
         }
 

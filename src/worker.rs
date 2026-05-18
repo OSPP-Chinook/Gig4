@@ -1,7 +1,6 @@
 use crate::aid::AID;
 use crate::assets::{Assets, ItemId, ItemStack, WorkerId};
 use crate::inventory::{self, InventoryMessage};
-use crate::item::Item;
 use crate::messages::{
     EntityMessage,
     PlayerManagerMessage,
@@ -175,7 +174,7 @@ impl WorkerCore {
                     .push_back(SubTask::TakeItem(from_aid.clone(), item.clone()));
                 self.sub_tasks.push_back(SubTask::Move(to));
                 self.sub_tasks
-                    .push_back(SubTask::GiveItem(to_aid.clone(), item));
+                    .push_back(SubTask::GiveItem(to_aid.clone(), item.clone()));
                 self.current_task = Task::DeliverItem(item, (from_aid, from), (to_aid, to));
             }
             Task::Idle => {
