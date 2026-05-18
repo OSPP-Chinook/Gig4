@@ -3,17 +3,18 @@ use std::{
     sync::mpsc::Receiver,
 };
 
-use crate::{aid::AID, messages::EntityMessage, world_manager::Tile};
 use crate::{
-    item::Item,
-    world_manager::{Pos, WorldGrid},
+    aid::AID,
+    assets::{ItemId, RecipeId},
+    messages::EntityMessage,
+    world_manager::{Pos, Tile, WorldGrid},
 };
 
 #[derive(Clone, PartialEq)]
 pub enum Task {
     MoveTo(Pos),
-    DeliverItem(Item, (AID<EntityMessage>, Pos), (AID<EntityMessage>, Pos)), //Deliver Item from A to B.
-    Produce(usize),                                                          //produce recipe id
+    DeliverItem(ItemId, (AID<EntityMessage>, Pos), (AID<EntityMessage>, Pos)), //Deliver Item from A to B.
+    Produce(RecipeId),                                                         //produce recipe id
     Idle,
 }
 
@@ -21,7 +22,7 @@ pub enum Task {
 pub enum TaskManagerMessage {
     GiveMeNewTask(AID<EntityMessage>), //Worker at pos A requests a new task
     GiveTaskTo(Task, AID<EntityMessage>), //Give some entity a task (if player wants a building to produce etc)
-    CreatePath(Item, Pos, Pos),           //Create a path that delivers Item from A to B
+    CreatePath(ItemId, Pos, Pos),         //Create a path that delivers Item from A to B
     CreateMoveTask(Pos),
     Quit,
 }
@@ -55,7 +56,6 @@ pub fn main(aid: AID<TaskManagerMessage>, mailbox: Receiver<TaskManagerMessage>,
                         (from_aid.clone(), from),
                         (to_aid.clone(), to),
                     ));
-                } else {
                 }
             }
 
@@ -84,26 +84,22 @@ fn assign_task(
     //if there are some new task available
     if let Some(new_task) = task_queue.pop_front() {
         task_list.insert(aid, new_task.clone());
-        return new_task;
+        new_task
     } else {
-        return Task::Idle;
+        Task::Idle
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    use crate::world_manager::Tile;
     use std::{
-        sync::{
-            Arc, Mutex,
-            mpsc::{SendError, channel},
-        },
+        sync::{Arc, Mutex},
         thread,
         time::Duration,
     };
-
-    use crate::{task_manager, world_manager::Tile};
-
-    use super::*;
 
     #[test]
     fn create_destroy() {

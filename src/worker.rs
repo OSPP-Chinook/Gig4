@@ -1,4 +1,5 @@
 use crate::aid::AID;
+use crate::assets::{Assets, ItemId, ItemStack, WorkerId};
 use crate::inventory::{self, InventoryMessage};
 use crate::item::Item;
 use crate::messages::{
@@ -8,6 +9,7 @@ use crate::messages::{
 use crate::task_manager::{Task, TaskManagerMessage};
 use crate::world_manager::{Pos, WorldManagerMessage};
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::Arc;
 use std::sync::mpsc::Receiver;
 use std::thread;
 use std::time::Duration;
@@ -44,8 +46,8 @@ struct WorkerCore {
 enum SubTask {
     Idle,
     Move(Pos),
-    TakeItem(AID<EntityMessage>, Item),
-    GiveItem(AID<EntityMessage>, Item),
+    TakeItem(AID<EntityMessage>, ItemId),
+    GiveItem(AID<EntityMessage>, ItemId),
     Done,
 }
 
@@ -170,7 +172,7 @@ impl WorkerCore {
             Task::DeliverItem(item, (from_aid, from), (to_aid, to)) => {
                 self.sub_tasks.push_back(SubTask::Move(from));
                 self.sub_tasks
-                    .push_back(SubTask::TakeItem(from_aid.clone(), item));
+                    .push_back(SubTask::TakeItem(from_aid.clone(), item.clone()));
                 self.sub_tasks.push_back(SubTask::Move(to));
                 self.sub_tasks
                     .push_back(SubTask::GiveItem(to_aid.clone(), item));
@@ -235,11 +237,13 @@ pub struct Worker {
     core: WorkerCore,
     alive: bool,
     waiting: bool,
-    pending_inventory_task: Option<(bool, Item)>,
+    pending_inventory_task: Option<(bool, ItemId)>,
     world_aid: AID<WorldManagerMessage>,
     task_aid: AID<TaskManagerMessage>,
     inventory: AID<InventoryMessage>,
     self_aid: AID<EntityMessage>,
+    assets: Arc<Assets>,
+    id: WorkerId,
 }
 
 impl Worker {
@@ -247,9 +251,11 @@ impl Worker {
         world: AID<WorldManagerMessage>,
         task: AID<TaskManagerMessage>,
         start_pos: Pos,
+        assets: Arc<Assets>,
+        id: WorkerId,
     ) -> AID<EntityMessage> {
         AID::new(move |aid, mailbox| {
-            let mut worker = Worker::create(aid.clone(), world, task, start_pos);
+            let mut worker = Worker::create(aid.clone(), world, task, start_pos, assets, id);
 
             worker.run(mailbox);
         })
@@ -260,7 +266,11 @@ impl Worker {
         world: AID<WorldManagerMessage>,
         task: AID<TaskManagerMessage>,
         start_pos: Pos,
+        assets: Arc<Assets>,
+        id: WorkerId,
     ) -> Self {
+        let inventory_size = assets.workers.get(&id).unwrap().inventory_size;
+
         Worker {
             core: WorkerCore::new(start_pos),
             alive: true,
@@ -268,8 +278,10 @@ impl Worker {
             pending_inventory_task: None,
             world_aid: world,
             task_aid: task,
-            inventory: inventory::init(),
+            inventory: inventory::init(assets.clone(), inventory_size),
             self_aid: self_aid,
+            assets,
+            id,
         }
     }
 
@@ -292,7 +304,10 @@ impl Worker {
                 //uppdatera WorkerCore-> cunnrent_pos
                 self.core.apply_ok();
                 self.waiting = false;
-                thread::sleep(MOVE_TIME);
+
+                let speed = self.assets.workers.get(&self.id).unwrap().speed;
+                let time = Duration::from_secs_f32(MOVE_TIME.as_secs_f32() / speed);
+                thread::sleep(time);
             }
 
             EntityMessage::Err => {
@@ -317,18 +332,18 @@ impl Worker {
             }
 
             EntityMessage::SendInventory(inventory) => {
-                if let Some((send, item)) = self.pending_inventory_task {
+                if let Some((send, item)) = self.pending_inventory_task.clone() {
                     if send {
                         let _ = self.inventory.send(InventoryMessage::GiveTo(
                             self.self_aid.clone(),
                             inventory,
-                            vec!((item, 10)),
+                            vec![ItemStack::new(item, 10)],
                         ));
                     } else {
                         let _ = self.inventory.send(InventoryMessage::TakeFrom(
                             self.self_aid.clone(),
                             inventory,
-                            vec!((item, 10)),
+                            vec![ItemStack::new(item, 10)],
                         ));
                     }
                 }
@@ -397,9 +412,6 @@ impl Worker {
 
 #[cfg(test)]
 mod tests {
-
-    use crate::messages;
-
     use super::*;
 
     #[test]

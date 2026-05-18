@@ -1,0 +1,23 @@
+[
+    {
+        "id": "mutexium",
+        "name": "Mutexium",
+        "description": "It seems as though only one entity can hold this piece of raw mutexium at any one time. How did you get your hands on this?",
+        "category": "raw_nonmetal",
+        "stack_limit": 256
+    },
+    {
+        "id": "semaphorite",
+        "name": "Semaphorite",
+        "description": "It emits light with a color that oscillates periodically. Bringing two pieces together will cause their glow to synchronize without fail.",
+        "category": "raw_nonmetal",
+        "stack_limit": 256
+    },
+    {
+        "id": "actorisite",
+        "name": "Actorisite",
+        "description": "Each fragment seems to process its own impulses independently, yet when placed nearby they exchange tiny bursts of energy as though passing messages to coordinate.",
+        "category": "raw_nonmetal",
+        "stack_limit": 256
+    }
+]
