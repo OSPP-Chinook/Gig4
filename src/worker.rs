@@ -176,29 +176,10 @@ impl WorkerCore {
                 self.current_task = Task::DeliverItem(item, (from_aid, from), (to_aid, to));
             }
             Task::Idle => {
-                self.sub_tasks.push_back(SubTask::Idle);
+                self.sub_tasks.clear();
                 self.current_task = Task::Idle;
             }
-            _ => (),
-            // Task::AddItem { .. } => {
-            //     self.is_busy = true;
-            //     None
-            // }
-            // Task::RemoveItem { .. } => {
-            //     self.is_busy = true;
-            //     None
-            // }
-            // Task::TakeFrom { .. } => {
-            //     self.is_busy = true;
-            //     None
-            // }
-            // Task::GiveTo { .. } => {
-            //     self.is_busy = true;
-            //     None
-            // }
-            // Task::PrintInventory(_) => {
-            //     self.is_busy = true;
-            //     None
+            Task::Produce(_) => {} // shouldn't happen
         }
     }
     /// Anropas när WorldManager godkänner en flytt.

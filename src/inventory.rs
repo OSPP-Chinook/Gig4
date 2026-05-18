@@ -6,7 +6,10 @@ use crate::{
 };
 use std::{
     collections::{HashMap, VecDeque},
-    sync::{Arc, mpsc::TryRecvError},
+    sync::{
+        Arc,
+        mpsc::{RecvError, TryRecvError},
+    },
 };
 
 #[derive(Clone)]
@@ -188,16 +191,11 @@ fn inventory_loop(
             );
         }
 
-        let message: Result<InventoryMessage, TryRecvError> = mailbox.try_recv();
+        let message = mailbox.recv();
 
         match message {
             Ok(m) => match_message(m, &mut inventory),
-
-            Err(e) => {
-                if e == TryRecvError::Disconnected {
-                    return; // Could possibly do something different.
-                }
-            }
+            Err(_) => inventory.alive = false,
         };
     }
 

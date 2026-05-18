@@ -1,4 +1,4 @@
-use std::sync::mpsc;
+use std::{sync::mpsc, thread, time::Duration};
 
 use crate::{
     aid::AID,
@@ -88,6 +88,9 @@ fn demo(world: &AID<WorldManagerMessage>, task: &AID<TaskManagerMessage>) {
         (10, 3),
         WorkerId::from("worker"),
     ));
+
+    // TODO: make CreatePath use aids so this is not necessary
+    thread::sleep(Duration::from_millis(500));
 
     let _ = task.send(TaskManagerMessage::CreatePath(
         ItemId::from("mutexium"),
