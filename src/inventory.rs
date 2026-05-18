@@ -97,6 +97,8 @@ impl Inventory {
             }
         }
 
+        string.push_str(format!("\n{0} / {1} Slots used", self.items.len(), self.size).as_str());
+
         return string;
     }
 
