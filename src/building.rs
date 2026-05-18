@@ -11,6 +11,7 @@ use std::{
     sync::{Arc, mpsc::Receiver},
     thread,
     time::Duration,
+    vec,
 };
 
 const MACHINE_TICK_SPEED: Duration = Duration::from_millis(100);
@@ -81,8 +82,25 @@ impl Building {
         let mut active_recipe: Option<RecipeAsset> = None;
         let mut current_process: Option<Duration> = None;
         let mut waiting = false;
+        let mut paused = false;
+        let mut pause_messages: Vec<EntityMessage> = vec![];
         'outer: loop {
             //read all messages in mailbox
+            while paused {
+                if let Ok(msg) = mailbox.recv() {
+                    if let EntityMessage::Unpause = msg {
+                        paused = false;
+                        //send back all messages received while paused, could also send back 
+                        //directly but then it would constantly read messages and never sleep
+                        while let Some(pause_message) = pause_messages.pop() {
+                            _ = self.self_aid.send(pause_message);
+                        }
+                    } else {
+                        pause_messages.push(msg);
+                    }
+                }
+                continue;
+            }
             while let Ok(msg) = mailbox.try_recv() {
                 match msg {
                     EntityMessage::KillYourself => {
@@ -148,7 +166,14 @@ impl Building {
                         )));
                     }
 
-                    EntityMessage::GetInventoryResponse(_) | EntityMessage::MoveResponse(_) => {} // not supposed to happen
+                    EntityMessage::Pause => {
+                        paused = true;
+                        continue 'outer;
+                    }
+
+                    EntityMessage::GetInventoryResponse(_)
+                    | EntityMessage::MoveResponse(_)
+                    | EntityMessage::Unpause => {} // not supposed to happen
                 }
             }
 

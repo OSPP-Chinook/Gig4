@@ -49,6 +49,12 @@ struct Input {
     key: Option<KeyCode>,
 }
 
+enum InputResult {
+    Pause,
+    Quit,
+    Continue,
+}
+
 #[derive(Copy, Clone)]
 struct Camera(i32, i32);
 
@@ -171,15 +177,36 @@ fn render_loop(
         // For Status information
         let mut inventory_string: Option<String> = None;
         let mut task: Option<Task> = None;
+        
+        let mut paused = false;
+
 
         loop {
             if let Some(true) = check_mailbox(&mailbox, &mut inventory_string, &mut task) {
                 break Ok(());
             }
 
-            if let Some(true) = get_inputs(&mut camera, &mut selected_aid, &old_world, time_to_wait)
+            if let Some(val) = get_inputs(&mut camera, &mut selected_aid, &old_world, time_to_wait)
             {
-                break Ok(());
+                match val {
+
+                    InputResult::Continue => {}
+
+                    InputResult::Quit => {
+                        break Ok(());
+                    }
+
+                    InputResult::Pause => {
+                        if paused {
+                            //unpause
+                            _ = world.send(WorldManagerMessage::Unpause);
+                        } else {
+                            //pause
+                            _ = world.send(WorldManagerMessage::Pause);
+                        }
+                        paused = !paused;
+                    }
+                }
             }
 
             // terminal.draw(|frame| render(frame, world_array, camera, input))?;
@@ -242,7 +269,7 @@ fn get_inputs(
     selected_aid: &mut Option<AID<EntityMessage>>,
     old_world: &RawWorldArray,
     time_to_wait: u64,
-) -> Option<bool> {
+) -> Option<InputResult> {
     let mut key_event: Option<KeyEvent> = None;
     let mut mouse_event: Option<MouseEvent> = None;
 
@@ -253,7 +280,10 @@ fn get_inputs(
                 // Det här måste ske utanför input handler eftersom
                 // det ska stänga av loopen
                 if event.code == KeyCode::Char('q') {
-                    return Some(true); // Break
+                    return Some(InputResult::Quit); // Break
+                }
+                if event.code == KeyCode::Char('p') {
+                    return Some(InputResult::Pause);
                 }
                 key_event = Some(event);
             }
@@ -273,7 +303,7 @@ fn get_inputs(
     parse_input_keyboard(&mut input, &key_event, camera, selected_aid, &old_world);
     parse_input_mouse(&mut input, &mouse_event);
 
-    return Some(false);
+    return Some(InputResult::Continue);
 }
 
 fn parse_input_keyboard(

@@ -27,6 +27,8 @@ pub enum WorldManagerMessage {
     SpawnWorker(Pos, WorkerId),
     SpawnBuilding(Pos, BuildingId, bool),
     KillEntity(AID<EntityMessage>),
+    Pause,
+    Unpause
 }
 
 #[derive(Clone)]
@@ -135,6 +137,17 @@ fn main(
                     *get_tile(grid, pos).unwrap() = Tile::Empty;
 
                     let _ = aid.send(EntityMessage::KillYourself);
+                }
+            }
+            WorldManagerMessage::Pause => {
+                for (entity, _) in &entity_lookup {
+                    _ = entity.send(EntityMessage::Pause);
+                }
+            }
+
+            WorldManagerMessage::Unpause => {
+                for (entity, _) in &entity_lookup {
+                    _ = entity.send(EntityMessage::Unpause);
                 }
             }
         }

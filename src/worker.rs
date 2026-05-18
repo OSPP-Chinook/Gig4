@@ -210,6 +210,7 @@ impl WorkerCore {
 pub struct Worker {
     core: WorkerCore,
     alive: bool,
+    paused: bool,
     waiting: bool,
     pending_inventory_task: Option<(bool, ItemId)>,
     world_aid: AID<WorldManagerMessage>,
@@ -260,6 +261,7 @@ impl Worker {
         Worker {
             core: WorkerCore::new(start_pos),
             alive: true,
+            paused: false,
             waiting: false,
             pending_inventory_task: None,
             world_aid: world,
@@ -375,15 +377,43 @@ impl Worker {
                     self.core.current_task.clone(),
                 )));
             }
+
+            EntityMessage::Pause => {
+                self.paused = true;
+            }
+            
+            EntityMessage::Unpause => {
+                self.paused = false;
+            }
         }
     }
 
     fn run(&mut self, mailbox: &Receiver<EntityMessage>) {
+        let mut pause_messages: Vec<EntityMessage> = vec![];
         'outer: loop {
+            while self.paused {
+                if let Ok(msg) = mailbox.recv() {
+                    if let EntityMessage::Unpause = msg {
+                        self.paused = false;
+                        //send back all messages received while paused, could also send back 
+                        //directly but then it would constantly read messages and never sleep
+                        while let Some(pause_msg) = pause_messages.pop() {
+                            _ = self.self_aid.send(pause_msg);
+                        }
+                    } else {
+                        pause_messages.push(msg);
+                    }
+                }
+            }
+
             while self.waiting {
                 if let Ok(msg) = mailbox.recv() {
                     self.msg_handler(msg);
-
+                    
+                    if self.paused {
+                        continue 'outer;
+                    }
+                    
                     if !self.alive {
                         break 'outer;
                     }
@@ -391,6 +421,10 @@ impl Worker {
             }
             while let Ok(msg) = mailbox.try_recv() {
                 self.msg_handler(msg);
+
+                if self.paused {
+                    continue 'outer;
+                }
 
                 if !self.alive {
                     break 'outer;
