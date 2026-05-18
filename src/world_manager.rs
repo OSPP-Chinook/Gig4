@@ -5,11 +5,12 @@ use std::{
 };
 
 use crate::{
-    aid::AID,
+    aid::{AID, AIDHandle},
     building::Building,
     messages::{EntityMessage, MoveError},
     task_manager::{Task, TaskManagerMessage},
     worker::Worker,
+    zombie,
 };
 
 pub const WIDTH: usize = 320;
@@ -75,9 +76,9 @@ fn move_entity(
     }
 }
 
-pub fn main(
+fn main(
     this: AID<WorldManagerMessage>,
-    mailbox: Receiver<WorldManagerMessage>,
+    mailbox: &Receiver<WorldManagerMessage>,
     task: AID<TaskManagerMessage>,
     grid: WorldGrid,
 ) {
@@ -133,4 +134,19 @@ pub fn main(
             }
         }
     }
+
+    for (entity, _) in entity_lookup {
+        let _ = entity.send(EntityMessage::KillYourself);
+    }
+}
+
+pub fn new_joinable(
+    grid: WorldGrid,
+    task: AID<TaskManagerMessage>,
+) -> (AID<WorldManagerMessage>, AIDHandle) {
+    return AID::new_joinable(|aid, mailbox| {
+        main(aid, &mailbox, task, grid);
+
+        zombie::world_manager_zombie(mailbox);
+    });
 }

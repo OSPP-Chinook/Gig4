@@ -3,7 +3,12 @@ use std::{
     sync::mpsc::Receiver,
 };
 
-use crate::{aid::AID, messages::EntityMessage, world_manager::Tile};
+use crate::{
+    aid::{AID, AIDHandle},
+    messages::EntityMessage,
+    world_manager::Tile,
+    zombie,
+};
 use crate::{
     item::Item,
     world_manager::{Pos, WorldGrid},
@@ -26,7 +31,7 @@ pub enum TaskManagerMessage {
     Quit,
 }
 
-pub fn main(aid: AID<TaskManagerMessage>, mailbox: Receiver<TaskManagerMessage>, grid: WorldGrid) {
+fn main(aid: AID<TaskManagerMessage>, mailbox: &Receiver<TaskManagerMessage>, grid: WorldGrid) {
     //Maps AID to assigned task
     let mut task_list: HashMap<AID<EntityMessage>, Task> = HashMap::new();
     //A queue of non-assigned tasks
@@ -70,6 +75,14 @@ pub fn main(aid: AID<TaskManagerMessage>, mailbox: Receiver<TaskManagerMessage>,
     }
 }
 
+pub fn new_joinable(grid: WorldGrid) -> (AID<TaskManagerMessage>, AIDHandle) {
+    return AID::new_joinable(|aid, mailbox| {
+        main(aid, &mailbox, grid);
+
+        zombie::task_manager_zombie(mailbox);
+    });
+}
+
 //Gets a new tasks and updates queue and map accordingly, returns new task.
 fn assign_task(
     aid: AID<EntityMessage>,
@@ -97,15 +110,14 @@ mod tests {
         time::Duration,
     };
 
-    use crate::world_manager::Tile;
+    use crate::{task_manager, world_manager::Tile};
 
     use super::*;
 
     #[test]
     fn create_destroy() {
         let grid: WorldGrid = Arc::new(Mutex::new(vec![vec![Tile::Empty; 10]; 10]));
-        let task_manager: AID<TaskManagerMessage> =
-            AID::new(|aid, mailbox| main(aid, mailbox, grid));
+        let task_manager = task_manager::new_joinable(grid).0;
         let _ = task_manager.send(TaskManagerMessage::Quit);
         thread::sleep(Duration::from_secs(1));
         //panic if can send message after quit
@@ -118,8 +130,7 @@ mod tests {
     #[test]
     fn empty_task_queue() {
         let grid: WorldGrid = Arc::new(Mutex::new(vec![vec![Tile::Empty; 10]; 10]));
-        let task_manager: AID<TaskManagerMessage> =
-            AID::new(|aid, mailbox| main(aid, mailbox, grid));
+        let task_manager = task_manager::new_joinable(grid).0;
         let (fake_worker, fake_worker_mailbox) = AID::<EntityMessage>::mock();
         let _ = task_manager.send(TaskManagerMessage::GiveMeNewTask(fake_worker.clone()));
         if let Ok(EntityMessage::TaskResponse(Ok(Task::Idle))) = fake_worker_mailbox.recv() {
@@ -132,8 +143,7 @@ mod tests {
     #[test]
     fn same_task_twice() {
         let grid: WorldGrid = Arc::new(Mutex::new(vec![vec![Tile::Empty; 10]; 10]));
-        let task_manager: AID<TaskManagerMessage> =
-            AID::new(|aid, mailbox| main(aid, mailbox, grid));
+        let task_manager = task_manager::new_joinable(grid).0;
         let (fake_worker, fake_worker_mailbox) = AID::<EntityMessage>::mock();
         let _ = task_manager.send(TaskManagerMessage::CreateMoveTask((0, 0)));
         let _ = task_manager.send(TaskManagerMessage::GiveMeNewTask(fake_worker.clone()));
@@ -152,8 +162,7 @@ mod tests {
     #[test]
     fn idle_when_no_available() {
         let grid: WorldGrid = Arc::new(Mutex::new(vec![vec![Tile::Empty; 10]; 10]));
-        let task_manager: AID<TaskManagerMessage> =
-            AID::new(|aid, mailbox| main(aid, mailbox, grid));
+        let task_manager = task_manager::new_joinable(grid).0;
         let (fake_worker2, fake_worker_mailbox2) = AID::<EntityMessage>::mock();
         let (fake_worker, fake_worker_mailbox) = AID::<EntityMessage>::mock();
         let _ = task_manager.send(TaskManagerMessage::CreateMoveTask((0, 0)));

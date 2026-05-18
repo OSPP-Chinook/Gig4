@@ -1,6 +1,11 @@
 use crate::{
     inventory::{GiveMeItemsError, InventoryMessage, TakeMyItemsError},
-    messages::{EntityMessage, GetInventoryError, ItemTransferError},
+    messages::{
+        EntityMessage, GetInventoryError, ItemTransferError, MoveError, PlayerManagerMessage,
+        TaskError,
+    },
+    task_manager::TaskManagerMessage,
+    world_manager::WorldManagerMessage,
 };
 
 pub fn entity_zombie(mailbox: impl IntoIterator<Item = EntityMessage>) {
@@ -55,6 +60,48 @@ pub fn inventory_zombie(mailbox: impl IntoIterator<Item = InventoryMessage>) {
                     Err((items, TakeMyItemsError::ImDead)),
                 ));
             }
+        }
+    }
+}
+
+pub fn world_manager_zombie(mailbox: impl IntoIterator<Item = WorldManagerMessage>) {
+    for msg in mailbox {
+        match msg {
+            WorldManagerMessage::Quit => {}
+            WorldManagerMessage::SpawnObstacle(_) => {}
+            WorldManagerMessage::SpawnWorker(_) => {}
+            WorldManagerMessage::SpawnBuilding(_, _) => {}
+            WorldManagerMessage::KillEntity(_) => {}
+
+            WorldManagerMessage::Move(_, aid) => {
+                let _ = aid.send(EntityMessage::MoveResponse(Err(MoveError::ImDead)));
+            }
+        }
+    }
+}
+
+pub fn task_manager_zombie(mailbox: impl IntoIterator<Item = TaskManagerMessage>) {
+    for msg in mailbox {
+        match msg {
+            TaskManagerMessage::Quit => {}
+            TaskManagerMessage::GiveTaskTo(_, _) => {}
+            TaskManagerMessage::CreatePath(_, _, _) => {}
+            TaskManagerMessage::CreateMoveTask(_) => {}
+
+            TaskManagerMessage::GiveMeNewTask(aid) => {
+                let _ = aid.send(EntityMessage::TaskResponse(Err(TaskError::ImDead)));
+            }
+        }
+    }
+}
+
+pub fn player_manager_zombie(mailbox: impl IntoIterator<Item = PlayerManagerMessage>) {
+    for msg in mailbox {
+        match msg {
+            PlayerManagerMessage::Quit => {}
+            PlayerManagerMessage::ShowTileInfo(_, _) => {}
+            PlayerManagerMessage::TileNotFound(_) => {}
+            PlayerManagerMessage::Notification(_) => {}
         }
     }
 }

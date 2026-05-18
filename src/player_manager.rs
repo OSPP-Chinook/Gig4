@@ -4,7 +4,9 @@ use std::sync::mpsc::Receiver;
 use std::time::Duration;
 use std::time::Instant;
 
+use crate::aid::AIDHandle;
 use crate::game_manager::GameManagerMessage;
+use crate::zombie;
 use crate::{
     EntityMessage,
     aid::AID,
@@ -126,10 +128,22 @@ fn get_worker_camera(world_array: &RawWorldArray, sel_aid: &AID<EntityMessage>) 
     return None;
 }
 
-pub fn render_loop(
+pub fn new_joinable(
+    grid: WorldGrid,
+    world: AID<WorldManagerMessage>,
+    game: AID<GameManagerMessage>,
+) -> (AID<PlayerManagerMessage>, AIDHandle) {
+    return AID::new_joinable(|aid, mailbox| {
+        let _ = render_loop(aid, &mailbox, game, world, grid);
+
+        zombie::player_manager_zombie(mailbox);
+    });
+}
+
+fn render_loop(
     aid: AID<PlayerManagerMessage>,
-    mailbox: Receiver<PlayerManagerMessage>,
-    gm: AID<GameManagerMessage>,
+    mailbox: &Receiver<PlayerManagerMessage>,
+    game: AID<GameManagerMessage>,
     world: AID<WorldManagerMessage>,
     world_array: WorldGrid,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -146,10 +160,11 @@ pub fn render_loop(
 
         let mut time_to_wait = 0;
 
-        loop {
+        'outer: loop {
             //read all messages in mailbox
             while let Ok(msg) = mailbox.try_recv() {
                 match msg {
+                    PlayerManagerMessage::Quit => break 'outer Ok(()),
                     // TODO: Handle more message types
                     _ => {}
                 }
@@ -165,8 +180,8 @@ pub fn render_loop(
                         // Det här måste ske utanför input handler eftersom
                         // det ska stänga av loopen
                         if event.code == KeyCode::Char('q') {
-                            let _ = gm.send(GameManagerMessage::Quit);
-                            break Ok(());
+                            let _ = game.send(GameManagerMessage::Quit);
+                            break 'outer Ok(());
                         }
                         key_event = Some(event);
                     }

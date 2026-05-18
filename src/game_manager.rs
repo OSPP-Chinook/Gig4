@@ -9,6 +9,7 @@ use crate::{
     world_manager::{self, WorldManagerMessage, init_world_grid},
 };
 
+#[derive(Clone)]
 pub enum GameManagerMessage {
     Quit,
 }
@@ -16,22 +17,10 @@ pub enum GameManagerMessage {
 pub fn main(this: AID<GameManagerMessage>, mailbox: mpsc::Receiver<GameManagerMessage>) {
     let grid = init_world_grid();
 
-    let (task, task_handle) = AID::new_joinable({
-        let grid = grid.clone();
-        |aid, mailbox| task_manager::main(aid, mailbox, grid)
-    });
-    let (world, world_handle) = AID::new_joinable({
-        let task = task.clone();
-        let grid = grid.clone();
-        |aid, mailbox| world_manager::main(aid, mailbox, task, grid)
-    });
-    let (player, player_handle) = AID::new_joinable({
-        let world = world.clone();
-        let grid = grid.clone();
-        |aid, mailbox| {
-            let _ = player_manager::render_loop(aid, mailbox, this, world, grid);
-        }
-    });
+    let (task, task_handle) = task_manager::new_joinable(grid.clone());
+    let (world, world_handle) = world_manager::new_joinable(grid.clone(), task.clone());
+    let (player, player_handle) =
+        player_manager::new_joinable(grid.clone(), world.clone(), this.clone());
 
     demo(&world, &task);
 
@@ -44,6 +33,10 @@ pub fn main(this: AID<GameManagerMessage>, mailbox: mpsc::Receiver<GameManagerMe
     let _ = world.send(WorldManagerMessage::Quit);
     let _ = task.send(TaskManagerMessage::Quit);
     let _ = player.send(PlayerManagerMessage::Quit); // probably redundant but doesn't hurt
+
+    drop(world);
+    drop(task);
+    drop(player);
 
     let _ = world_handle.join();
     let _ = task_handle.join();
