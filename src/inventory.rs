@@ -1,13 +1,12 @@
-use std::{
-    collections::{HashMap, VecDeque},
-    sync::mpsc::TryRecvError,
-};
-
 use crate::{
     aid::{AID, AIDHandle},
-    item::Item,
-    messages::{EntityMessage, ItemTransferError},
+    assets::{Assets, ItemId, ItemList, ItemStack},
+    messages::{EntityMessage, ItemTransferError, PlayerManagerMessage},
     zombie,
+};
+use std::{
+    collections::{HashMap, VecDeque},
+    sync::{Arc, mpsc::TryRecvError},
 };
 
 #[derive(Clone)]
@@ -25,106 +24,102 @@ pub enum TakeMyItemsError {
 #[derive(Clone)]
 pub enum InventoryMessage {
     // The following are sent by owner (entity) (public)
-    Add(AID<EntityMessage>, Vec<(Item, usize)>),
-    Remove(AID<EntityMessage>, Vec<(Item, usize)>),
-    TakeFrom(
-        AID<EntityMessage>,
-        AID<InventoryMessage>,
-        Vec<(Item, usize)>,
-    ),
-    GiveTo(
-        AID<EntityMessage>,
-        AID<InventoryMessage>,
-        Vec<(Item, usize)>,
-    ),
+    Add(AID<EntityMessage>, ItemList),
+    Remove(AID<EntityMessage>, ItemList),
+    TakeFrom(AID<EntityMessage>, AID<InventoryMessage>, ItemList),
+    GiveTo(AID<EntityMessage>, AID<InventoryMessage>, ItemList),
     ChangeRecipe, // tell all waiting that their request can't be fulfilled
     PrintInventory(String),
+    GiveStatus(AID<PlayerManagerMessage>),
     KillYourself,
 
     // The following are sent by another inventory (private)
-    GiveMeItems(
-        AID<EntityMessage>,
-        AID<InventoryMessage>,
-        Vec<(Item, usize)>,
-    ), // From TakeFrom
-    GiveMeItemsResult(
-        AID<EntityMessage>,
-        Result<Vec<(Item, usize)>, GiveMeItemsError>,
-    ), // From GiveMeItems
-    TakeMyItems(
-        AID<EntityMessage>,
-        AID<InventoryMessage>,
-        Vec<(Item, usize)>,
-    ), // From GiveTo
-    TakeMyItemsResult(
-        AID<EntityMessage>,
-        Result<(), (Vec<(Item, usize)>, TakeMyItemsError)>,
-    ), // From TakeMyItems
+    GiveMeItems(AID<EntityMessage>, AID<InventoryMessage>, ItemList), // From TakeFrom
+    GiveMeItemsResult(AID<EntityMessage>, Result<ItemList, GiveMeItemsError>), // From GiveMeItems
+    TakeMyItems(AID<EntityMessage>, AID<InventoryMessage>, ItemList), // From GiveTo
+    TakeMyItemsResult(AID<EntityMessage>, Result<(), (ItemList, TakeMyItemsError)>), // From TakeMyItems
 }
 
 struct Inventory {
     aid: AID<InventoryMessage>,
-    max: usize, // ???
     alive: bool,
+    size: usize, // Number of slots the inventory has
     waiting: VecDeque<InventoryMessage>,
-    items: HashMap<Item, (usize, usize)>, // Key: Name of item -> Value: (count, max).
+    items: HashMap<ItemId, usize>, // Key: item ID -> Value: count (each item takes exactly 1 slot)
+    assets: Arc<Assets>,
 }
 
 impl Inventory {
-    fn construct(aid: AID<InventoryMessage>) -> Self {
-        let mut inventory = Inventory {
+    fn construct(aid: AID<InventoryMessage>, assets: Arc<Assets>, size: usize) -> Self {
+        Inventory {
             aid,
-            max: 10,
             alive: true,
+            size,
             waiting: VecDeque::new(),
             items: HashMap::new(),
-        };
-
-        inventory.items.insert(Item::Mutexium, (0, 0));
-
-        return inventory;
+            assets,
+        }
     }
 
     fn destroy(self) {
         drop(self);
     }
 
-    fn add(&mut self, (item, count): (Item, usize)) -> bool {
-        if self.is_full() {
-            return false;
+    fn add(&mut self, stack: ItemStack) {
+        *self.items.entry(stack.id).or_insert(0) += stack.count;
+    }
+
+    // Assumes no duplicates in the items vector
+    fn can_add(&self, items: &[ItemStack]) -> bool {
+        let mut slots = 0;
+
+        for stack in items {
+            let current = self.items.get(&stack.id).copied().unwrap_or(0);
+            let limit = self.assets.items[&stack.id].stack_limit;
+
+            if current + stack.count > limit {
+                return false;
+            }
+
+            if current == 0 {
+                slots += 1;
+            }
+        }
+        self.items.len() + slots <= self.size
+    }
+
+    fn remove(&mut self, stack: ItemStack) {
+        if let Some(value) = self.items.get_mut(&stack.id) {
+            *value -= stack.count;
+            if *value == 0 {
+                self.items.remove(&stack.id);
+            }
+        }
+    }
+
+    // Assumes no duplicates in the items vector
+    fn can_remove(&self, items: &[ItemStack]) -> bool {
+        for stack in items {
+            let avail = self.items.get(&stack.id).copied().unwrap_or(0);
+            if avail < stack.count {
+                return false;
+            }
+        }
+        true
+    }
+
+    fn to_string(&self) -> String {
+        let mut string: String = String::from("Inventory");
+
+        for (key, value) in &self.items {
+            if *value > 0 {
+                string.push_str(format!("\n{0} - {1}", &key, value).as_str());
+            }
         }
 
-        self.items.entry(item).or_insert((0, 0)).0 += count;
+        string.push_str(format!("\n{0} / {1} Slots used", self.items.len(), self.size).as_str());
 
-        return true;
-    }
-
-    fn can_remove(&mut self, items: &Vec<(Item, usize)>) -> bool {
-        let mut can_take: bool = true;
-
-        for (item, count) in items {
-            can_take = can_take && (self.items.entry(*item).or_insert((0, 0)).0 >= *count);
-        }
-
-        return can_take;
-    }
-
-    fn remove(&mut self, (item, count): (Item, usize)) -> bool {
-        if self.has_too_few_items((item, count)) {
-            return false;
-        }
-
-        let value = self.items.get_mut(&item).unwrap();
-        value.0 -= count;
-        return true;
-    }
-
-    fn has_too_few_items(&self, (item, count): (Item, usize)) -> bool {
-        return self.items.get(&item).unwrap().0 < count;
-    }
-
-    fn is_full(&self) -> bool {
-        return false; // FIX: not needed for minimal viable product
+        return string;
     }
 
     fn change_recipe(&mut self) {
@@ -160,26 +155,29 @@ impl Inventory {
     fn print_inv(&self, name: String) {
         println!("{0}:", name);
 
-        for (key, (amount, max)) in &self.items {
-            println!("      {0} - {1}/{2}", key.to_str(), amount, max);
+        for (key, amount) in &self.items {
+            let item = self.assets.items.get(key).unwrap();
+            println!("      {0} - {1}/{2}", item.name, amount, item.stack_limit);
         }
     }
 }
 
 /// Initializes a new inventory and returns its AID
-pub fn init() -> AID<InventoryMessage> {
-    return init_joinable().0;
+pub fn init(assets: Arc<Assets>, size: usize) -> AID<InventoryMessage> {
+    return init_joinable(assets, size).0;
 }
 
-pub fn init_joinable() -> (AID<InventoryMessage>, AIDHandle) {
-    return AID::new_joinable(inventory_loop);
+pub fn init_joinable(assets: Arc<Assets>, size: usize) -> (AID<InventoryMessage>, AIDHandle) {
+    return AID::new_joinable(move |aid, mailbox| inventory_loop(aid, mailbox, assets, size));
 }
 
 fn inventory_loop(
     aid: AID<InventoryMessage>,
     mailbox: std::sync::mpsc::Receiver<InventoryMessage>,
+    assets: Arc<Assets>,
+    size: usize,
 ) {
-    let mut inventory: Inventory = Inventory::construct(aid);
+    let mut inventory: Inventory = Inventory::construct(aid, assets, size);
 
     while inventory.alive {
         if !inventory.waiting.is_empty() {
@@ -227,6 +225,12 @@ fn match_message(message: InventoryMessage, inventory: &mut Inventory) {
 
         InventoryMessage::KillYourself => inventory.alive = false,
 
+        InventoryMessage::GiveStatus(pm_aid) => {
+            _ = pm_aid.send(PlayerManagerMessage::InventoryStatusResult(Some(
+                inventory.to_string(),
+            )));
+        }
+
         InventoryMessage::GiveMeItems(sender, sending_inventory, items) => {
             give_me_items(sender, inventory, sending_inventory, items)
         }
@@ -252,13 +256,19 @@ fn match_message(message: InventoryMessage, inventory: &mut Inventory) {
 /// * 'sender'    - AID of entity that sent the Add message
 /// * 'inventory' - Mutable reference to the inventory to increase
 /// * 'item'      - Tuple of Item and amount to take
-fn add(sender: AID<EntityMessage>, inventory: &mut Inventory, items: Vec<(Item, usize)>) {
+fn add(sender: AID<EntityMessage>, inventory: &mut Inventory, items: ItemList) {
+    if !inventory.can_add(&items) {
+        let _ = sender.send(EntityMessage::ItemTransferResponse(Err(
+            ItemTransferError::TooManyItems,
+        )));
+        return;
+    }
+
     for item in items {
         inventory.add(item);
     }
 
     _ = sender.send(EntityMessage::ItemTransferResponse(Ok(())));
-    return;
 }
 
 /// Takes some count of Items from inventory, will not do anything if inventory is empty.
@@ -268,19 +278,18 @@ fn add(sender: AID<EntityMessage>, inventory: &mut Inventory, items: Vec<(Item, 
 /// * 'sender'    - AID of entity that sent the Remove message
 /// * 'inventory' - Mutable reference to the inventory to take from
 /// * 'item'      - Tuple of Item and amount to take
-fn remove(sender: AID<EntityMessage>, inventory: &mut Inventory, items: Vec<(Item, usize)>) {
-    if inventory.can_remove(&items) {
-        for item in items {
-            inventory.remove(item);
-        }
-
-        _ = sender.send(EntityMessage::ItemTransferResponse(Ok(())));
+fn remove(sender: AID<EntityMessage>, inventory: &mut Inventory, items: ItemList) {
+    if !inventory.can_remove(&items) {
+        let _ = sender.send(EntityMessage::ItemTransferResponse(Err(
+            ItemTransferError::InsufficientItems,
+        )));
         return;
     }
 
-    _ = sender.send(EntityMessage::ItemTransferResponse(Err(
-        ItemTransferError::InsufficientItems,
-    )));
+    for item in items {
+        inventory.remove(item);
+    }
+    let _ = sender.send(EntityMessage::ItemTransferResponse(Ok(())));
 }
 
 /// Asks the other inventory to perform the give_me_items function with
@@ -296,13 +305,13 @@ fn take_from(
     sender: AID<EntityMessage>,
     inventory: &Inventory,
     aid: AID<InventoryMessage>,
-    items: Vec<(Item, usize)>,
+    items: ItemList,
 ) {
-    if inventory.is_full() {
+    if !inventory.can_add(&items) {
         return; // Should send an error or whatever
     }
 
-    _ = aid.send(InventoryMessage::GiveMeItems(
+    let _ = aid.send(InventoryMessage::GiveMeItems(
         sender,
         inventory.aid.clone(),
         items,
@@ -322,26 +331,23 @@ fn give_to(
     sender: AID<EntityMessage>,
     inventory: &mut Inventory,
     aid: AID<InventoryMessage>,
-    items: Vec<(Item, usize)>,
+    items: ItemList,
 ) {
-    if inventory.can_remove(&items) {
-        for item in &items {
-            inventory.remove(*item);
-        }
-
-        _ = aid.send(InventoryMessage::TakeMyItems(
-            sender,
-            inventory.aid.clone(),
-            items,
-        ));
+    if !inventory.can_remove(&items) {
+        inventory
+            .waiting
+            .push_back(InventoryMessage::GiveTo(sender.clone(), aid, items));
         return;
     }
 
-    // TODO: probably add to waiting
-
-    inventory
-        .waiting
-        .push_back(InventoryMessage::GiveTo(sender.clone(), aid, items));
+    for item in &items {
+        inventory.remove(item.clone());
+    }
+    let _ = aid.send(InventoryMessage::TakeMyItems(
+        sender,
+        inventory.aid.clone(),
+        items,
+    ));
 }
 
 /// Checks if this inventory can give item and sends a result containing either a tuple containing
@@ -357,7 +363,7 @@ fn give_me_items(
     sender: AID<EntityMessage>,
     inventory: &mut Inventory,
     sending_inventory: AID<InventoryMessage>,
-    items: Vec<(Item, usize)>,
+    items: ItemList,
 ) {
     if !inventory.can_remove(&items) {
         inventory.waiting.push_back(InventoryMessage::GiveMeItems(
@@ -369,13 +375,10 @@ fn give_me_items(
     }
 
     for item in &items {
-        inventory.remove(*item);
+        inventory.remove(item.clone());
     }
 
-    _ = sending_inventory.send(InventoryMessage::GiveMeItemsResult(
-        sender,
-        Result::Ok(items),
-    ));
+    let _ = sending_inventory.send(InventoryMessage::GiveMeItemsResult(sender, Ok(items)));
 }
 
 /// Gets the result from a GiveMeItem message and add the item to this inventory, or sends an
@@ -390,32 +393,32 @@ fn give_me_items(
 fn give_me_items_result(
     sender: AID<EntityMessage>,
     inventory: &mut Inventory,
-    result: Result<Vec<(Item, usize)>, GiveMeItemsError>,
+    result: Result<ItemList, GiveMeItemsError>,
 ) {
     match result {
         Ok(items) => {
             for item in &items {
-                inventory.add(*item);
+                inventory.add(item.clone());
             }
 
-            _ = sender.send(EntityMessage::ItemTransferResponse(Ok(())));
+            let _ = sender.send(EntityMessage::ItemTransferResponse(Ok(())));
         }
         Err(GiveMeItemsError::RecipeChange) => {
-            _ = sender.send(EntityMessage::ItemTransferResponse(Err(
+            let _ = sender.send(EntityMessage::ItemTransferResponse(Err(
                 ItemTransferError::RecipeChange,
             )));
         }
         Err(GiveMeItemsError::InsufficientItems) => {
-            _ = sender.send(EntityMessage::ItemTransferResponse(Err(
+            let _ = sender.send(EntityMessage::ItemTransferResponse(Err(
                 ItemTransferError::InsufficientItems,
             )));
         }
         Err(GiveMeItemsError::ImDead) => {
-            _ = sender.send(EntityMessage::ItemTransferResponse(Err(
+            let _ = sender.send(EntityMessage::ItemTransferResponse(Err(
                 ItemTransferError::TheyreDead,
             )));
         }
-    };
+    }
 }
 
 /// Checks if this inventory can take the items and sends a result containing either a tuple
@@ -431,24 +434,22 @@ fn take_my_items(
     sender: AID<EntityMessage>,
     inventory: &mut Inventory,
     sending_inventory: AID<InventoryMessage>,
-    items: Vec<(Item, usize)>,
+    items: ItemList,
 ) {
-    if inventory.is_full() {
-        // FIXME: this wont happen as is_full is not implemented
+    if !inventory.can_add(&items) {
         inventory.waiting.push_back(InventoryMessage::TakeMyItems(
             sender.clone(),
             sending_inventory.clone(),
             items,
         ));
-        // TODO: Should send error if inventory is full.
         return;
     }
 
     for item in &items {
-        inventory.add(*item);
+        inventory.add(item.clone());
     }
 
-    _ = sending_inventory.send(InventoryMessage::TakeMyItemsResult(
+    let _ = sending_inventory.send(InventoryMessage::TakeMyItemsResult(
         sender.clone(),
         Result::Ok(()),
     ));
@@ -466,20 +467,65 @@ fn take_my_items(
 fn take_my_items_result(
     sender: AID<EntityMessage>,
     inventory: &mut Inventory,
-    result: Result<(), (Vec<(Item, usize)>, TakeMyItemsError)>,
+    result: Result<(), (ItemList, TakeMyItemsError)>,
 ) {
     match result {
         Ok(_) => {
-            _ = sender.send(EntityMessage::ItemTransferResponse(Ok(())));
+            let _ = sender.send(EntityMessage::ItemTransferResponse(Ok(())));
         }
         Err((items, TakeMyItemsError::ImDead)) => {
             for item in &items {
-                _ = inventory.add(*item); // Revert removal
+                inventory.add(item.clone()); // Revert removal
             }
-
-            _ = sender.send(EntityMessage::ItemTransferResponse(Err(
+            let _ = sender.send(EntityMessage::ItemTransferResponse(Err(
                 ItemTransferError::TheyreDead,
             )));
         }
-    };
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    fn mock(size: usize) -> Inventory {
+        let assets = Arc::new(Assets::load(Path::new("assets")).unwrap());
+
+        let (aid, _) = AID::mock();
+        Inventory::construct(aid, assets, size)
+    }
+
+    #[test]
+    fn test_add() {
+        let mut inv = mock(1);
+        let m = ItemId::from("mutexium");
+
+        assert!(inv.can_add(&vec![ItemStack::new(m.clone(), 100)])); // Within limits
+        assert!(!inv.can_add(&vec![ItemStack::new(m.clone(), 257)])); // Exceeds stack limit
+
+        inv.add(ItemStack::new(m.clone(), 200));
+        assert_eq!(inv.items.len(), 1);
+
+        assert!(inv.can_add(&vec![ItemStack::new(m.clone(), 56)])); // 200 + 56 <= 256
+        assert!(!inv.can_add(&vec![ItemStack::new(m.clone(), 57)])); // 200 + 57 > 256 (exceeds limit existing)
+
+        // Exceeds inventory slot size limit
+        assert!(!inv.can_add(&vec![ItemStack::new(ItemId::from("semaphorite"), 1)]));
+    }
+
+    #[test]
+    fn test_remove() {
+        let mut inv = mock(2);
+        let s = ItemId::from("semaphorite");
+        inv.add(ItemStack::new(s.clone(), 50));
+
+        assert!(inv.can_remove(&vec![ItemStack::new(s.clone(), 30)]));
+        inv.remove(ItemStack::new(s.clone(), 30));
+        assert_eq!(*inv.items.get(&s).unwrap(), 20);
+
+        assert!(inv.can_remove(&vec![ItemStack::new(s.clone(), 20)]));
+        inv.remove(ItemStack::new(s.clone(), 20));
+        assert!(inv.items.is_empty());
+    }
 }

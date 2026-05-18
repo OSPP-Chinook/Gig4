@@ -1,45 +1,47 @@
-use std::{sync::mpsc::Receiver, thread, time::Duration};
-
 use crate::{
     aid::{AID, AIDHandle},
+    assets::{Assets, BuildingId, RecipeAsset},
     inventory::{self, InventoryMessage},
-    item::Item,
-    messages::{EntityMessage, ItemTransferError, TaskError},
+    messages::{EntityMessage, ItemTransferError, PlayerManagerMessage, TaskError},
     task_manager::{Task, TaskManagerMessage},
     world_manager::WorldManagerMessage,
     zombie,
 };
+use std::{
+    sync::{Arc, mpsc::Receiver},
+    thread,
+    time::Duration,
+};
 
-const MACHINE_TICK_SPEED: Duration = Duration::from_secs(1);
-
-//Definition for recipe, should probably be defined somewhere else
-pub struct Recipe {
-    input: Vec<(Item, usize)>,
-    output: Vec<(Item, usize)>,
-    pub recipe_time: usize, //recipe time in machine "cycles"/ticks
-}
+const MACHINE_TICK_SPEED: Duration = Duration::from_millis(100);
 
 pub struct Building {
     world_aid: AID<WorldManagerMessage>,
     task_aid: AID<TaskManagerMessage>,
     self_aid: AID<EntityMessage>,
     inventory: AID<InventoryMessage>,
+    assets: Arc<Assets>,
+    id: BuildingId,
 }
 
 impl Building {
     pub fn new(
         world: AID<WorldManagerMessage>,
         task: AID<TaskManagerMessage>,
+        assets: Arc<Assets>,
+        id: BuildingId,
     ) -> AID<EntityMessage> {
-        return Building::new_joinable(world, task).0;
+        return Building::new_joinable(world, task, assets, id).0;
     }
 
     pub fn new_joinable(
         world: AID<WorldManagerMessage>,
         task: AID<TaskManagerMessage>,
+        assets: Arc<Assets>,
+        id: BuildingId,
     ) -> (AID<EntityMessage>, AIDHandle) {
         return AID::new_joinable(move |aid, mailbox| {
-            let mut building = Building::create(aid, world, task);
+            let mut building = Building::create(aid, world, task, assets, id);
             building.run(&mailbox);
 
             building.destroy();
@@ -51,12 +53,18 @@ impl Building {
         self_aid: AID<EntityMessage>,
         world_aid: AID<WorldManagerMessage>,
         task_aid: AID<TaskManagerMessage>,
+        assets: Arc<Assets>,
+        id: BuildingId,
     ) -> Self {
+        let inventory_size = assets.buildings.get(&id).unwrap().inventory_size;
+
         Building {
             world_aid,
             task_aid,
             self_aid,
-            inventory: inventory::init(),
+            inventory: inventory::init(assets.clone(), inventory_size),
+            assets,
+            id,
         }
     }
 
@@ -69,8 +77,9 @@ impl Building {
     }
 
     fn run(&mut self, mailbox: &Receiver<EntityMessage>) {
-        let mut active_recipe: Option<Recipe> = None;
-        let mut current_process: Option<usize> = None;
+        let mut current_task = Task::Idle;
+        let mut active_recipe: Option<RecipeAsset> = None;
+        let mut current_process: Option<Duration> = None;
         let mut waiting = false;
         'outer: loop {
             //read all messages in mailbox
@@ -85,7 +94,7 @@ impl Building {
                                 && waiting
                                 && current_process == None
                             {
-                                current_process = Some(recipe.recipe_time);
+                                current_process = Some(Duration::from_millis(recipe.time as u64));
                             }
                             if let Some(time) = &current_process
                                 && waiting
@@ -95,38 +104,51 @@ impl Building {
                             waiting = false;
                         }
                         Err(
-                            ItemTransferError::RecipeChange | ItemTransferError::InsufficientItems,
+                            ItemTransferError::RecipeChange
+                            | ItemTransferError::InsufficientItems
+                            | ItemTransferError::TooManyItems,
                         ) => {
                             current_process = None;
                             waiting = false;
                         }
                         Err(ItemTransferError::ImDead | ItemTransferError::TheyreDead) => {
+                            // something has gone very wrong
                             break 'outer;
-                        } // something has gone very wrong
+                        }
                     },
 
                     EntityMessage::TaskResponse(res) => match res {
                         Ok(task) => {
-                            if let Task::Produce(index) = task {
-                                //get recipes from static data.
-                                active_recipe = Some(Recipe {
-                                    input: vec![],
-                                    output: vec![(Item::Mutexium, 10)],
-                                    recipe_time: 5,
-                                });
+                            if let Task::Produce(index) = task.clone() {
+                                current_task = task;
+                                // Get recipes from static data
+                                if let Some(recipe) = self.assets.recipes.get(&index) {
+                                    active_recipe = Some(recipe.clone());
+                                }
 
                                 // inform waitign of recipe change
                                 let _ = self.inventory.send(InventoryMessage::ChangeRecipe);
                             }
                         }
                         Err(TaskError::ImDead) => {} // should receive KillYourself shortly
-                    }, //Update task
+                    },
                     EntityMessage::GetInventory(aid) => {
                         let _ = aid.send(EntityMessage::GetInventoryResponse(Ok(self
                             .inventory
                             .clone())));
                     }
-                    _ => {}
+
+                    EntityMessage::FetchInventoryStatus(pm_aid) => {
+                        _ = self.inventory.send(InventoryMessage::GiveStatus(pm_aid));
+                    }
+
+                    EntityMessage::FetchCurrentTask(pm_aid) => {
+                        _ = pm_aid.send(PlayerManagerMessage::CurrentTaskResult(Some(
+                            current_task.clone(),
+                        )));
+                    }
+
+                    EntityMessage::GetInventoryResponse(_) | EntityMessage::MoveResponse(_) => {} // not supposed to happen
                 }
             }
 
@@ -134,28 +156,28 @@ impl Building {
                 && current_process == None
                 && !waiting
             {
-                if recipe.input.is_empty() {
-                    current_process = Some(recipe.recipe_time);
+                if recipe.inputs.is_empty() {
+                    current_process = Some(Duration::from_millis(recipe.time as u64));
                     waiting = false;
                 } else {
                     _ = self.inventory.send(InventoryMessage::Remove(
                         self.self_aid.clone(),
-                        recipe.input.clone(),
+                        recipe.inputs.clone(),
                     ));
                     waiting = true;
                 }
             }
 
             if let Some(time_left) = current_process {
-                if time_left == 0 {
+                if time_left.is_zero() {
                     _ = self.inventory.send(InventoryMessage::Add(
                         self.self_aid.clone(),
-                        active_recipe.as_ref().unwrap().output.clone(),
+                        active_recipe.as_ref().unwrap().outputs.clone(),
                     ));
                     current_process = None;
                     continue;
                 } else {
-                    current_process = Some(time_left - 1);
+                    current_process = Some(time_left.saturating_sub(MACHINE_TICK_SPEED));
                 }
             }
             thread::sleep(MACHINE_TICK_SPEED);
@@ -166,12 +188,14 @@ impl Building {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
 
     #[test]
     fn create_building() {
+        let assets = Arc::new(Assets::load(Path::new("assets")).unwrap());
         let world = AID::mock().0;
         let task = AID::mock().0;
-        let building = Building::new(world, task);
+        let building = Building::new(world, task, assets, BuildingId::from("factory"));
         let _ = building.send(EntityMessage::KillYourself);
     }
 }

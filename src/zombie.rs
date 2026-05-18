@@ -26,6 +26,14 @@ pub fn entity_zombie(mailbox: impl IntoIterator<Item = EntityMessage>) {
                     GetInventoryError::ImDead,
                 )));
             }
+
+            EntityMessage::FetchInventoryStatus(aid) => {
+                let _ = aid.send(PlayerManagerMessage::InventoryStatusResult(None));
+            }
+
+            EntityMessage::FetchCurrentTask(aid) => {
+                let _ = aid.send(PlayerManagerMessage::CurrentTaskResult(None));
+            }
         }
     }
 }
@@ -60,6 +68,10 @@ pub fn inventory_zombie(mailbox: impl IntoIterator<Item = InventoryMessage>) {
                     Err((items, TakeMyItemsError::ImDead)),
                 ));
             }
+
+            InventoryMessage::GiveStatus(aid) => {
+                let _ = aid.send(PlayerManagerMessage::InventoryStatusResult(None));
+            }
         }
     }
 }
@@ -69,8 +81,8 @@ pub fn world_manager_zombie(mailbox: impl IntoIterator<Item = WorldManagerMessag
         match msg {
             WorldManagerMessage::Quit => {}
             WorldManagerMessage::SpawnObstacle(_) => {}
-            WorldManagerMessage::SpawnWorker(_) => {}
-            WorldManagerMessage::SpawnBuilding(_, _) => {}
+            WorldManagerMessage::SpawnWorker(_, _) => {}
+            WorldManagerMessage::SpawnBuilding(_, _, _) => {}
             WorldManagerMessage::KillEntity(_) => {}
 
             WorldManagerMessage::Move(_, aid) => {
@@ -104,28 +116,37 @@ pub fn player_manager_zombie(mailbox: impl IntoIterator<Item = PlayerManagerMess
             PlayerManagerMessage::ShowTileInfo(_, _) => {}
             PlayerManagerMessage::TileNotFound(_) => {}
             PlayerManagerMessage::Notification(_) => {}
+            PlayerManagerMessage::InventoryStatusResult(_) => {}
+            PlayerManagerMessage::CurrentTaskResult(_) => {}
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::{thread, time::Duration};
+    use std::{path::Path, sync::Arc, thread, time::Duration};
 
     use crate::{
-        aid::AID, building::Building, inventory, item::Item, player_manager, task_manager,
-        worker::Worker, world_manager,
+        aid::AID,
+        assets::{Assets, BuildingId, ItemId, ItemStack, WorkerId},
+        building::Building,
+        inventory, player_manager, task_manager,
+        worker::Worker,
+        world_manager,
     };
 
     use super::*;
 
     #[test]
     fn worker_dies() {
+        let assets = Arc::new(Assets::load(Path::new("assets")).unwrap());
+
         let world = AID::mock().0;
         let task = AID::mock().0;
         let (mock, mailbox) = AID::mock();
 
-        let (worker_aid, worker_handle) = Worker::new_joinable(world, task, (0, 0));
+        let (worker_aid, worker_handle) =
+            Worker::new_joinable(world, task, (0, 0), assets, WorkerId::from("worker"));
 
         let _ = worker_aid.send(EntityMessage::KillYourself);
         thread::sleep(Duration::from_millis(250));
@@ -143,11 +164,14 @@ mod tests {
 
     #[test]
     fn building_dies() {
+        let assets = Arc::new(Assets::load(Path::new("assets")).unwrap());
+
         let world = AID::mock().0;
         let task = AID::mock().0;
         let (mock, mailbox) = AID::mock();
 
-        let (building_aid, building_handle) = Building::new_joinable(world, task);
+        let (building_aid, building_handle) =
+            Building::new_joinable(world, task, assets, BuildingId::from("factory"));
 
         let _ = building_aid.send(EntityMessage::KillYourself);
         thread::sleep(Duration::from_millis(250));
@@ -165,10 +189,12 @@ mod tests {
 
     #[test]
     fn inventory_dies() {
+        let assets = Arc::new(Assets::load(Path::new("assets")).unwrap());
+
         let mock_sender = AID::mock().0;
         let (mock_inv, mailbox) = AID::mock();
 
-        let (inventory_aid, inventory_handle) = inventory::init_joinable();
+        let (inventory_aid, inventory_handle) = inventory::init_joinable(assets, 10);
 
         let _ = inventory_aid.send(InventoryMessage::KillYourself);
         thread::sleep(Duration::from_millis(250));
@@ -177,7 +203,7 @@ mod tests {
                 .send(InventoryMessage::TakeMyItems(
                     mock_sender.clone(),
                     mock_inv,
-                    vec![(Item::Mutexium, 10)]
+                    vec![ItemStack::new(ItemId::from("mutexium"), 10)]
                 ))
                 .is_ok()
         );
@@ -185,7 +211,7 @@ mod tests {
         assert!(
             matches!(mailbox.recv(), Ok(InventoryMessage::TakeMyItemsResult(
             sender,
-            Err((items, TakeMyItemsError::ImDead)))) if sender == mock_sender && items == vec![(Item::Mutexium, 10)])
+            Err((items, TakeMyItemsError::ImDead)))) if sender == mock_sender && items == vec![ItemStack::new(ItemId::from("mutexium"), 10)])
         );
 
         drop(inventory_aid);
@@ -194,10 +220,12 @@ mod tests {
 
     #[test]
     fn world_dies() {
+        let assets = Arc::new(Assets::load(Path::new("assets")).unwrap());
+
         let (mock, mailbox) = AID::mock();
         let task = AID::mock().0;
         let grid = world_manager::init_world_grid();
-        let (world_aid, world_handle) = world_manager::new_joinable(grid, task);
+        let (world_aid, world_handle) = world_manager::new_joinable(grid, task, assets);
 
         let _ = world_aid.send(WorldManagerMessage::Quit);
         thread::sleep(Duration::from_millis(250));

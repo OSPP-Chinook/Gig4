@@ -2,12 +2,13 @@ use std::sync::mpsc;
 
 use crate::{
     aid::AID,
-    item::Item,
+    assets::{Assets, BuildingId, ItemId, WorkerId},
     messages::PlayerManagerMessage,
     player_manager,
     task_manager::{self, TaskManagerMessage},
     world_manager::{self, WorldManagerMessage, init_world_grid},
 };
+use std::{path::Path, sync::Arc};
 
 #[derive(Clone)]
 pub enum GameManagerMessage {
@@ -15,10 +16,18 @@ pub enum GameManagerMessage {
 }
 
 pub fn main(this: AID<GameManagerMessage>, mailbox: mpsc::Receiver<GameManagerMessage>) {
+    let assets = match Assets::load(Path::new("assets")) {
+        Ok(assets) => Arc::new(assets),
+        Err(err) => {
+            eprintln!("Failed to load assets. {err}");
+            return;
+        }
+    };
+
     let grid = init_world_grid();
 
     let (task, task_handle) = task_manager::new_joinable(grid.clone());
-    let (world, world_handle) = world_manager::new_joinable(grid.clone(), task.clone());
+    let (world, world_handle) = world_manager::new_joinable(grid.clone(), task.clone(), assets);
     let (player, player_handle) =
         player_manager::new_joinable(grid.clone(), world.clone(), this.clone());
 
@@ -64,13 +73,24 @@ fn demo(world: &AID<WorldManagerMessage>, task: &AID<TaskManagerMessage>) {
         let _ = world.send(WorldManagerMessage::SpawnObstacle(pos));
     }
 
-    let _ = world.send(WorldManagerMessage::SpawnBuilding((3, 5), false));
-    let _ = world.send(WorldManagerMessage::SpawnBuilding((15, 3), true));
+    let _ = world.send(WorldManagerMessage::SpawnBuilding(
+        (3, 5),
+        BuildingId::from("factory"),
+        false,
+    ));
+    let _ = world.send(WorldManagerMessage::SpawnBuilding(
+        (15, 3),
+        BuildingId::from("factory"),
+        true,
+    ));
 
-    let _ = world.send(WorldManagerMessage::SpawnWorker((10, 3)));
+    let _ = world.send(WorldManagerMessage::SpawnWorker(
+        (10, 3),
+        WorkerId::from("worker"),
+    ));
 
     let _ = task.send(TaskManagerMessage::CreatePath(
-        Item::Mutexium,
+        ItemId::from("mutexium"),
         (15, 3),
         (3, 5),
     ));

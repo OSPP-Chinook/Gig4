@@ -16,6 +16,7 @@ pub enum ItemTransferError {
     TheyreDead,
     RecipeChange,
     InsufficientItems,
+    TooManyItems,
 }
 
 #[derive(Clone)]
@@ -48,6 +49,12 @@ pub enum EntityMessage {
 
     // sent by task manager respondong to GiveMeNewTask
     TaskResponse(Result<Task, TaskError>),
+
+    // sent by player manager spontaneously
+    FetchInventoryStatus(AID<PlayerManagerMessage>),
+
+    // sent by player manager spontaneously
+    FetchCurrentTask(AID<PlayerManagerMessage>),
 }
 
 #[derive(Clone)]
@@ -56,4 +63,6 @@ pub enum PlayerManagerMessage {
     ShowTileInfo(Pos, Tile),
     TileNotFound(Pos),
     Notification(String), // if we ever want to notify the player of anything special
+    InventoryStatusResult(Option<String>),
+    CurrentTaskResult(Option<Task>),
 }

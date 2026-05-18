@@ -6,6 +6,7 @@ use std::{
 
 use crate::{
     aid::{AID, AIDHandle},
+    assets::{Assets, BuildingId, RecipeId, WorkerId},
     building::Building,
     messages::{EntityMessage, MoveError},
     task_manager::{Task, TaskManagerMessage},
@@ -23,8 +24,8 @@ pub enum WorldManagerMessage {
     Quit,
     Move(Pos, AID<EntityMessage>),
     SpawnObstacle(Pos),
-    SpawnWorker(Pos),
-    SpawnBuilding(Pos, bool),
+    SpawnWorker(Pos, WorkerId),
+    SpawnBuilding(Pos, BuildingId, bool),
     KillEntity(AID<EntityMessage>),
 }
 
@@ -32,8 +33,8 @@ pub enum WorldManagerMessage {
 pub enum Tile {
     Empty,
     Obstacle,
-    Worker(AID<EntityMessage>),
-    Building(AID<EntityMessage>),
+    Worker(AID<EntityMessage>, WorkerId),
+    Building(AID<EntityMessage>, BuildingId),
 }
 
 type WorldLookup = HashMap<AID<EntityMessage>, Pos>;
@@ -81,6 +82,7 @@ fn main(
     mailbox: &Receiver<WorldManagerMessage>,
     task: AID<TaskManagerMessage>,
     grid: WorldGrid,
+    assets: Arc<Assets>,
 ) {
     let mut entity_lookup: WorldLookup = HashMap::new();
 
@@ -97,29 +99,32 @@ fn main(
                     *dest = Tile::Obstacle;
                 }
             }
-            WorldManagerMessage::SpawnWorker(pos) => {
+            WorldManagerMessage::SpawnWorker(pos, id) => {
                 let grid = &mut grid.lock().unwrap();
 
                 if let Some(dest) = get_tile(grid, pos)
                     && let Tile::Empty = *dest
                 {
-                    let aid = Worker::new(this.clone(), task.clone(), pos);
-                    *dest = Tile::Worker(aid.clone());
+                    let aid =
+                        Worker::new(this.clone(), task.clone(), pos, assets.clone(), id.clone());
+                    *dest = Tile::Worker(aid.clone(), id);
                     entity_lookup.insert(aid, pos);
                 }
             }
-            WorldManagerMessage::SpawnBuilding(pos, assign_task) => {
+            WorldManagerMessage::SpawnBuilding(pos, id, assign_task) => {
                 let grid = &mut grid.lock().unwrap();
 
                 if let Some(dest) = get_tile(grid, pos)
                     && let Tile::Empty = *dest
                 {
-                    let aid = Building::new(this.clone(), task.clone());
+                    let aid = Building::new(this.clone(), task.clone(), assets.clone(), id.clone());
                     // temporary until buildings can get tasks some other way
                     if assign_task {
-                        let _ = aid.send(EntityMessage::TaskResponse(Ok(Task::Produce(0))));
+                        let _ = aid.send(EntityMessage::TaskResponse(Ok(Task::Produce(
+                            RecipeId::from("recipe_mutexium"),
+                        ))));
                     }
-                    *dest = Tile::Building(aid.clone());
+                    *dest = Tile::Building(aid.clone(), id);
                     entity_lookup.insert(aid, pos);
                 }
             }
@@ -143,9 +148,10 @@ fn main(
 pub fn new_joinable(
     grid: WorldGrid,
     task: AID<TaskManagerMessage>,
+    assets: Arc<Assets>,
 ) -> (AID<WorldManagerMessage>, AIDHandle) {
     return AID::new_joinable(|aid, mailbox| {
-        main(aid, &mailbox, task, grid);
+        main(aid, &mailbox, task, grid, assets);
 
         zombie::world_manager_zombie(mailbox);
     });
@@ -153,7 +159,7 @@ pub fn new_joinable(
 
 #[cfg(test)]
 mod tests {
-    use std::{thread, time::Duration};
+    use std::{path::Path, thread, time::Duration};
 
     use crate::messages::GetInventoryError;
 
@@ -161,15 +167,20 @@ mod tests {
 
     #[test]
     fn kill_entity_on_message() {
+        let assets = Arc::new(Assets::load(Path::new("assets")).unwrap());
+
         let task = AID::mock().0;
         let grid = init_world_grid();
-        let world = new_joinable(grid.clone(), task).0;
+        let world = new_joinable(grid.clone(), task, assets).0;
 
         let pos = (0, 0);
-        let _ = world.send(WorldManagerMessage::SpawnWorker(pos));
+        let _ = world.send(WorldManagerMessage::SpawnWorker(
+            pos,
+            WorkerId::from("worker"),
+        ));
         thread::sleep(Duration::from_millis(250));
         let worker = match get_tile(&mut grid.lock().unwrap(), pos).unwrap() {
-            Tile::Worker(aid) => aid.clone(),
+            Tile::Worker(aid, _) => aid.clone(),
             _ => panic!("failed to create worker"),
         };
 
@@ -187,15 +198,20 @@ mod tests {
 
     #[test]
     fn kill_entity_on_quit() {
+        let assets = Arc::new(Assets::load(Path::new("assets")).unwrap());
+
         let task = AID::mock().0;
         let grid = init_world_grid();
-        let world = new_joinable(grid.clone(), task).0;
+        let world = new_joinable(grid.clone(), task, assets).0;
 
         let pos = (0, 0);
-        let _ = world.send(WorldManagerMessage::SpawnWorker(pos));
+        let _ = world.send(WorldManagerMessage::SpawnWorker(
+            pos,
+            WorkerId::from("worker"),
+        ));
         thread::sleep(Duration::from_millis(250));
         let worker = match get_tile(&mut grid.lock().unwrap(), pos).unwrap() {
-            Tile::Worker(aid) => aid.clone(),
+            Tile::Worker(aid, _) => aid.clone(),
             _ => panic!("failed to create worker"),
         };
 

@@ -5,20 +5,17 @@ use std::{
 
 use crate::{
     aid::{AID, AIDHandle},
+    assets::{ItemId, RecipeId},
     messages::EntityMessage,
-    world_manager::Tile,
+    world_manager::{Pos, Tile, WorldGrid},
     zombie,
-};
-use crate::{
-    item::Item,
-    world_manager::{Pos, WorldGrid},
 };
 
 #[derive(Clone, PartialEq)]
 pub enum Task {
     MoveTo(Pos),
-    DeliverItem(Item, (AID<EntityMessage>, Pos), (AID<EntityMessage>, Pos)), //Deliver Item from A to B.
-    Produce(usize),                                                          //produce recipe id
+    DeliverItem(ItemId, (AID<EntityMessage>, Pos), (AID<EntityMessage>, Pos)), //Deliver Item from A to B.
+    Produce(RecipeId),                                                         //produce recipe id
     Idle,
 }
 
@@ -28,12 +25,12 @@ pub enum TaskManagerMessage {
     RemoveMyTask(AID<EntityMessage>), //Entitys current task is no longer fulfillable
     GiveMeNewTask(AID<EntityMessage>), //Worker at pos A requests a new task
     GiveTaskTo(Task, AID<EntityMessage>), //Give some entity a task (if player wants a building to produce etc)
-    CreatePath(Item, Pos, Pos),           //Create a path that delivers Item from A to B
+    CreatePath(ItemId, Pos, Pos),         //Create a path that delivers Item from A to B
     CreateMoveTask(Pos),
     Quit,
 }
 
-fn main(aid: AID<TaskManagerMessage>, mailbox: &Receiver<TaskManagerMessage>, grid: WorldGrid) {
+fn main(mailbox: &Receiver<TaskManagerMessage>, grid: WorldGrid) {
     //Maps AID to assigned task
     let mut task_list: HashMap<AID<EntityMessage>, Task> = HashMap::new();
     //A queue of non-assigned tasks
@@ -70,15 +67,14 @@ fn main(aid: AID<TaskManagerMessage>, mailbox: &Receiver<TaskManagerMessage>, gr
                 let grid = &grid.lock().unwrap();
                 let from_tile = grid.get(from.1).unwrap().get(from.0).unwrap().clone();
                 let to_tile = grid.get(to.1).unwrap().get(to.0).unwrap().clone();
-                if let Tile::Building(from_aid) = from_tile
-                    && let Tile::Building(to_aid) = to_tile
+                if let Tile::Building(from_aid, _) = from_tile
+                    && let Tile::Building(to_aid, _) = to_tile
                 {
                     task_queue.push_back(Task::DeliverItem(
                         item,
                         (from_aid.clone(), from),
                         (to_aid.clone(), to),
                     ));
-                } else {
                 }
             }
 
@@ -95,7 +91,8 @@ fn main(aid: AID<TaskManagerMessage>, mailbox: &Receiver<TaskManagerMessage>, gr
 
 pub fn new_joinable(grid: WorldGrid) -> (AID<TaskManagerMessage>, AIDHandle) {
     return AID::new_joinable(|aid, mailbox| {
-        main(aid, &mailbox, grid);
+        drop(aid);
+        main(&mailbox, grid);
 
         zombie::task_manager_zombie(mailbox);
     });
@@ -114,19 +111,18 @@ fn assign_task(
     //if there are some new task available
     if let Some(new_task) = task_queue.pop_front() {
         task_list.insert(aid, new_task.clone());
-        return new_task;
+        new_task
     } else {
-        return Task::Idle;
+        Task::Idle
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Mutex};
+    use super::*;
 
     use crate::{task_manager, world_manager::Tile};
-
-    use super::*;
+    use std::sync::{Arc, Mutex};
 
     //worker get idle when no tasks exist
     #[test]

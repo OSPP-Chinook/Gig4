@@ -1,11 +1,14 @@
 use crate::aid::{AID, AIDHandle};
+use crate::assets::{Assets, ItemId, ItemStack, WorkerId};
 use crate::inventory::{self, InventoryMessage};
-use crate::item::Item;
-use crate::messages::{EntityMessage, GetInventoryError, ItemTransferError, MoveError, TaskError};
+use crate::messages::{
+    EntityMessage, GetInventoryError, ItemTransferError, MoveError, PlayerManagerMessage, TaskError,
+};
 use crate::task_manager::{Task, TaskManagerMessage};
 use crate::world_manager::{Pos, WorldManagerMessage};
 use crate::zombie;
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::Arc;
 use std::sync::mpsc::Receiver;
 use std::thread;
 use std::time::Duration;
@@ -31,6 +34,7 @@ const TRANSFER_TIME: Duration = Duration::from_millis(5000);
 #[allow(dead_code)]
 struct WorkerCore {
     current_pos: Pos,
+    current_task: Task,
     sub_tasks: VecDeque<SubTask>,
     open_neighbors: HashSet<Pos>,
     heuristic: HashMap<Pos, usize>,
@@ -40,8 +44,8 @@ struct WorkerCore {
 enum SubTask {
     Idle,
     Move(Pos),
-    TakeItem(AID<EntityMessage>, Item),
-    GiveItem(AID<EntityMessage>, Item),
+    TakeItem(AID<EntityMessage>, ItemId),
+    GiveItem(AID<EntityMessage>, ItemId),
     Done,
 }
 
@@ -74,6 +78,7 @@ impl WorkerCore {
     fn new(start_pos: Pos) -> WorkerCore {
         WorkerCore {
             current_pos: start_pos,
+            current_task: Task::Idle,
             sub_tasks: VecDeque::new(),
             open_neighbors: neighbors(start_pos),
             heuristic: HashMap::new(),
@@ -130,6 +135,7 @@ impl WorkerCore {
 
     fn process_task(&mut self) -> SubTask {
         if self.sub_tasks.is_empty() {
+            self.current_task = Task::Idle;
             return SubTask::Done;
         }
         let sub_task = self.sub_tasks.front().unwrap();
@@ -158,17 +164,20 @@ impl WorkerCore {
         match task {
             Task::MoveTo(pos) => {
                 self.sub_tasks.push_back(SubTask::Move(pos));
+                self.current_task = Task::MoveTo(pos);
             }
             Task::DeliverItem(item, (from_aid, from), (to_aid, to)) => {
                 self.sub_tasks.push_back(SubTask::Move(from));
                 self.sub_tasks
-                    .push_back(SubTask::TakeItem(from_aid.clone(), item));
+                    .push_back(SubTask::TakeItem(from_aid.clone(), item.clone()));
                 self.sub_tasks.push_back(SubTask::Move(to));
                 self.sub_tasks
-                    .push_back(SubTask::GiveItem(to_aid.clone(), item));
+                    .push_back(SubTask::GiveItem(to_aid.clone(), item.clone()));
+                self.current_task = Task::DeliverItem(item, (from_aid, from), (to_aid, to));
             }
             Task::Idle => {
                 self.sub_tasks.push_back(SubTask::Idle);
+                self.current_task = Task::Idle;
             }
             _ => (),
             // Task::AddItem { .. } => {
@@ -221,11 +230,13 @@ pub struct Worker {
     core: WorkerCore,
     alive: bool,
     waiting: bool,
-    pending_inventory_task: Option<(bool, Item)>,
+    pending_inventory_task: Option<(bool, ItemId)>,
     world_aid: AID<WorldManagerMessage>,
     task_aid: AID<TaskManagerMessage>,
     inventory: AID<InventoryMessage>,
     self_aid: AID<EntityMessage>,
+    assets: Arc<Assets>,
+    id: WorkerId,
 }
 
 impl Worker {
@@ -233,17 +244,21 @@ impl Worker {
         world: AID<WorldManagerMessage>,
         task: AID<TaskManagerMessage>,
         start_pos: Pos,
+        assets: Arc<Assets>,
+        id: WorkerId,
     ) -> AID<EntityMessage> {
-        Worker::new_joinable(world, task, start_pos).0
+        Worker::new_joinable(world, task, start_pos, assets, id).0
     }
 
     pub fn new_joinable(
         world: AID<WorldManagerMessage>,
         task: AID<TaskManagerMessage>,
         start_pos: Pos,
+        assets: Arc<Assets>,
+        id: WorkerId,
     ) -> (AID<EntityMessage>, AIDHandle) {
         AID::new_joinable(move |aid, mailbox| {
-            let mut worker = Worker::create(aid, world, task, start_pos);
+            let mut worker = Worker::create(aid, world, task, start_pos, assets, id);
             worker.run(&mailbox);
 
             worker.destroy();
@@ -256,7 +271,11 @@ impl Worker {
         world: AID<WorldManagerMessage>,
         task: AID<TaskManagerMessage>,
         start_pos: Pos,
+        assets: Arc<Assets>,
+        id: WorkerId,
     ) -> Self {
+        let inventory_size = assets.workers.get(&id).unwrap().inventory_size;
+
         Worker {
             core: WorkerCore::new(start_pos),
             alive: true,
@@ -264,8 +283,10 @@ impl Worker {
             pending_inventory_task: None,
             world_aid: world,
             task_aid: task,
-            inventory: inventory::init(),
+            inventory: inventory::init(assets.clone(), inventory_size),
             self_aid: self_aid,
+            assets,
+            id,
         }
     }
 
@@ -274,9 +295,11 @@ impl Worker {
         let _ = self
             .task_aid
             .send(TaskManagerMessage::KillMe(self.self_aid.clone()));
+        drop(self);
     }
 
     fn invalid_task(&mut self) {
+        self.core.current_task = Task::Idle;
         self.core.sub_tasks.clear();
         self.waiting = false;
         let _ = self
@@ -304,7 +327,10 @@ impl Worker {
                     //uppdatera WorkerCore-> current_pos
                     self.core.apply_ok(pos);
                     self.waiting = false;
-                    thread::sleep(MOVE_TIME);
+
+                    let speed = self.assets.workers.get(&self.id).unwrap().speed;
+                    let time = Duration::from_secs_f32(MOVE_TIME.as_secs_f32() / speed);
+                    thread::sleep(time);
                 }
                 Err(MoveError::Occupied(pos)) => {
                     // world manager neckade flytten
@@ -321,7 +347,8 @@ impl Worker {
                     self.pending_inventory_task = None;
                     self.waiting = false;
                 }
-                Err(ItemTransferError::InsufficientItems) => {
+                Err(ItemTransferError::InsufficientItems | ItemTransferError::TooManyItems) => {
+                    self.pending_inventory_task = None;
                     self.waiting = false;
                 }
                 Err(ItemTransferError::RecipeChange | ItemTransferError::TheyreDead) => {
@@ -339,24 +366,34 @@ impl Worker {
 
             EntityMessage::GetInventoryResponse(res) => match res {
                 Ok(inventory) => {
-                    if let Some((send, item)) = self.pending_inventory_task {
+                    if let Some((send, item)) = self.pending_inventory_task.clone() {
                         if send {
                             let _ = self.inventory.send(InventoryMessage::GiveTo(
                                 self.self_aid.clone(),
                                 inventory,
-                                vec![(item, 10)],
+                                vec![ItemStack::new(item, 10)],
                             ));
                         } else {
                             let _ = self.inventory.send(InventoryMessage::TakeFrom(
                                 self.self_aid.clone(),
                                 inventory,
-                                vec![(item, 10)],
+                                vec![ItemStack::new(item, 10)],
                             ));
                         }
                     }
                 }
                 Err(GetInventoryError::ImWorker | GetInventoryError::ImDead) => self.invalid_task(),
             },
+
+            EntityMessage::FetchInventoryStatus(pm_aid) => {
+                _ = self.inventory.send(InventoryMessage::GiveStatus(pm_aid));
+            }
+
+            EntityMessage::FetchCurrentTask(pm_aid) => {
+                _ = pm_aid.send(PlayerManagerMessage::CurrentTaskResult(Some(
+                    self.core.current_task.clone(),
+                )));
+            }
         }
     }
 
