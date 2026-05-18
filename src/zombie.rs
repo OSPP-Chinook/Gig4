@@ -146,7 +146,7 @@ mod tests {
         let (mock, mailbox) = AID::mock();
 
         let (worker_aid, worker_handle) =
-            Worker::new_joinable(world, task, (0, 0), assets, WorkerId::from("worker"));
+            Worker::new_joinable(world, task, (0, 0), 10,assets, WorkerId::from("worker"));
 
         let _ = worker_aid.send(EntityMessage::KillYourself);
         thread::sleep(Duration::from_millis(250));
