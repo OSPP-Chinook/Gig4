@@ -382,9 +382,7 @@ impl Worker {
                 self.paused = true;
             }
             
-            EntityMessage::Unpause => {
-                self.paused = false;
-            }
+            EntityMessage::Unpause => {} // not supposed to happen
         }
     }
 
