@@ -14,6 +14,8 @@ pub enum EntityMessage {
     InventoryErr,
     GetInventory(AID<EntityMessage>),
     SendInventory(AID<InventoryMessage>),
+    FetchInventoryStatus(AID<PlayerManagerMessage>),
+    FetchCurrentTask(AID<PlayerManagerMessage>),
 }
 
 #[derive(Clone)]
@@ -21,6 +23,8 @@ pub enum PlayerManagerMessage {
     ShowTileInfo(Pos, Tile),
     TileNotFound(Pos),
     Notification(String), // if we ever want to notify the player of anything special
+    InventoryStatusResult(String),
+    CurrentTaskResult(Task),
 }
 
 #[derive(Clone)]

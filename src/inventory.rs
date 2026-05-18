@@ -1,7 +1,7 @@
 use crate::{
     aid::AID,
     assets::{Assets, ItemId, ItemList, ItemStack},
-    messages::EntityMessage,
+    messages::{EntityMessage, PlayerManagerMessage},
 };
 use std::{
     collections::{HashMap, VecDeque},
@@ -16,6 +16,7 @@ pub enum InventoryMessage {
     TakeFrom(AID<EntityMessage>, AID<InventoryMessage>, ItemList),
     GiveTo(AID<EntityMessage>, AID<InventoryMessage>, ItemList),
     PrintInventory(String),
+    GiveStatus(AID<PlayerManagerMessage>),
     Kill,
 
     // The following are sent by another inventory (private)
@@ -87,6 +88,20 @@ impl Inventory {
         true
     }
 
+    fn to_string(&self) -> String {        
+        let mut string: String = String::from("Inventory");
+
+        for (key, value) in &self.items {
+            if *value > 0 {
+                string.push_str(format!("\n{0} - {1}", &key, value).as_str());
+            }
+        }
+
+        string.push_str(format!("\n{0} / {1} Slots used", self.items.len(), self.size).as_str());
+
+        return string;
+    }
+
     // For debugging as of now
     fn print_inv(&self, name: String) {
         println!("{0}:", name);
@@ -147,6 +162,10 @@ fn match_message(message: InventoryMessage, inventory: &mut Inventory) {
         InventoryMessage::GiveTo(sender, other, items) => give_to(sender, inventory, other, items),
 
         InventoryMessage::PrintInventory(name) => inventory.print_inv(name),
+        
+        InventoryMessage::GiveStatus(pm_aid) => {
+            _ = pm_aid.send(PlayerManagerMessage::InventoryStatusResult(inventory.to_string()));
+        }
 
         InventoryMessage::Kill => return, // Should probably take care of all messages in mailbox somehow
 

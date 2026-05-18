@@ -1,7 +1,10 @@
 use crate::aid::AID;
 use crate::assets::{Assets, ItemId, ItemStack, WorkerId};
 use crate::inventory::{self, InventoryMessage};
-use crate::messages::EntityMessage;
+use crate::messages::{
+    EntityMessage,
+    PlayerManagerMessage,
+};
 use crate::task_manager::{Task, TaskManagerMessage};
 use crate::world_manager::{Pos, WorldManagerMessage};
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -31,6 +34,7 @@ const TRANSFER_TIME: Duration = Duration::from_millis(5000);
 #[allow(dead_code)]
 struct WorkerCore {
     current_pos: Pos,
+    current_task: Task,
     pending_move: Option<Pos>,
     sub_tasks: VecDeque<SubTask>,
     open_neighbors: HashSet<Pos>,
@@ -75,6 +79,7 @@ impl WorkerCore {
     fn new(start_pos: Pos) -> WorkerCore {
         WorkerCore {
             current_pos: start_pos,
+            current_task: Task::Idle,
             pending_move: None,
             sub_tasks: VecDeque::new(),
             open_neighbors: neighbors(start_pos),
@@ -161,6 +166,7 @@ impl WorkerCore {
         match task {
             Task::MoveTo(pos) => {
                 self.sub_tasks.push_back(SubTask::Move(pos));
+                self.current_task = Task::MoveTo(pos);
             }
             Task::DeliverItem(item, (from_aid, from), (to_aid, to)) => {
                 self.sub_tasks.push_back(SubTask::Move(from));
@@ -168,10 +174,12 @@ impl WorkerCore {
                     .push_back(SubTask::TakeItem(from_aid.clone(), item.clone()));
                 self.sub_tasks.push_back(SubTask::Move(to));
                 self.sub_tasks
-                    .push_back(SubTask::GiveItem(to_aid.clone(), item));
+                    .push_back(SubTask::GiveItem(to_aid.clone(), item.clone()));
+                self.current_task = Task::DeliverItem(item, (from_aid, from), (to_aid, to));
             }
             Task::Idle => {
                 self.sub_tasks.push_back(SubTask::Idle);
+                self.current_task = Task::Idle;
             }
             _ => (),
             // Task::AddItem { .. } => {
@@ -338,6 +346,16 @@ impl Worker {
                         ));
                     }
                 }
+            }
+
+            EntityMessage::FetchInventoryStatus(pm_aid) => {
+                _ = self.inventory.send(InventoryMessage::GiveStatus(pm_aid));
+            }
+
+            EntityMessage::FetchCurrentTask(pm_aid) => {
+                _ = pm_aid.send(PlayerManagerMessage::CurrentTaskResult(
+                    self.core.current_task.clone()
+                ));
             }
         }
     }
