@@ -106,7 +106,7 @@ fn main(
                     && let Tile::Empty = *dest
                 {
                     let aid =
-                        Worker::new(this.clone(), task.clone(), pos, assets.clone(), id.clone());
+                        Worker::new(this.clone(), task.clone(), pos,10 ,assets.clone(), id.clone());
                     *dest = Tile::Worker(aid.clone(), id);
                     entity_lookup.insert(aid, pos);
                 }
