@@ -1,0 +1,12 @@
+[
+    {
+        "id": "raw_nonmetal",
+        "name": "Raw Nonmetal",
+        "description": "A raw non-metallic substance that still seems to be of some use."
+    },
+    {
+        "id": "workers",
+        "name": "Workers",
+        "description": "Workers carry items around according to your requests. They're your only way of moving items between buildings, so you may need to deploy more of them as you scale your production."
+    }
+]

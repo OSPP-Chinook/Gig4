@@ -1,46 +1,52 @@
-use std::{sync::mpsc::Receiver, thread, time::Duration};
-
 use crate::{
     aid::AID,
+    assets::{Assets, BuildingId, RecipeAsset},
     inventory::{self, InventoryMessage},
-    item::Item,
     messages::EntityMessage,
     task_manager::Task,
     world_manager::WorldManagerMessage,
 };
+use std::{
+    sync::{Arc, mpsc::Receiver},
+    thread,
+    time::Duration,
+};
 
-const MACHINE_TICK_SPEED: Duration = Duration::from_secs(1);
-
-//Definition for recipe, should probably be defined somewhere else
-pub struct Recipe {
-    input: Vec<(Item, usize)>,
-    output: Vec<(Item, usize)>,
-    pub recipe_time: usize, //recipe time in machine "cycles"/ticks
-}
+const MACHINE_TICK_SPEED: Duration = Duration::from_millis(100);
 
 pub struct Building {
     world_aid: AID<WorldManagerMessage>,
     self_aid: AID<EntityMessage>,
     mailbox: Receiver<EntityMessage>,
     inventory: AID<InventoryMessage>,
+    assets: Arc<Assets>,
+    id: BuildingId,
 }
 
 impl Building {
-    pub fn new(world: AID<WorldManagerMessage>) -> AID<EntityMessage> {
+    pub fn new(
+        world: AID<WorldManagerMessage>,
+        assets: Arc<Assets>,
+        id: BuildingId,
+    ) -> AID<EntityMessage> {
         return AID::new(move |aid, mailbox| {
+            let inventory_size = assets.buildings.get(&id).unwrap().inventory_size;
+
             let mut building = Building {
                 world_aid: world,
                 self_aid: aid.clone(),
                 mailbox: mailbox,
-                inventory: inventory::init(),
+                inventory: inventory::init(assets.clone(), inventory_size),
+                assets,
+                id,
             };
             building.run();
         });
     }
 
     fn run(&mut self) {
-        let mut active_recipe: Option<Recipe> = None;
-        let mut current_process: Option<usize> = None;
+        let mut active_recipe: Option<RecipeAsset> = None;
+        let mut current_process: Option<Duration> = None;
         let mut waiting = false;
         'outer: loop {
             //read all messages in mailbox
@@ -57,7 +63,7 @@ impl Building {
                             && waiting
                             && current_process == None
                         {
-                            current_process = Some(recipe.recipe_time);
+                            current_process = Some(Duration::from_millis(recipe.time as u64));
                         }
                         if let Some(time) = &current_process
                             && waiting
@@ -73,14 +79,12 @@ impl Building {
 
                     EntityMessage::Task(task) => {
                         if let Task::Produce(index) = task {
-                            //get recipes from static data.
-                            active_recipe = Some(Recipe {
-                                input: vec![],
-                                output: vec![(Item::Mutexium, 10)],
-                                recipe_time: 5,
-                            })
+                            // Get recipes from static data
+                            if let Some(recipe) = self.assets.recipes.get(&index) {
+                                active_recipe = Some(recipe.clone());
+                            }
                         }
-                    } //Update task
+                    } // Update task
                     EntityMessage::Ok => {}
                     EntityMessage::Err => {}
                     EntityMessage::GetInventory(aid) => {
@@ -94,28 +98,28 @@ impl Building {
                 && current_process == None
                 && !waiting
             {
-                if recipe.input.is_empty() {
-                    current_process = Some(recipe.recipe_time);
+                if recipe.inputs.is_empty() {
+                    current_process = Some(Duration::from_millis(recipe.time as u64));
                     waiting = false;
                 } else {
                     _ = self.inventory.send(InventoryMessage::Remove(
                         self.self_aid.clone(),
-                        recipe.input.clone(),
+                        recipe.inputs.clone(),
                     ));
                     waiting = true;
                 }
             }
-          
+
             if let Some(time_left) = current_process {
-                if time_left == 0 {
+                if time_left.is_zero() {
                     _ = self.inventory.send(InventoryMessage::Add(
                         self.self_aid.clone(),
-                        active_recipe.as_ref().unwrap().output.clone(),
+                        active_recipe.as_ref().unwrap().outputs.clone(),
                     ));
                     current_process = None;
                     continue;
                 } else {
-                    current_process = Some(time_left - 1);
+                    current_process = Some(time_left.saturating_sub(MACHINE_TICK_SPEED));
                 }
             }
             thread::sleep(MACHINE_TICK_SPEED);
@@ -123,13 +127,16 @@ impl Building {
     }
 }
 
+#[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
 
     #[test]
     fn create_building() {
+        let assets = Arc::new(Assets::load(Path::new("assets")).unwrap());
         let world: AID<WorldManagerMessage> = AID::new(|_, _| ());
-        let building = Building::new(world);
+        let building = Building::new(world, assets, BuildingId::from("factory"));
         let _ = building.send(EntityMessage::KillYourself);
     }
 }
