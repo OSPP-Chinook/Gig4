@@ -150,3 +150,64 @@ pub fn new_joinable(
         zombie::world_manager_zombie(mailbox);
     });
 }
+
+#[cfg(test)]
+mod tests {
+    use std::{thread, time::Duration};
+
+    use crate::messages::GetInventoryError;
+
+    use super::*;
+
+    #[test]
+    fn kill_entity_on_message() {
+        let task = AID::mock().0;
+        let grid = init_world_grid();
+        let world = new_joinable(grid.clone(), task).0;
+
+        let pos = (0, 0);
+        let _ = world.send(WorldManagerMessage::SpawnWorker(pos));
+        thread::sleep(Duration::from_millis(250));
+        let worker = match get_tile(&mut grid.lock().unwrap(), pos).unwrap() {
+            Tile::Worker(aid) => aid.clone(),
+            _ => panic!("failed to create worker"),
+        };
+
+        let _ = world.send(WorldManagerMessage::KillEntity(worker.clone()));
+        thread::sleep(Duration::from_millis(250));
+        let (mock, mailbox) = AID::mock();
+        assert!(worker.send(EntityMessage::GetInventory(mock)).is_ok());
+        assert!(matches!(
+            mailbox.recv(),
+            Ok(EntityMessage::GetInventoryResponse(Err(
+                GetInventoryError::ImDead
+            )))
+        ));
+    }
+
+    #[test]
+    fn kill_entity_on_quit() {
+        let task = AID::mock().0;
+        let grid = init_world_grid();
+        let world = new_joinable(grid.clone(), task).0;
+
+        let pos = (0, 0);
+        let _ = world.send(WorldManagerMessage::SpawnWorker(pos));
+        thread::sleep(Duration::from_millis(250));
+        let worker = match get_tile(&mut grid.lock().unwrap(), pos).unwrap() {
+            Tile::Worker(aid) => aid.clone(),
+            _ => panic!("failed to create worker"),
+        };
+
+        let _ = world.send(WorldManagerMessage::Quit);
+        thread::sleep(Duration::from_millis(250));
+        let (mock, mailbox) = AID::mock();
+        assert!(worker.send(EntityMessage::GetInventory(mock)).is_ok());
+        assert!(matches!(
+            mailbox.recv(),
+            Ok(EntityMessage::GetInventoryResponse(Err(
+                GetInventoryError::ImDead
+            )))
+        ));
+    }
+}

@@ -111,16 +111,11 @@ mod tests {
     use std::{thread, time::Duration};
 
     use crate::{
-        aid::AID,
-        building::Building,
-        inventory::{self, InventoryMessage, TakeMyItemsError},
-        item::Item,
-        messages::{EntityMessage, GetInventoryError, MoveError, PlayerManagerMessage, TaskError},
-        player_manager,
-        task_manager::{self, TaskManagerMessage},
-        worker::Worker,
-        world_manager::{self, WorldManagerMessage},
+        aid::AID, building::Building, inventory, item::Item, player_manager, task_manager,
+        worker::Worker, world_manager,
     };
+
+    use super::*;
 
     #[test]
     fn worker_dies() {

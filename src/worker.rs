@@ -349,18 +349,22 @@ impl Worker {
     }
 
     fn run(&mut self, mailbox: &Receiver<EntityMessage>) {
-        loop {
+        'outer: loop {
             while self.waiting {
                 if let Ok(msg) = mailbox.recv() {
                     self.msg_handler(msg);
+
+                    if !self.alive {
+                        break 'outer;
+                    }
                 }
             }
             while let Ok(msg) = mailbox.try_recv() {
                 self.msg_handler(msg);
-            }
 
-            if !self.alive {
-                break;
+                if !self.alive {
+                    break 'outer;
+                }
             }
 
             //process task
