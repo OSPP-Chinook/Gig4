@@ -1,10 +1,11 @@
 use crate::{
-    aid::AID,
+    aid::{AID, AIDHandle},
     assets::{Assets, BuildingId, RecipeAsset},
     inventory::{self, InventoryMessage},
-    messages::EntityMessage,
-    task_manager::Task,
+    messages::{EntityMessage, ItemTransferError, PlayerManagerMessage, TaskError},
+    task_manager::{Task, TaskManagerMessage},
     world_manager::WorldManagerMessage,
+    zombie,
 };
 use std::{
     sync::{Arc, mpsc::Receiver},
@@ -16,8 +17,8 @@ const MACHINE_TICK_SPEED: Duration = Duration::from_millis(100);
 
 pub struct Building {
     world_aid: AID<WorldManagerMessage>,
+    task_aid: AID<TaskManagerMessage>,
     self_aid: AID<EntityMessage>,
-    mailbox: Receiver<EntityMessage>,
     inventory: AID<InventoryMessage>,
     assets: Arc<Assets>,
     id: BuildingId,
@@ -26,71 +27,128 @@ pub struct Building {
 impl Building {
     pub fn new(
         world: AID<WorldManagerMessage>,
+        task: AID<TaskManagerMessage>,
         assets: Arc<Assets>,
         id: BuildingId,
     ) -> AID<EntityMessage> {
-        return AID::new(move |aid, mailbox| {
-            let inventory_size = assets.buildings.get(&id).unwrap().inventory_size;
+        return Building::new_joinable(world, task, assets, id).0;
+    }
 
-            let mut building = Building {
-                world_aid: world,
-                self_aid: aid.clone(),
-                mailbox: mailbox,
-                inventory: inventory::init(assets.clone(), inventory_size),
-                assets,
-                id,
-            };
-            building.run();
+    pub fn new_joinable(
+        world: AID<WorldManagerMessage>,
+        task: AID<TaskManagerMessage>,
+        assets: Arc<Assets>,
+        id: BuildingId,
+    ) -> (AID<EntityMessage>, AIDHandle) {
+        return AID::new_joinable(move |aid, mailbox| {
+            let mut building = Building::create(aid, world, task, assets, id);
+            building.run(&mailbox);
+
+            building.destroy();
+            zombie::entity_zombie(mailbox);
         });
     }
 
-    fn run(&mut self) {
+    fn create(
+        self_aid: AID<EntityMessage>,
+        world_aid: AID<WorldManagerMessage>,
+        task_aid: AID<TaskManagerMessage>,
+        assets: Arc<Assets>,
+        id: BuildingId,
+    ) -> Self {
+        let inventory_size = assets.buildings.get(&id).unwrap().inventory_size;
+
+        Building {
+            world_aid,
+            task_aid,
+            self_aid,
+            inventory: inventory::init(assets.clone(), inventory_size),
+            assets,
+            id,
+        }
+    }
+
+    fn destroy(self) {
+        let _ = self.inventory.send(InventoryMessage::KillYourself);
+        let _ = self
+            .task_aid
+            .send(TaskManagerMessage::KillMe(self.self_aid.clone()));
+        drop(self);
+    }
+
+    fn run(&mut self, mailbox: &Receiver<EntityMessage>) {
+        let mut current_task = Task::Idle;
         let mut active_recipe: Option<RecipeAsset> = None;
         let mut current_process: Option<Duration> = None;
         let mut waiting = false;
         'outer: loop {
             //read all messages in mailbox
-            while let Ok(msg) = self.mailbox.try_recv() {
+            while let Ok(msg) = mailbox.try_recv() {
                 match msg {
                     EntityMessage::KillYourself => {
-                        let _ = self
-                            .world_aid
-                            .send(WorldManagerMessage::KillMe(self.self_aid.clone()));
                         break 'outer;
                     }
-                    EntityMessage::InventoryOk => {
-                        if let Some(recipe) = &active_recipe
-                            && waiting
-                            && current_process == None
-                        {
-                            current_process = Some(Duration::from_millis(recipe.time as u64));
+                    EntityMessage::ItemTransferResponse(res) => match res {
+                        Ok(()) => {
+                            if let Some(recipe) = &active_recipe
+                                && waiting
+                                && current_process == None
+                            {
+                                current_process = Some(Duration::from_millis(recipe.time as u64));
+                            }
+                            if let Some(time) = &current_process
+                                && waiting
+                            {
+                                current_process = None;
+                            }
+                            waiting = false;
                         }
-                        if let Some(time) = &current_process
-                            && waiting
-                        {
+                        Err(
+                            ItemTransferError::RecipeChange
+                            | ItemTransferError::InsufficientItems
+                            | ItemTransferError::TooManyItems,
+                        ) => {
                             current_process = None;
+                            waiting = false;
                         }
-                        waiting = false;
-                    }
-                    EntityMessage::InventoryErr => {
-                        current_process = None;
-                        waiting = false;
-                    }
+                        Err(ItemTransferError::ImDead | ItemTransferError::TheyreDead) => {
+                            // something has gone very wrong
+                            break 'outer;
+                        }
+                    },
 
-                    EntityMessage::Task(task) => {
-                        if let Task::Produce(index) = task {
-                            // Get recipes from static data
-                            if let Some(recipe) = self.assets.recipes.get(&index) {
-                                active_recipe = Some(recipe.clone());
+                    EntityMessage::TaskResponse(res) => match res {
+                        Ok(task) => {
+                            if let Task::Produce(index) = task.clone() {
+                                current_task = task;
+                                // Get recipes from static data
+                                if let Some(recipe) = self.assets.recipes.get(&index) {
+                                    active_recipe = Some(recipe.clone());
+                                }
+
+                                // inform waitign of recipe change
+                                let _ = self.inventory.send(InventoryMessage::ChangeRecipe);
                             }
                         }
-                    } // Update task
-                    EntityMessage::Ok => {}
-                    EntityMessage::Err => {}
+                        Err(TaskError::ImDead) => {} // should receive KillYourself shortly
+                    },
                     EntityMessage::GetInventory(aid) => {
-                        let _ = aid.send(EntityMessage::SendInventory(self.inventory.clone()));
+                        let _ = aid.send(EntityMessage::GetInventoryResponse(Ok(self
+                            .inventory
+                            .clone())));
                     }
-                    _ => {}
+
+                    EntityMessage::FetchInventoryStatus(pm_aid) => {
+                        _ = self.inventory.send(InventoryMessage::GiveStatus(pm_aid));
+                    }
+
+                    EntityMessage::FetchCurrentTask(pm_aid) => {
+                        _ = pm_aid.send(PlayerManagerMessage::CurrentTaskResult(Some(
+                            current_task.clone(),
+                        )));
+                    }
+
+                    EntityMessage::GetInventoryResponse(_) | EntityMessage::MoveResponse(_) => {} // not supposed to happen
                 }
             }
 
@@ -135,8 +193,9 @@ mod tests {
     #[test]
     fn create_building() {
         let assets = Arc::new(Assets::load(Path::new("assets")).unwrap());
-        let world: AID<WorldManagerMessage> = AID::new(|_, _| ());
-        let building = Building::new(world, assets, BuildingId::from("factory"));
+        let world = AID::mock().0;
+        let task = AID::mock().0;
+        let building = Building::new(world, task, assets, BuildingId::from("factory"));
         let _ = building.send(EntityMessage::KillYourself);
     }
 }
