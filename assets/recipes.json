@@ -1,0 +1,13 @@
+[
+    {
+        "id": "recipe_mutexium",
+        "inputs": [],
+        "outputs": [
+            {
+                "id": "mutexium",
+                "count": 1
+            }
+        ],
+        "time": 1000
+    }
+]
