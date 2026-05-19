@@ -46,6 +46,22 @@ enum MouseClick {
     Left,
     Right,
 }
+
+struct Ui {
+    selected_aid: Option<AID<EntityMessage>>,
+    inventory_string: Option<String>,
+    task: Option<Task>,
+}
+
+impl Ui {
+    fn new() -> Self {
+        return Ui {
+            selected_aid: None,
+            inventory_string: None,
+            task: None,
+        };
+    }
+}
 struct Input {
     mouse_pos: Option<(u16, u16)>, // (x, y)
     mouse_click: MouseClick,
@@ -183,12 +199,10 @@ fn render_loop(
         let _ = execute!(stdout(), EnableMouseCapture);
 
         let mut old_world = get_copy_of_world(&world_array);
-        let mut selected_aid = None;
         let mut time_to_wait = 0;
 
         // For Status information
-        let mut inventory_string: Option<String> = None;
-        let mut task: Option<Task> = None;
+        let mut ui = Ui::new();
 
         let mut fps: f32 = 0.;
         let mut second_counter = Instant::now();
@@ -197,13 +211,13 @@ fn render_loop(
         let mut paused = false;
 
         loop {
-            if let Some(true) = check_mailbox(&mailbox, &mut inventory_string, &mut task) {
+            if let Some(true) = check_mailbox(&mailbox, &mut ui) {
                 break Ok(());
             }
 
             if let Some(val) = get_inputs(
                 &mut camera,
-                &mut selected_aid,
+                &mut ui,
                 &old_world,
                 time_to_wait,
                 &terminal.get_frame().area(),
@@ -228,7 +242,7 @@ fn render_loop(
                 }
             }
 
-            if let Some(selected_aid) = selected_aid.clone() {
+            if let Some(selected_aid) = &ui.selected_aid {
                 _ = selected_aid.send(EntityMessage::FetchInventoryStatus(aid.clone()));
                 _ = selected_aid.send(EntityMessage::FetchCurrentTask(aid.clone()));
             }
@@ -243,9 +257,7 @@ fn render_loop(
                     &new_world,
                     camera,
                     (time_0, time_1, fps),
-                    &selected_aid,
-                    &inventory_string,
-                    &task,
+                    &ui,
                 )
             })?;
             frames += 1;
@@ -274,11 +286,7 @@ fn mouse_to_grid_pos((x, y): (u16, u16), world_area: &Rect, camera: Camera) -> (
     );
 }
 
-fn check_mailbox(
-    mailbox: &Receiver<PlayerManagerMessage>,
-    inventory_string: &mut Option<String>,
-    task: &mut Option<Task>,
-) -> Option<bool> {
+fn check_mailbox(mailbox: &Receiver<PlayerManagerMessage>, ui: &mut Ui) -> Option<bool> {
     //read all messages in mailbox
     while let Ok(msg) = mailbox.try_recv() {
         match msg {
@@ -286,10 +294,10 @@ fn check_mailbox(
 
             // TODO: Handle more message types
             PlayerManagerMessage::InventoryStatusResult(res) => {
-                *inventory_string = res;
+                ui.inventory_string = res;
             }
             PlayerManagerMessage::CurrentTaskResult(res) => {
-                *task = res;
+                ui.task = res;
             }
             _ => {}
         }
@@ -300,7 +308,7 @@ fn check_mailbox(
 
 fn get_inputs(
     camera: &mut Camera,
-    selected_aid: &mut Option<AID<EntityMessage>>,
+    ui: &mut Ui,
     old_world: &RawWorldArray,
     time_to_wait: u64,
     frame: &Rect,
@@ -335,15 +343,8 @@ fn get_inputs(
         key: None,
     };
 
-    parse_input_keyboard(&mut input, &key_event, camera, selected_aid, &old_world);
-    parse_input_mouse(
-        &mut input,
-        &mouse_event,
-        frame,
-        *camera,
-        selected_aid,
-        old_world,
-    );
+    parse_input_keyboard(&mut input, &key_event, camera, ui, &old_world);
+    parse_input_mouse(&mut input, &mouse_event, frame, *camera, ui, old_world);
 
     return Some(InputResult::Continue);
 }
@@ -352,7 +353,7 @@ fn parse_input_keyboard(
     input: &mut Input,
     event_opt: &Option<KeyEvent>,
     camera: &mut Camera,
-    selected_aid: &mut Option<AID<EntityMessage>>,
+    ui: &mut Ui,
     old_world: &RawWorldArray,
 ) {
     if event_opt.is_none() {
@@ -374,10 +375,10 @@ fn parse_input_keyboard(
             camera.change(MOVE_CAMERA, 0);
         }
         KeyCode::Char('n') => {
-            *selected_aid = get_next_worker(&old_world, selected_aid.clone());
+            ui.selected_aid = get_next_worker(&old_world, ui.selected_aid.clone());
         }
         KeyCode::Char('m') => {
-            if let Some(sel_aid) = &selected_aid {
+            if let Some(sel_aid) = &ui.selected_aid {
                 if let Some(new_camera) = get_worker_camera(&old_world, &sel_aid) {
                     *camera = new_camera;
                 }
@@ -392,7 +393,7 @@ fn parse_input_mouse(
     event_opt: &Option<MouseEvent>,
     world_area: &Rect,
     camera: Camera,
-    selected_aid: &mut Option<AID<EntityMessage>>,
+    ui: &mut Ui,
     old_world: &RawWorldArray,
 ) {
     if event_opt.is_none() {
@@ -411,14 +412,14 @@ fn parse_input_mouse(
             if x >= 0 && x < WIDTH as i32 && y >= 0 && y < HEIGHT as i32 {
                 let tile = &old_world[y as usize][x as usize];
                 if let Tile::Building(aid, _) = tile {
-                    *selected_aid = Some(aid.clone());
+                    ui.selected_aid = Some(aid.clone());
                 } else if let Tile::Worker(aid, _) = tile {
-                    *selected_aid = Some(aid.clone());
+                    ui.selected_aid = Some(aid.clone());
                 } else {
-                    *selected_aid = None;
+                    ui.selected_aid = None;
                 }
             } else {
-                *selected_aid = None;
+                ui.selected_aid = None;
             }
         }
         MouseEventKind::Down(MouseButton::Right) => {
@@ -471,24 +472,14 @@ fn render(
     world_array: &RawWorldArray,
     camera: Camera,
     (time_0, time_1, fps): (Instant, Instant, f32),
-    selected_aid: &Option<AID<EntityMessage>>,
-    inventory_string: &Option<String>,
-    task: &Option<Task>,
+    ui: &Ui,
 ) {
     let world_area = frame.area();
 
     render_world_in_area(frame, &world_area, &old_world_array, &world_array, camera);
 
-    if let Some(sel_aid) = selected_aid {
-        render_selected_info(
-            frame,
-            sel_aid,
-            &world_area,
-            world_array,
-            old_world_array,
-            inventory_string,
-            task,
-        );
+    if let Some(_) = ui.selected_aid {
+        render_selected_info(frame, &world_area, world_array, old_world_array, ui);
     }
 
     // return; // don't draw fps
@@ -503,12 +494,10 @@ fn render(
 
 fn render_selected_info(
     frame: &mut Frame,
-    sel_aid: &AID<EntityMessage>,
     world_area: &Rect,
     world_array: &RawWorldArray,
     old_world_array: &RawWorldArray,
-    inventory_string: &Option<String>,
-    task: &Option<Task>,
+    ui: &Ui,
 ) {
     let (width, height) = (world_area.width / 3, world_area.height / 2);
     let m = 2; // margin: 2 x border, which doubles as 2 x space for animation
@@ -532,7 +521,8 @@ fn render_selected_info(
         frame.render_widget(Clear, layout[0]);
         frame.render_widget(Clear, layout[1]);
 
-        if let Some(pov_camera) = get_worker_camera(&world_array, sel_aid) {
+        if let Some(pov_camera) = get_worker_camera(&world_array, &ui.selected_aid.clone().unwrap())
+        {
             render_pov(frame, pov_camera, &layout, world_array, old_world_array);
         }
 
@@ -545,7 +535,7 @@ fn render_selected_info(
             layout[1],
         );
 
-        render_status(frame, layout, inventory_string, task);
+        render_status(frame, layout, &ui.inventory_string, &ui.task);
     }
 }
 
