@@ -3,59 +3,78 @@ use std::{
     sync::mpsc::Receiver,
 };
 
-use crate::{aid::AID, messages::EntityMessage, world_manager::Tile};
 use crate::{
-    item::Item,
-    world_manager::{Pos, WorldGrid},
+    aid::{AID, AIDHandle},
+    assets::{ItemId, RecipeId},
+    messages::EntityMessage,
+    world_manager::{Pos, Tile, WorldGrid},
+    zombie,
 };
 
 #[derive(Clone, PartialEq)]
 pub enum Task {
     MoveTo(Pos),
-    DeliverItem(Item, (AID<EntityMessage>, Pos), (AID<EntityMessage>, Pos)), //Deliver Item from A to B.
-    Produce(usize),                                                          //produce recipe id
+    DeliverItem(ItemId, (AID<EntityMessage>, Pos), (AID<EntityMessage>, Pos)), //Deliver Item from A to B.
+    Produce(RecipeId),                                                         //produce recipe id
     Idle,
 }
 
 #[derive(Clone)]
 pub enum TaskManagerMessage {
+    KillMe(AID<EntityMessage>), //Tasks involving entity will no longer be fulfillable
+    RemoveMyTask(AID<EntityMessage>), //Entitys current task is no longer fulfillable
     GiveMeNewTask(AID<EntityMessage>), //Worker at pos A requests a new task
     GiveTaskTo(Task, AID<EntityMessage>), //Give some entity a task (if player wants a building to produce etc)
-    CreatePath(Item, Pos, Pos),           //Create a path that delivers Item from A to B
+    CreatePath(ItemId, Pos, Pos),         //Create a path that delivers Item from A to B
     CreateMoveTask(Pos),
     Quit,
 }
 
-pub fn main(aid: AID<TaskManagerMessage>, mailbox: Receiver<TaskManagerMessage>, grid: WorldGrid) {
+fn main(mailbox: &Receiver<TaskManagerMessage>, grid: WorldGrid) {
     //Maps AID to assigned task
     let mut task_list: HashMap<AID<EntityMessage>, Task> = HashMap::new();
     //A queue of non-assigned tasks
     let mut task_queue: VecDeque<Task> = VecDeque::new();
     for msg in mailbox {
         match msg {
+            TaskManagerMessage::KillMe(aid) => {
+                // remove current task
+                match task_list.remove(&aid) {
+                    None | Some(Task::Idle | Task::Produce(_)) => {}
+                    Some(task) => task_queue.push_back(task),
+                }
+
+                // remove tasks delivering to entity
+                task_queue.retain(|task| match task {
+                    Task::DeliverItem(_, (from, _), (to, _)) if *from == aid || *to == aid => false,
+                    _ => true,
+                });
+            }
+            TaskManagerMessage::RemoveMyTask(aid) => {
+                task_list.remove(&aid);
+            }
             TaskManagerMessage::GiveMeNewTask(aid) => {
-                let _ = aid.send(EntityMessage::Task(assign_task(
+                let _ = aid.send(EntityMessage::TaskResponse(Ok(assign_task(
                     aid.clone(),
                     &mut task_queue,
                     &mut task_list,
-                )));
+                ))));
             }
             TaskManagerMessage::GiveTaskTo(task, to) => {
-                let _ = to.send(EntityMessage::Task(task));
+                let _ = to.send(EntityMessage::TaskResponse(Ok(task)));
             }
             TaskManagerMessage::CreatePath(item, from, to) => {
                 let grid = &grid.lock().unwrap();
                 let from_tile = grid.get(from.1).unwrap().get(from.0).unwrap().clone();
                 let to_tile = grid.get(to.1).unwrap().get(to.0).unwrap().clone();
-                if let Tile::Building(from_aid) = from_tile
-                    && let Tile::Building(to_aid) = to_tile
+                if let Tile::Building(from_aid, _) = from_tile
+                    && let Tile::Building(to_aid, _) = to_tile
                 {
                     task_queue.push_back(Task::DeliverItem(
                         item,
                         (from_aid.clone(), from),
                         (to_aid.clone(), to),
                     ));
-                } else {
                 }
             }
 
@@ -70,6 +89,15 @@ pub fn main(aid: AID<TaskManagerMessage>, mailbox: Receiver<TaskManagerMessage>,
     }
 }
 
+pub fn new_joinable(grid: WorldGrid) -> (AID<TaskManagerMessage>, AIDHandle) {
+    return AID::new_joinable(|aid, mailbox| {
+        drop(aid);
+        main(&mailbox, grid);
+
+        zombie::task_manager_zombie(mailbox);
+    });
+}
+
 //Gets a new tasks and updates queue and map accordingly, returns new task.
 fn assign_task(
     aid: AID<EntityMessage>,
@@ -78,55 +106,32 @@ fn assign_task(
 ) -> Task {
     //if had a task assigned previously
     if let Some(prev_task) = task_list.get(&aid) {
-        if let Task::MoveTo(pos) = prev_task {}
         task_queue.push_back(prev_task.clone());
     }
     //if there are some new task available
     if let Some(new_task) = task_queue.pop_front() {
         task_list.insert(aid, new_task.clone());
-        return new_task;
+        new_task
     } else {
-        return Task::Idle;
+        Task::Idle
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        sync::{
-            Arc, Mutex,
-            mpsc::{SendError, channel},
-        },
-        thread,
-        time::Duration,
-    };
-
-    use crate::{task_manager, world_manager::Tile};
-
     use super::*;
 
-    #[test]
-    fn create_destroy() {
-        let grid: WorldGrid = Arc::new(Mutex::new(vec![vec![Tile::Empty; 10]; 10]));
-        let task_manager: AID<TaskManagerMessage> =
-            AID::new(|aid, mailbox| main(aid, mailbox, grid));
-        let _ = task_manager.send(TaskManagerMessage::Quit);
-        thread::sleep(Duration::from_secs(1));
-        //panic if can send message after quit
-        let _ = task_manager
-            .send(TaskManagerMessage::Quit)
-            .inspect(|_| panic!());
-    }
+    use crate::{task_manager, world_manager::Tile};
+    use std::sync::{Arc, Mutex};
 
     //worker get idle when no tasks exist
     #[test]
     fn empty_task_queue() {
         let grid: WorldGrid = Arc::new(Mutex::new(vec![vec![Tile::Empty; 10]; 10]));
-        let task_manager: AID<TaskManagerMessage> =
-            AID::new(|aid, mailbox| main(aid, mailbox, grid));
+        let task_manager = task_manager::new_joinable(grid).0;
         let (fake_worker, fake_worker_mailbox) = AID::<EntityMessage>::mock();
         let _ = task_manager.send(TaskManagerMessage::GiveMeNewTask(fake_worker.clone()));
-        if let Ok(EntityMessage::Task(Task::Idle)) = fake_worker_mailbox.recv() {
+        if let Ok(EntityMessage::TaskResponse(Ok(Task::Idle))) = fake_worker_mailbox.recv() {
         } else {
             panic!();
         }
@@ -136,17 +141,16 @@ mod tests {
     #[test]
     fn same_task_twice() {
         let grid: WorldGrid = Arc::new(Mutex::new(vec![vec![Tile::Empty; 10]; 10]));
-        let task_manager: AID<TaskManagerMessage> =
-            AID::new(|aid, mailbox| main(aid, mailbox, grid));
+        let task_manager = task_manager::new_joinable(grid).0;
         let (fake_worker, fake_worker_mailbox) = AID::<EntityMessage>::mock();
         let _ = task_manager.send(TaskManagerMessage::CreateMoveTask((0, 0)));
         let _ = task_manager.send(TaskManagerMessage::GiveMeNewTask(fake_worker.clone()));
-        if let Ok(EntityMessage::Task(Task::MoveTo(_))) = fake_worker_mailbox.recv() {
+        if let Ok(EntityMessage::TaskResponse(Ok(Task::MoveTo(_)))) = fake_worker_mailbox.recv() {
         } else {
             panic!("First")
         }
         let _ = task_manager.send(TaskManagerMessage::GiveMeNewTask(fake_worker.clone()));
-        if let Ok(EntityMessage::Task(Task::MoveTo(_))) = fake_worker_mailbox.recv() {
+        if let Ok(EntityMessage::TaskResponse(Ok(Task::MoveTo(_)))) = fake_worker_mailbox.recv() {
         } else {
             panic!("Second")
         }
@@ -156,18 +160,17 @@ mod tests {
     #[test]
     fn idle_when_no_available() {
         let grid: WorldGrid = Arc::new(Mutex::new(vec![vec![Tile::Empty; 10]; 10]));
-        let task_manager: AID<TaskManagerMessage> =
-            AID::new(|aid, mailbox| main(aid, mailbox, grid));
+        let task_manager = task_manager::new_joinable(grid).0;
         let (fake_worker2, fake_worker_mailbox2) = AID::<EntityMessage>::mock();
         let (fake_worker, fake_worker_mailbox) = AID::<EntityMessage>::mock();
         let _ = task_manager.send(TaskManagerMessage::CreateMoveTask((0, 0)));
         let _ = task_manager.send(TaskManagerMessage::GiveMeNewTask(fake_worker.clone()));
         let _ = task_manager.send(TaskManagerMessage::GiveMeNewTask(fake_worker2.clone()));
-        if let Ok(EntityMessage::Task(Task::MoveTo(_))) = fake_worker_mailbox.recv() {
+        if let Ok(EntityMessage::TaskResponse(Ok(Task::MoveTo(_)))) = fake_worker_mailbox.recv() {
         } else {
             panic!("First")
         }
-        if let Ok(EntityMessage::Task(Task::Idle)) = fake_worker_mailbox2.recv() {
+        if let Ok(EntityMessage::TaskResponse(Ok(Task::Idle))) = fake_worker_mailbox2.recv() {
         } else {
             panic!("Second")
         }

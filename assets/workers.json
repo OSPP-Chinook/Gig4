@@ -1,0 +1,11 @@
+[
+    {
+        "id": "worker",
+        "name": "Worker",
+        "description": "A basic worker that hauls items between buildings reliably.",
+        "category": "workers",
+        "stack_limit": 1,
+        "inventory_size": 10,
+        "speed": 1.0
+    }
+]

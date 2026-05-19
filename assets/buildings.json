@@ -1,0 +1,18 @@
+[
+    {
+        "id": "factory",
+        "name": "Factory",
+        "description": "A versatile manufacturing facility.",
+        "base_cost": [],
+        "cost_increase": 1.0,
+        "first_free": true,
+        "tier_up_from": null,
+        "x_size": 1,
+        "y_size": 1,
+        "inventory_size": 100,
+        "recipes": [
+            "recipe_mutexium"
+        ],
+        "production_speed": 1.0
+    }
+]

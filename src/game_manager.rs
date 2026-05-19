@@ -1,98 +1,100 @@
+use std::{sync::mpsc, thread, time::Duration};
+
 use crate::{
     aid::AID,
-    building::Building,
-    worker::Worker,
-    item::Item,
+    assets::{Assets, BuildingId, ItemId, WorkerId},
     messages::PlayerManagerMessage,
     player_manager,
     task_manager::{self, TaskManagerMessage},
     world_manager::{self, WorldManagerMessage, init_world_grid},
 };
+use std::{path::Path, sync::Arc};
 
-pub struct GameManager {
-    world: AID<WorldManagerMessage>,
-    task: AID<TaskManagerMessage>,
-    player: AID<PlayerManagerMessage>,
+#[derive(Clone)]
+pub enum GameManagerMessage {
+    Quit,
 }
 
-impl GameManager {
-    pub fn new() -> Self {
-        let grid = init_world_grid();
+pub fn main(this: AID<GameManagerMessage>, mailbox: mpsc::Receiver<GameManagerMessage>) {
+    let assets = match Assets::load(Path::new("assets")) {
+        Ok(assets) => Arc::new(assets),
+        Err(err) => {
+            eprintln!("Failed to load assets. {err}");
+            return;
+        }
+    };
 
-        let world = AID::new({
-            let grid = grid.clone();
-            |aid, mailbox| world_manager::main(aid, mailbox, grid)
-        });
-        let task = AID::new({
-            let grid = grid.clone();
-            |aid, mailbox| task_manager::main(aid, mailbox, grid)
-        });
-        let player = AID::new({
-            let world = world.clone();
-            let grid = grid.clone();
-            |aid, mailbox| {
-                let _ = player_manager::render_loop(aid, mailbox, world, grid);
-            }
-        });
+    let grid = init_world_grid();
 
-        Self {
-            world,
-            task,
-            player,
+    let (task, task_handle) = task_manager::new_joinable(grid.clone());
+    let (world, world_handle) = world_manager::new_joinable(grid.clone(), task.clone(), assets);
+    let (player, player_handle) =
+        player_manager::new_joinable(grid.clone(), world.clone(), this.clone());
+
+    demo(&world, &task);
+
+    for msg in mailbox {
+        match msg {
+            GameManagerMessage::Quit => break,
         }
     }
 
-    pub fn run(&self) {
-        self.demo();
+    let _ = world.send(WorldManagerMessage::Quit);
+    let _ = task.send(TaskManagerMessage::Quit);
+    let _ = player.send(PlayerManagerMessage::Quit); // probably redundant but doesn't hurt
 
-        loop {
-            std::thread::park();
-        }
+    drop(world);
+    drop(task);
+    drop(player);
+
+    let _ = world_handle.join();
+    let _ = task_handle.join();
+    let _ = player_handle.join();
+}
+
+fn demo(world: &AID<WorldManagerMessage>, task: &AID<TaskManagerMessage>) {
+    // place obstacles
+    for pos in [
+        (2, 3),
+        (2, 2),
+        (3, 2),
+        (4, 2),
+        (5, 2),
+        (6, 2),
+        (7, 2),
+        (8, 2),
+        (8, 3),
+        (8, 4),
+        (8, 5),
+        (8, 6),
+        (9, 6),
+        (7, 6),
+    ] {
+        let _ = world.send(WorldManagerMessage::SpawnObstacle(pos));
     }
 
-    fn demo(&self) {
-        // place obstacles
-        for pos in [
-            (2, 3),
-            (2, 2),
-            (3, 2),
-            (4, 2),
-            (5, 2),
-            (6, 2),
-            (7, 2),
-            (8, 2),
-            (8, 3),
-            (8, 4),
-            (8, 5),
-            (8, 6),
-            (9, 6),
-            (7, 6),
-        ] {
-            let _ = self.world.send(WorldManagerMessage::PlaceObstacle(pos));
-        }
+    let _ = world.send(WorldManagerMessage::SpawnBuilding(
+        (3, 5),
+        BuildingId::from("factory"),
+        false,
+    ));
+    let _ = world.send(WorldManagerMessage::SpawnBuilding(
+        (15, 3),
+        BuildingId::from("factory"),
+        true,
+    ));
 
-        let building = Building::new(self.world.clone());
-        let _ = self
-            .world
-            .send(WorldManagerMessage::PlaceBuilding((3, 5), building.clone()));
+    let _ = world.send(WorldManagerMessage::SpawnWorker(
+        (10, 3),
+        WorkerId::from("worker"),
+    ));
 
-        let building = Building::new(self.world.clone());
-        let _ = self.world.send(WorldManagerMessage::PlaceBuilding(
-            (15, 3),
-            building.clone(),
-        ));
-        let _ = building.send(crate::messages::EntityMessage::Task(
-            task_manager::Task::Produce(0),
-        ));
+    // TODO: make CreatePath use aids so this is not necessary
+    thread::sleep(Duration::from_millis(500));
 
-        let worker = Worker::new(self.world.clone(), self.task.clone(), (10, 3));
-        let _ = self
-            .world
-            .send(WorldManagerMessage::PlaceWorker((10, 3), worker.clone()));
-        let _ = self.task.send(TaskManagerMessage::CreatePath(
-            Item::Mutexium,
-            (15, 3),
-            (3, 5),
-        ));
-    }
+    let _ = task.send(TaskManagerMessage::CreatePath(
+        ItemId::from("mutexium"),
+        (15, 3),
+        (3, 5),
+    ));
 }
