@@ -27,3 +27,36 @@ impl<T: Send + 'static + Clone> Timer<T> {
         let _ = self.aid.send(time);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::mpsc::TryRecvError;
+
+    use super::*;
+
+    #[test]
+    fn responds() {
+        let (mock, mailbox) = AID::mock();
+        let timer = Timer::new(mock, "test");
+        timer.start_timer(Duration::ZERO);
+        assert!(matches!(mailbox.recv(), Ok("test")));
+    }
+
+    #[test]
+    fn responds_in_time() {
+        let (mock, mailbox) = AID::mock();
+        let timer = Timer::new(mock, "test");
+        timer.start_timer(Duration::from_millis(500));
+        thread::sleep(Duration::from_millis(600));
+        assert!(matches!(mailbox.try_recv(), Ok("test")));
+    }
+
+    #[test]
+    fn responds_not_too_early() {
+        let (mock, mailbox) = AID::mock();
+        let timer = Timer::new(mock, "test");
+        timer.start_timer(Duration::from_millis(600));
+        thread::sleep(Duration::from_millis(500));
+        assert!(matches!(mailbox.try_recv(), Err(TryRecvError::Empty)));
+    }
+}
