@@ -1,11 +1,13 @@
+use crossterm::{execute, terminal};
 use rand::{RngExt, SeedableRng, rngs::ChaCha8Rng};
 
 use crossterm::event::{
-    Event, KeyCode, KeyEvent, KeyEventKind, MouseButton, MouseEvent, MouseEventKind, poll, read,
+    DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind, MouseButton,
+    MouseEvent, MouseEventKind, poll, read,
 };
 
 use ratatui::{
-    Frame,
+    Frame, Terminal,
     layout::{Alignment, Constraint, Layout, Margin, Offset, Rect, Spacing},
     style::Stylize,
     symbols::merge::MergeStrategy,
@@ -14,6 +16,7 @@ use ratatui::{
 
 use std::{
     cmp::Ordering,
+    io::stdout,
     rc::Rc,
     sync::mpsc::Receiver,
     time::{Duration, Instant},
@@ -135,6 +138,12 @@ fn get_worker_camera(world_array: &RawWorldArray, sel_aid: &AID<EntityMessage>) 
                         return Some(Camera(x as i32, y as i32));
                     }
                 }
+                Tile::Building(aid, _) => {
+                    if aid == sel_aid {
+                        return Some(Camera(x as i32, y as i32));
+                    }
+                }
+
                 _ => (),
             }
         }
@@ -153,6 +162,7 @@ pub fn new_joinable(
 
         let _ = game.send(GameManagerMessage::Quit);
         drop(game);
+        let _ = execute!(stdout(), DisableMouseCapture);
         zombie::player_manager_zombie(mailbox);
     });
 }
@@ -170,6 +180,8 @@ fn render_loop(
             (HEIGHT / 2).try_into().unwrap(),
         );
 
+        let _ = execute!(stdout(), EnableMouseCapture);
+
         let mut old_world = get_copy_of_world(&world_array);
         let mut selected_aid = None;
         let mut time_to_wait = 0;
@@ -177,19 +189,26 @@ fn render_loop(
         // For Status information
         let mut inventory_string: Option<String> = None;
         let mut task: Option<Task> = None;
-        
-        let mut paused = false;
 
+        let mut fps: f32 = 0.;
+        let mut second_counter = Instant::now();
+        let mut frames = 0;
+
+        let mut paused = false;
 
         loop {
             if let Some(true) = check_mailbox(&mailbox, &mut inventory_string, &mut task) {
                 break Ok(());
             }
 
-            if let Some(val) = get_inputs(&mut camera, &mut selected_aid, &old_world, time_to_wait)
-            {
+            if let Some(val) = get_inputs(
+                &mut camera,
+                &mut selected_aid,
+                &old_world,
+                time_to_wait,
+                &terminal.get_frame().area(),
+            ) {
                 match val {
-
                     InputResult::Continue => {}
 
                     InputResult::Quit => {
@@ -209,7 +228,6 @@ fn render_loop(
                 }
             }
 
-            // terminal.draw(|frame| render(frame, world_array, camera, input))?;
             if let Some(selected_aid) = selected_aid.clone() {
                 _ = selected_aid.send(EntityMessage::FetchInventoryStatus(aid.clone()));
                 _ = selected_aid.send(EntityMessage::FetchCurrentTask(aid.clone()));
@@ -224,13 +242,20 @@ fn render_loop(
                     &old_world,
                     &new_world,
                     camera,
-                    (time_0, time_1),
+                    (time_0, time_1, fps),
                     &selected_aid,
                     &inventory_string,
                     &task,
                 )
             })?;
+            frames += 1;
             old_world = new_world;
+
+            if second_counter.elapsed() >= Duration::from_secs(1) {
+                fps = frames as f32 / second_counter.elapsed().as_secs_f32();
+                frames = 0;
+                second_counter = Instant::now();
+            }
 
             // reduce wait time by how much time we spent rendering
             time_to_wait = 50u128
@@ -238,6 +263,15 @@ fn render_loop(
                 .unwrap_or(0) as u64;
         }
     })
+}
+
+fn mouse_to_grid_pos((x, y): (u16, u16), world_area: &Rect, camera: Camera) -> (i32, i32) {
+    let box_w = world_area.width / TILE_SIZE.0;
+    let box_h = world_area.height / TILE_SIZE.1;
+    return (
+        (x / TILE_SIZE.0) as i32 - (box_w / 2) as i32 + camera.0,
+        (y / TILE_SIZE.1) as i32 - (box_h / 2) as i32 + camera.1,
+    );
 }
 
 fn check_mailbox(
@@ -269,6 +303,7 @@ fn get_inputs(
     selected_aid: &mut Option<AID<EntityMessage>>,
     old_world: &RawWorldArray,
     time_to_wait: u64,
+    frame: &Rect,
 ) -> Option<InputResult> {
     let mut key_event: Option<KeyEvent> = None;
     let mut mouse_event: Option<MouseEvent> = None;
@@ -301,7 +336,14 @@ fn get_inputs(
     };
 
     parse_input_keyboard(&mut input, &key_event, camera, selected_aid, &old_world);
-    parse_input_mouse(&mut input, &mouse_event);
+    parse_input_mouse(
+        &mut input,
+        &mouse_event,
+        frame,
+        *camera,
+        selected_aid,
+        old_world,
+    );
 
     return Some(InputResult::Continue);
 }
@@ -345,7 +387,14 @@ fn parse_input_keyboard(
     }
 }
 
-fn parse_input_mouse(input: &mut Input, event_opt: &Option<MouseEvent>) {
+fn parse_input_mouse(
+    input: &mut Input,
+    event_opt: &Option<MouseEvent>,
+    world_area: &Rect,
+    camera: Camera,
+    selected_aid: &mut Option<AID<EntityMessage>>,
+    old_world: &RawWorldArray,
+) {
     if event_opt.is_none() {
         return;
     }
@@ -358,6 +407,19 @@ fn parse_input_mouse(input: &mut Input, event_opt: &Option<MouseEvent>) {
         MouseEventKind::Down(MouseButton::Left) => {
             input.mouse_pos = Some((event.column, event.row));
             input.mouse_click = MouseClick::Left;
+            let (x, y) = mouse_to_grid_pos((event.column, event.row), world_area, camera);
+            if x >= 0 && x < WIDTH as i32 && y >= 0 && y < HEIGHT as i32 {
+                let tile = &old_world[y as usize][x as usize];
+                if let Tile::Building(aid, _) = tile {
+                    *selected_aid = Some(aid.clone());
+                } else if let Tile::Worker(aid, _) = tile {
+                    *selected_aid = Some(aid.clone());
+                } else {
+                    *selected_aid = None;
+                }
+            } else {
+                *selected_aid = None;
+            }
         }
         MouseEventKind::Down(MouseButton::Right) => {
             input.mouse_pos = Some((event.column, event.row));
@@ -408,7 +470,7 @@ fn render(
     old_world_array: &RawWorldArray,
     world_array: &RawWorldArray,
     camera: Camera,
-    (time_0, time_1): (Instant, Instant),
+    (time_0, time_1, fps): (Instant, Instant, f32),
     selected_aid: &Option<AID<EntityMessage>>,
     inventory_string: &Option<String>,
     task: &Option<Task>,
@@ -435,6 +497,7 @@ fn render(
         frame,
         time_1.duration_since(time_0),
         time_2.duration_since(time_1),
+        fps,
     );
 }
 
@@ -747,7 +810,7 @@ fn render_world_in_area(
     }
 }
 
-fn render_fps(frame: &mut Frame, dur_copy: Duration, dur_render: Duration) {
+fn render_fps(frame: &mut Frame, dur_copy: Duration, dur_render: Duration, fps: f32) {
     let width = frame.area().width;
 
     // time to run get_copy_of_world()
@@ -760,5 +823,10 @@ fn render_fps(frame: &mut Frame, dur_copy: Duration, dur_render: Duration) {
     let text = format!("{} ms", dur_render.as_millis());
     let len = text.len() as u16;
     let rect = Rect::new(width - len, 1, len, 1);
+    frame.render_widget(Paragraph::new(text), rect);
+
+    let text = format!("FPS: {:.2}", fps);
+    let len = text.len() as u16;
+    let rect = Rect::new(width - len, 2, len, 1);
     frame.render_widget(Paragraph::new(text), rect);
 }

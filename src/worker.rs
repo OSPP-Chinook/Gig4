@@ -433,6 +433,16 @@ impl Worker {
                             break 'outer;
                         }
 
+                        EntityMessage::FetchInventoryStatus(pm_aid) => {
+                            _ = self.inventory.send(InventoryMessage::GiveStatus(pm_aid));
+                        }
+
+                        EntityMessage::FetchCurrentTask(pm_aid) => {
+                            _ = pm_aid.send(PlayerManagerMessage::CurrentTaskResult(Some(
+                                self.core.current_task.clone(),
+                            )));
+                        }
+
                         _ => {
                             pause_messages.push(msg);
                         }
