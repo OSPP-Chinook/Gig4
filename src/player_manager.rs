@@ -162,6 +162,7 @@ pub fn new_joinable(
 
         let _ = game.send(GameManagerMessage::Quit);
         drop(game);
+        let _ = execute!(stdout(), DisableMouseCapture);
         zombie::player_manager_zombie(mailbox);
     });
 }
