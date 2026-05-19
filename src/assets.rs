@@ -140,7 +140,7 @@ newtype!(ItemId, WorkerId, BuildingId, RecipeId, CategoryId);
 
 pub type ItemList = Vec<ItemStack>;
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct ItemStack {
     pub id: ItemId,
     pub count: usize,

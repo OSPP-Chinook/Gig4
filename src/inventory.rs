@@ -1,12 +1,40 @@
 use crate::{
-    aid::AID,
+    aid::{AID, AIDHandle},
     assets::{Assets, ItemId, ItemList, ItemStack},
     worker::EntityMessage,
+    player_manager::PlayerManagerMessage,
+    zombie,
 };
 use std::{
     collections::{HashMap, VecDeque},
-    sync::{Arc, mpsc::TryRecvError},
+    sync::Arc,
 };
+
+#[derive(Clone)]
+pub enum GiveMeItemsError {
+    ImDead,
+    RecipeChange,
+}
+
+#[derive(Clone)]
+pub enum TakeMyItemsError {
+    ImDead,
+}
+
+#[derive(Clone)]
+pub enum GetInventoryError {
+    ImDead,
+    ImWorker,
+}
+
+#[derive(Clone)]
+pub enum ItemTransferError {
+    ImDead,
+    TheyreDead,
+    RecipeChange,
+    InsufficientItems,
+    TooManyItems,
+}
 
 #[derive(Clone)]
 pub enum InventoryMessage {
@@ -15,18 +43,21 @@ pub enum InventoryMessage {
     Remove(AID<EntityMessage>, ItemList),
     TakeFrom(AID<EntityMessage>, AID<InventoryMessage>, ItemList),
     GiveTo(AID<EntityMessage>, AID<InventoryMessage>, ItemList),
+    ChangeRecipe, // tell all waiting that their request can't be fulfilled
     PrintInventory(String),
-    Kill,
+    GiveStatus(AID<PlayerManagerMessage>),
+    KillYourself,
 
     // The following are sent by another inventory (private)
     GiveMeItems(AID<EntityMessage>, AID<InventoryMessage>, ItemList), // From TakeFrom
-    GiveMeItemResult(AID<EntityMessage>, Result<ItemList, &'static str>), // From GiveMeItems
+    GiveMeItemsResult(AID<EntityMessage>, Result<ItemList, GiveMeItemsError>), // From GiveMeItems
     TakeMyItems(AID<EntityMessage>, AID<InventoryMessage>, ItemList), // From GiveTo
-    TakeMyItemsResult(AID<EntityMessage>, Result<(), ItemList>),      // From TakeMyItems
+    TakeMyItemsResult(AID<EntityMessage>, Result<(), (ItemList, TakeMyItemsError)>), // From TakeMyItems
 }
 
 struct Inventory {
     aid: AID<InventoryMessage>,
+    alive: bool,
     size: usize, // Number of slots the inventory has
     waiting: VecDeque<InventoryMessage>,
     items: HashMap<ItemId, usize>, // Key: item ID -> Value: count (each item takes exactly 1 slot)
@@ -37,11 +68,16 @@ impl Inventory {
     fn construct(aid: AID<InventoryMessage>, assets: Arc<Assets>, size: usize) -> Self {
         Inventory {
             aid,
+            alive: true,
             size,
             waiting: VecDeque::new(),
             items: HashMap::new(),
             assets,
         }
+    }
+
+    fn destroy(self) {
+        drop(self);
     }
 
     fn add(&mut self, stack: ItemStack) {
@@ -87,6 +123,49 @@ impl Inventory {
         true
     }
 
+    fn to_string(&self) -> String {
+        let mut string: String = String::from("Inventory");
+
+        for (key, value) in &self.items {
+            if *value > 0 {
+                string.push_str(format!("\n{0} - {1}", &key, value).as_str());
+            }
+        }
+
+        string.push_str(format!("\n{0} / {1} Slots used", self.items.len(), self.size).as_str());
+
+        return string;
+    }
+
+    fn change_recipe(&mut self) {
+        for msg in self.waiting.iter() {
+            match msg {
+                InventoryMessage::Remove(entity, _) => {
+                    let _ = entity.send(EntityMessage::ItemTransferResponse(Err(
+                        ItemTransferError::RecipeChange,
+                    )));
+                }
+
+                InventoryMessage::GiveTo(entity, _, _) => {
+                    let _ = entity.send(EntityMessage::ItemTransferResponse(Err(
+                        ItemTransferError::RecipeChange,
+                    )));
+                }
+
+                InventoryMessage::GiveMeItems(entity, inventory, _) => {
+                    let _ = inventory.send(InventoryMessage::GiveMeItemsResult(
+                        entity.clone(),
+                        Err(GiveMeItemsError::RecipeChange),
+                    ));
+                }
+
+                _ => {}
+            }
+        }
+
+        self.waiting.clear();
+    }
+
     // For debugging as of now
     fn print_inv(&self, name: String) {
         println!("{0}:", name);
@@ -100,7 +179,11 @@ impl Inventory {
 
 /// Initializes a new inventory and returns its AID
 pub fn init(assets: Arc<Assets>, size: usize) -> AID<InventoryMessage> {
-    return AID::new(move |aid, mailbox| inventory_loop(aid, mailbox, assets, size));
+    return init_joinable(assets, size).0;
+}
+
+pub fn init_joinable(assets: Arc<Assets>, size: usize) -> (AID<InventoryMessage>, AIDHandle) {
+    return AID::new_joinable(move |aid, mailbox| inventory_loop(aid, mailbox, assets, size));
 }
 
 fn inventory_loop(
@@ -111,7 +194,7 @@ fn inventory_loop(
 ) {
     let mut inventory: Inventory = Inventory::construct(aid, assets, size);
 
-    loop {
+    while inventory.alive {
         if !inventory.waiting.is_empty() {
             // println!("Inventory has a queue of requests");
             match_message(
@@ -120,18 +203,18 @@ fn inventory_loop(
             );
         }
 
-        let message: Result<InventoryMessage, TryRecvError> = mailbox.try_recv();
+        let message = mailbox.recv();
 
         match message {
             Ok(m) => match_message(m, &mut inventory),
-
-            Err(e) => {
-                if e == TryRecvError::Disconnected {
-                    return; // Could possibly do something different.
-                }
-            }
+            Err(_) => inventory.alive = false,
         };
     }
+
+    zombie::inventory_zombie(inventory.waiting);
+    inventory.waiting = VecDeque::new();
+    inventory.destroy();
+    zombie::inventory_zombie(mailbox);
 }
 
 fn match_message(message: InventoryMessage, inventory: &mut Inventory) {
@@ -146,15 +229,23 @@ fn match_message(message: InventoryMessage, inventory: &mut Inventory) {
 
         InventoryMessage::GiveTo(sender, other, items) => give_to(sender, inventory, other, items),
 
+        InventoryMessage::ChangeRecipe => inventory.change_recipe(),
+
         InventoryMessage::PrintInventory(name) => inventory.print_inv(name),
 
-        InventoryMessage::Kill => return, // Should probably take care of all messages in mailbox somehow
+        InventoryMessage::KillYourself => inventory.alive = false,
+
+        InventoryMessage::GiveStatus(pm_aid) => {
+            _ = pm_aid.send(PlayerManagerMessage::InventoryStatusResult(Some(
+                inventory.to_string(),
+            )));
+        }
 
         InventoryMessage::GiveMeItems(sender, sending_inventory, items) => {
             give_me_items(sender, inventory, sending_inventory, items)
         }
 
-        InventoryMessage::GiveMeItemResult(sender, result) => {
+        InventoryMessage::GiveMeItemsResult(sender, result) => {
             give_me_items_result(sender, inventory, result)
         }
 
@@ -177,7 +268,9 @@ fn match_message(message: InventoryMessage, inventory: &mut Inventory) {
 /// * 'item'      - Tuple of Item and amount to take
 fn add(sender: AID<EntityMessage>, inventory: &mut Inventory, items: ItemList) {
     if !inventory.can_add(&items) {
-        let _ = sender.send(EntityMessage::InventoryErr);
+        let _ = sender.send(EntityMessage::ItemTransferResponse(Err(
+            ItemTransferError::TooManyItems,
+        )));
         return;
     }
 
@@ -185,7 +278,7 @@ fn add(sender: AID<EntityMessage>, inventory: &mut Inventory, items: ItemList) {
         inventory.add(item);
     }
 
-    let _ = sender.send(EntityMessage::InventoryOk);
+    _ = sender.send(EntityMessage::ItemTransferResponse(Ok(())));
 }
 
 /// Takes some count of Items from inventory, will not do anything if inventory is empty.
@@ -197,14 +290,16 @@ fn add(sender: AID<EntityMessage>, inventory: &mut Inventory, items: ItemList) {
 /// * 'item'      - Tuple of Item and amount to take
 fn remove(sender: AID<EntityMessage>, inventory: &mut Inventory, items: ItemList) {
     if !inventory.can_remove(&items) {
-        let _ = sender.send(EntityMessage::InventoryErr);
+        let _ = sender.send(EntityMessage::ItemTransferResponse(Err(
+            ItemTransferError::InsufficientItems,
+        )));
         return;
     }
 
     for item in items {
         inventory.remove(item);
     }
-    let _ = sender.send(EntityMessage::InventoryOk);
+    let _ = sender.send(EntityMessage::ItemTransferResponse(Ok(())));
 }
 
 /// Asks the other inventory to perform the give_me_items function with
@@ -281,14 +376,11 @@ fn give_me_items(
     items: ItemList,
 ) {
     if !inventory.can_remove(&items) {
-        // println!("had too few items");
         inventory.waiting.push_back(InventoryMessage::GiveMeItems(
             sender.clone(),
             sending_inventory.clone(),
             items,
         ));
-        // TODO: Figure out how to know if an inventory of a factory has changed production rules,
-        //       making the request impossible to fulfill. Should send error in that case.
         return;
     }
 
@@ -296,40 +388,46 @@ fn give_me_items(
         inventory.remove(item.clone());
     }
 
-    let _ = sending_inventory.send(InventoryMessage::GiveMeItemResult(sender, Ok(items)));
+    let _ = sending_inventory.send(InventoryMessage::GiveMeItemsResult(sender, Ok(items)));
 }
 
-/// Gets the result from a GiveMeItem message and add the item to this inventory, or prints the
-/// error message if GiveMeItem failed.
+/// Gets the result from a GiveMeItem message and add the item to this inventory, or sends an
+/// error to the entity
 ///
 /// # Arguments
 ///
 /// * 'sender'    - AID of entity that sent the original TakeFrom message
 /// * 'inventory' - Mutable reference to this inventory
 /// * 'result'    - A result containing either a tuple of what item was moved and the quantity,
-///                 or the error message as a str
+///                 or the error
 fn give_me_items_result(
     sender: AID<EntityMessage>,
     inventory: &mut Inventory,
-    result: Result<ItemList, &'static str>,
+    result: Result<ItemList, GiveMeItemsError>,
 ) {
     match result {
         Ok(items) => {
             for item in &items {
                 inventory.add(item.clone());
             }
-            let _ = sender.send(EntityMessage::InventoryOk);
+
+            let _ = sender.send(EntityMessage::ItemTransferResponse(Ok(())));
         }
-        Err(msg) => {
-            println!("{}", msg); // should probably do something else
-            let _ = sender.send(EntityMessage::InventoryErr);
+        Err(GiveMeItemsError::RecipeChange) => {
+            let _ = sender.send(EntityMessage::ItemTransferResponse(Err(
+                ItemTransferError::RecipeChange,
+            )));
+        }
+        Err(GiveMeItemsError::ImDead) => {
+            let _ = sender.send(EntityMessage::ItemTransferResponse(Err(
+                ItemTransferError::TheyreDead,
+            )));
         }
     }
 }
 
 /// Checks if this inventory can take the items and sends a result containing either a tuple
-/// containing what item and quantity it took, or an error containing a string explaining what
-/// went wrong.
+/// containing what item and quantity it took, or an error explaining what went wrong.
 ///
 /// # Arguments
 ///
@@ -349,7 +447,6 @@ fn take_my_items(
             sending_inventory.clone(),
             items,
         ));
-        // TODO: Should send error if inventory is full.
         return;
     }
 
@@ -375,17 +472,19 @@ fn take_my_items(
 fn take_my_items_result(
     sender: AID<EntityMessage>,
     inventory: &mut Inventory,
-    result: Result<(), ItemList>,
+    result: Result<(), (ItemList, TakeMyItemsError)>,
 ) {
     match result {
         Ok(_) => {
-            let _ = sender.send(EntityMessage::InventoryOk);
+            let _ = sender.send(EntityMessage::ItemTransferResponse(Ok(())));
         }
-        Err(items) => {
+        Err((items, TakeMyItemsError::ImDead)) => {
             for item in &items {
                 inventory.add(item.clone()); // Revert removal
             }
-            let _ = sender.send(EntityMessage::InventoryErr);
+            let _ = sender.send(EntityMessage::ItemTransferResponse(Err(
+                ItemTransferError::TheyreDead,
+            )));
         }
     }
 }

@@ -1,31 +1,50 @@
 use rand::{RngExt, SeedableRng, rngs::ChaCha8Rng};
-use std::sync::mpsc::Receiver;
-use std::time::Duration;
-use std::time::Instant;
-use std::cmp::Ordering;
-use std::cmp;
 
-use crate::{
-    aid::AID,
-    EntityMessage,
-    world_manager::{HEIGHT, WIDTH, RawWorldArray, Tile, Pos, WorldGrid, WorldManagerMessage},
+use crossterm::event::{
+    Event, KeyCode, KeyEvent, KeyEventKind, MouseButton, MouseEvent, MouseEventKind, poll, read,
 };
-use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, MouseButton, MouseEvent, MouseEventKind, poll, read};
-use ratatui::Frame;
-use ratatui::layout::Constraint::Length;
-use ratatui::layout::{Constraint, Layout, Margin, Rect, Offset};
-use ratatui::style::Stylize;
-use ratatui::widgets::{Block, Borders, Paragraph, Clear};
+
+use ratatui::{
+    Frame,
+    layout::{Alignment, Constraint, Layout, Margin, Offset, Rect, Spacing},
+    style::Stylize,
+    symbols::merge::MergeStrategy,
+    widgets::{Block, Borders, Clear, Padding, Paragraph},
+};
+
+use std::{
+    cmp::Ordering,
+    rc::Rc,
+    sync::mpsc::Receiver,
+    time::{Duration, Instant},
+};
+
+use crate::aid::AIDHandle;
+use crate::game_manager::GameManagerMessage;
+use crate::zombie;
+use crate::{
+    EntityMessage,
+    aid::AID,
+    task_manager::Task,
+    world_manager::{HEIGHT, WIDTH, Pos, RawWorldArray, Tile, WorldGrid, WorldManagerMessage},
+};
 
 // Width and height of a tile on the screen in characters
 // Needs to be u16 for ratatui
 const TILE_SIZE: (u16, u16) = (3, 2);
+
+// Default: 1. Set to -1 for inverted movement.
+// The default setting looks weird now, but it will make sense when the world is more populated.
+const MOVE_CAMERA: i32 = 1;
 
 #[derive(Clone)]
 pub enum PlayerManagerMessage {
     ShowTileInfo(Pos, Tile),
     TileNotFound(Pos),
     Notification(String), // if we ever want to notify the player of anything special
+    InventoryStatusResult(Option<String>),
+    CurrentTaskResult(Option<Task>),
+    Quit,
 }
 
 enum MouseClick {
@@ -67,10 +86,6 @@ impl Camera {
     }
 }
 
-// Default: 1. Set to -1 for inverted movement.
-// The default setting looks weird now, but it will make sense when the world is more populated.
-const MOVE_CAMERA: i32 = 1;
-
 // We do this for two reasons:
 // 1. To have 2 copies of the world for comparing
 // 2. To not lock the whole world while rendering
@@ -82,18 +97,18 @@ fn get_copy_of_world(world_array: &WorldGrid) -> RawWorldArray {
 
 fn get_next_worker(
     world_array: &RawWorldArray,
-    selected_aid: Option<AID<EntityMessage>>
+    selected_aid: Option<AID<EntityMessage>>,
 ) -> Option<AID<EntityMessage>> {
     let mut found = match selected_aid {
         Some(_) => false,
         None => true,
     };
-    
+
     for y in 0..HEIGHT {
         for x in 0..WIDTH {
             let tile = &world_array[y][x];
             match tile {
-                Tile::Worker(aid) => {
+                Tile::Worker(aid, _) => {
                     if found {
                         return Some(aid.clone());
                     }
@@ -102,7 +117,7 @@ fn get_next_worker(
                             if aid == sel_aid {
                                 found = true;
                             }
-                        },
+                        }
                         None => (),
                     };
                 }
@@ -113,15 +128,12 @@ fn get_next_worker(
     return None;
 }
 
-fn get_worker_camera(
-    world_array: &RawWorldArray,
-    sel_aid: &AID<EntityMessage>,
-) -> Option<Camera> {
+fn get_worker_camera(world_array: &RawWorldArray, sel_aid: &AID<EntityMessage>) -> Option<Camera> {
     for y in 0..HEIGHT {
         for x in 0..WIDTH {
             let tile = &world_array[y][x];
             match tile {
-                Tile::Worker(aid) => {
+                Tile::Worker(aid, _) => {
                     if aid == sel_aid {
                         return Some(Camera(x as i32, y as i32));
                     }
@@ -134,10 +146,23 @@ fn get_worker_camera(
     return None;
 }
 
+pub fn new_joinable(
+    grid: WorldGrid,
+    world: AID<WorldManagerMessage>,
+    game: AID<GameManagerMessage>,
+) -> (AID<PlayerManagerMessage>, AIDHandle) {
+    return AID::new_joinable(|aid, mailbox| {
+        let _ = render_loop(aid, &mailbox, world, grid);
 
-pub fn render_loop(
+        let _ = game.send(GameManagerMessage::Quit);
+        drop(game);
+        zombie::player_manager_zombie(mailbox);
+    });
+}
+
+fn render_loop(
     aid: AID<PlayerManagerMessage>,
-    mailbox: Receiver<PlayerManagerMessage>,
+    mailbox: &Receiver<PlayerManagerMessage>,
     world: AID<WorldManagerMessage>,
     world_array: WorldGrid,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -149,61 +174,115 @@ pub fn render_loop(
         );
 
         let mut old_world = get_copy_of_world(&world_array);
-        
         let mut selected_aid = None;
-
         let mut time_to_wait = 0;
 
+        // For Status information
+        let mut inventory_string: Option<String> = None;
+        let mut task: Option<Task> = None;
+
         loop {
-            //read all messages in mailbox
-            while let Ok(msg) = mailbox.try_recv() {
-                match msg {
-                    // TODO: Handle more message types
-                    _ => {}
-                }
+            if let Some(true) = check_mailbox(&mailbox, &mut inventory_string, &mut task) {
+                break Ok(());
             }
 
-            let mut key_event: Option<KeyEvent> = None;
-            let mut mouse_event: Option<MouseEvent> = None;
-
-            // 50 ms looks better with animations
-            if poll(Duration::from_millis(time_to_wait))? {
-                match read()? {
-                    Event::Key(event) if event.kind == KeyEventKind::Press => {
-                        // Det här måste ske utanför input handler eftersom 
-                        // det ska stänga av loopen
-                        if event.code == KeyCode::Char('q') {
-                            break Ok(());
-                        }
-                        key_event = Some(event);
-                    }
-                    Event::Mouse(event) => {
-                        mouse_event = Some(event);
-                    }
-                    _ => {}
-                }
+            if let Some(true) = get_inputs(&mut camera, &mut selected_aid, &old_world, time_to_wait)
+            {
+                break Ok(());
             }
-
-            let mut input: Input = Input { mouse_pos: None, mouse_click: MouseClick::None, key: None };
-
-            parse_input_keyboard(&mut input, &key_event, &mut camera, &mut selected_aid, &old_world);
-            parse_input_mouse(&mut input, &mouse_event);
 
             // terminal.draw(|frame| render(frame, world_array, camera, input))?;
+            if let Some(selected_aid) = selected_aid.clone() {
+                _ = selected_aid.send(EntityMessage::FetchInventoryStatus(aid.clone()));
+                _ = selected_aid.send(EntityMessage::FetchCurrentTask(aid.clone()));
+            }
 
             let time_0 = Instant::now();
             let new_world = get_copy_of_world(&world_array);
             let time_1 = Instant::now();
-            terminal.draw(|frame| render(frame, &old_world, &new_world, camera, (time_0, time_1), &selected_aid))?;
+            terminal.draw(|frame| {
+                render(
+                    frame,
+                    &old_world,
+                    &new_world,
+                    camera,
+                    (time_0, time_1),
+                    &selected_aid,
+                    &inventory_string,
+                    &task,
+                )
+            })?;
             old_world = new_world;
-            
-            // reduce wait time by how much time we spent rendering
-            // I can't tell if this makes any difference, or if it doesn't work with poll()
-            let time_to_wait = 50;
-            let time_to_wait = cmp::max(0, time_to_wait - time_0.elapsed().as_millis() as i64) as u64;
 
+            // reduce wait time by how much time we spent rendering
+            time_to_wait = 50u128
+                .checked_sub(time_0.elapsed().as_millis())
+                .unwrap_or(0) as u64;
         }
     })
+}
+
+fn check_mailbox(
+    mailbox: &Receiver<PlayerManagerMessage>,
+    inventory_string: &mut Option<String>,
+    task: &mut Option<Task>,
+) -> Option<bool> {
+    //read all messages in mailbox
+    while let Ok(msg) = mailbox.try_recv() {
+        match msg {
+            PlayerManagerMessage::Quit => return Some(true),
+
+            // TODO: Handle more message types
+            PlayerManagerMessage::InventoryStatusResult(res) => {
+                *inventory_string = res;
+            }
+            PlayerManagerMessage::CurrentTaskResult(res) => {
+                *task = res;
+            }
+            _ => {}
+        }
+    }
+
+    return Some(false);
+}
+
+fn get_inputs(
+    camera: &mut Camera,
+    selected_aid: &mut Option<AID<EntityMessage>>,
+    old_world: &RawWorldArray,
+    time_to_wait: u64,
+) -> Option<bool> {
+    let mut key_event: Option<KeyEvent> = None;
+    let mut mouse_event: Option<MouseEvent> = None;
+
+    // 50 ms looks better with animations
+    if poll(Duration::from_millis(time_to_wait)).ok()? {
+        match read().ok()? {
+            Event::Key(event) if event.kind == KeyEventKind::Press => {
+                // Det här måste ske utanför input handler eftersom
+                // det ska stänga av loopen
+                if event.code == KeyCode::Char('q') {
+                    return Some(true); // Break
+                }
+                key_event = Some(event);
+            }
+            Event::Mouse(event) => {
+                mouse_event = Some(event);
+            }
+            _ => {}
+        }
+    }
+
+    let mut input: Input = Input {
+        mouse_pos: None,
+        mouse_click: MouseClick::None,
+        key: None,
+    };
+
+    parse_input_keyboard(&mut input, &key_event, camera, selected_aid, &old_world);
+    parse_input_mouse(&mut input, &mouse_event);
+
+    return Some(false);
 }
 
 fn parse_input_keyboard(
@@ -213,14 +292,24 @@ fn parse_input_keyboard(
     selected_aid: &mut Option<AID<EntityMessage>>,
     old_world: &RawWorldArray,
 ) {
-    if event_opt.is_none() {return;}
+    if event_opt.is_none() {
+        return;
+    }
 
     let event: KeyEvent = event_opt.unwrap();
     match event.code {
-        KeyCode::Char('w') => {camera.change(0, -MOVE_CAMERA);}
-        KeyCode::Char('s') => {camera.change(0,  MOVE_CAMERA);}
-        KeyCode::Char('a') => {camera.change(-MOVE_CAMERA, 0);}
-        KeyCode::Char('d') => {camera.change( MOVE_CAMERA, 0);}
+        KeyCode::Char('w') => {
+            camera.change(0, -MOVE_CAMERA);
+        }
+        KeyCode::Char('s') => {
+            camera.change(0, MOVE_CAMERA);
+        }
+        KeyCode::Char('a') => {
+            camera.change(-MOVE_CAMERA, 0);
+        }
+        KeyCode::Char('d') => {
+            camera.change(MOVE_CAMERA, 0);
+        }
         KeyCode::Char('n') => {
             *selected_aid = get_next_worker(&old_world, selected_aid.clone());
         }
@@ -231,12 +320,14 @@ fn parse_input_keyboard(
                 }
             }
         }
-        _ => {input.key = Some(event.code)}
+        _ => input.key = Some(event.code),
     }
 }
 
 fn parse_input_mouse(input: &mut Input, event_opt: &Option<MouseEvent>) {
-    if event_opt.is_none() {return;}
+    if event_opt.is_none() {
+        return;
+    }
 
     let event: MouseEvent = event_opt.unwrap();
     match event.kind {
@@ -257,14 +348,14 @@ fn parse_input_mouse(input: &mut Input, event_opt: &Option<MouseEvent>) {
 
 fn is_same_tile(old_tile: &Tile, new_tile: &Tile) -> bool {
     match old_tile {
-        Tile::Worker(aid) => match new_tile {
-            Tile::Worker(aid_new) => {
+        Tile::Worker(aid, _) => match new_tile {
+            Tile::Worker(aid_new, _) => {
                 return aid == aid_new;
             }
             _ => false,
         },
-        Tile::Building(aid) => match new_tile {
-            Tile::Building(aid_new) => {
+        Tile::Building(aid, _) => match new_tile {
+            Tile::Building(aid_new, _) => {
                 return aid == aid_new;
             }
             _ => false,
@@ -273,17 +364,21 @@ fn is_same_tile(old_tile: &Tile, new_tile: &Tile) -> bool {
     }
 }
 
-fn get_movement(
-    old_world: &RawWorldArray,
-    tile: &Tile,
-    (x, y): (usize, usize),
-) -> (i32, i32) {
+fn get_movement(old_world: &RawWorldArray, tile: &Tile, (x, y): (usize, usize)) -> (i32, i32) {
     let mut dx = 0;
     let mut dy = 0;
-    if y > 0          && is_same_tile(&old_world[y - 1][x], tile) {dy = -1}
-    if y + 1 < HEIGHT && is_same_tile(&old_world[y + 1][x], tile) {dy = 1}
-    if x > 0          && is_same_tile(&old_world[y][x - 1], tile) {dx = -1}
-    if x + 1 < WIDTH  && is_same_tile(&old_world[y][x + 1], tile) {dx = 1}
+    if y > 0 && is_same_tile(&old_world[y - 1][x], tile) {
+        dy = -1
+    }
+    if y + 1 < HEIGHT && is_same_tile(&old_world[y + 1][x], tile) {
+        dy = 1
+    }
+    if x > 0 && is_same_tile(&old_world[y][x - 1], tile) {
+        dx = -1
+    }
+    if x + 1 < WIDTH && is_same_tile(&old_world[y][x + 1], tile) {
+        dx = 1
+    }
     return (dx, dy);
 }
 
@@ -294,39 +389,25 @@ fn render(
     camera: Camera,
     (time_0, time_1): (Instant, Instant),
     selected_aid: &Option<AID<EntityMessage>>,
+    inventory_string: &Option<String>,
+    task: &Option<Task>,
 ) {
     let world_area = frame.area();
-    
-    render_world_in_area(frame, &world_area, &old_world_array, &world_array, camera);
-    
-    if let Some(sel_aid) = selected_aid {
-        let (width, height) = (world_area.width / 3, world_area.height / 2);
-        let m = 2; // margin: 2 x border, which doubles as 2 x space for animation
-        if width > m && height > m {
-            // pov_area encloses a whole number of tiles
-            let width = (width - m) / TILE_SIZE.0 * TILE_SIZE.0 + m;
-            let height = (height - m) / TILE_SIZE.1 * TILE_SIZE.1 + m;
-            let pov_area = Rect::new(world_area.width - width, world_area.height - height, width, height);
 
-            frame.render_widget(Clear, pov_area);
-            
-            let pov_area_inner = pov_area.inner(Margin::new(1, 1));
-            if let Some(pov_camera) = get_worker_camera(&world_array, sel_aid) {
-                let Camera(x, y) = pov_camera;
-                let (x, y) = (x as usize, y as usize);
-                let (dx, dy) = get_movement(&old_world_array, &world_array[y][x], (x, y));
-                let pov_area_inner = pov_area_inner.offset(Offset {x: -dx, y: -dy});
-                render_world_in_area(frame, &pov_area_inner, &old_world_array, &world_array, pov_camera);
-            }
-            
-            // render this last so it covers any part of the world sticking out
-            frame.render_widget(
-                Block::new().borders(Borders::ALL).title("─ POV: you're a worker "),
-                pov_area,
-            );
-        }
+    render_world_in_area(frame, &world_area, &old_world_array, &world_array, camera);
+
+    if let Some(sel_aid) = selected_aid {
+        render_selected_info(
+            frame,
+            sel_aid,
+            &world_area,
+            world_array,
+            old_world_array,
+            inventory_string,
+            task,
+        );
     }
-    
+
     // return; // don't draw fps
     let time_2 = Instant::now();
     render_fps(
@@ -334,6 +415,156 @@ fn render(
         time_1.duration_since(time_0),
         time_2.duration_since(time_1),
     );
+}
+
+fn render_selected_info(
+    frame: &mut Frame,
+    sel_aid: &AID<EntityMessage>,
+    world_area: &Rect,
+    world_array: &RawWorldArray,
+    old_world_array: &RawWorldArray,
+    inventory_string: &Option<String>,
+    task: &Option<Task>,
+) {
+    let (width, height) = (world_area.width / 3, world_area.height / 2);
+    let m = 2; // margin: 2 x border, which doubles as 2 x space for animation
+
+    if width > m && height > m {
+        // pov_area encloses a whole number of tiles
+        let width = (width - m) / TILE_SIZE.0 * TILE_SIZE.0 + m;
+        let height = (height - m) / TILE_SIZE.1 * TILE_SIZE.1 + m;
+
+        let horizontal_layout = Layout::horizontal([width])
+            .flex(ratatui::layout::Flex::End)
+            .split(frame.area());
+
+        let layout = Layout::vertical([
+            Constraint::Length(frame.area().height - height),
+            Constraint::Length(height),
+        ])
+        .spacing(Spacing::Overlap(1))
+        .split(horizontal_layout[0]);
+
+        frame.render_widget(Clear, layout[0]);
+        frame.render_widget(Clear, layout[1]);
+
+        if let Some(pov_camera) = get_worker_camera(&world_array, sel_aid) {
+            render_pov(frame, pov_camera, &layout, world_array, old_world_array);
+        }
+
+        // render this last so it covers any part of the world sticking out
+        frame.render_widget(
+            Block::new()
+                .borders(Borders::ALL)
+                .title("─ POV: you're a worker ")
+                .merge_borders(MergeStrategy::Replace),
+            layout[1],
+        );
+
+        render_status(frame, layout, inventory_string, task);
+    }
+}
+
+fn render_pov(
+    frame: &mut Frame,
+    pov_camera: Camera,
+    layout: &Rc<[Rect]>,
+    world_array: &RawWorldArray,
+    old_world_array: &RawWorldArray,
+) {
+    let pov_area_inner = layout[1].inner(Margin::new(1, 1));
+    let Camera(x, y) = pov_camera;
+    let (x, y) = (x as usize, y as usize);
+    let (dx, dy) = get_movement(&old_world_array, &world_array[y][x], (x, y));
+    let pov_area_inner = pov_area_inner.offset(Offset { x: -dx, y: -dy });
+    render_world_in_area(
+        frame,
+        &pov_area_inner,
+        &old_world_array,
+        &world_array,
+        pov_camera,
+    );
+}
+
+fn render_status(
+    frame: &mut Frame,
+    layout: Rc<[Rect]>,
+    inventory_string: &Option<String>,
+    task: &Option<Task>,
+) {
+    let sub_layout =
+        Layout::vertical([Constraint::Length(7), Constraint::Percentage(75)]).split(layout[0]);
+
+    if let Some(task) = task {
+        frame.render_widget(
+            Paragraph::new(parse_task(task))
+                .block(Block::new().padding(Padding::uniform(2)))
+                .alignment(Alignment::Center),
+            sub_layout[0],
+        );
+    } else {
+        frame.render_widget(
+            Paragraph::new(format!("Fetching Task..."))
+                .block(Block::new().padding(Padding::uniform(2)))
+                .alignment(Alignment::Center),
+            sub_layout[0],
+        );
+    }
+
+    if let Some(inventory_string) = inventory_string {
+        frame.render_widget(
+            Paragraph::new(inventory_string.clone())
+                .block(Block::new().padding(Padding::uniform(2)))
+                .alignment(Alignment::Center),
+            sub_layout[1],
+        );
+    } else {
+        frame.render_widget(
+            Paragraph::new(format!("Fetching Data..."))
+                .block(Block::new().padding(Padding::uniform(2)))
+                .alignment(Alignment::Center),
+            sub_layout[1],
+        );
+    }
+
+    frame.render_widget(
+        Block::new()
+            .borders(Borders::ALL)
+            .title("─ Status ")
+            .merge_borders(MergeStrategy::Exact),
+        layout[0],
+    );
+}
+
+fn parse_task(task: &Task) -> String {
+    let mut parsed_task: String = String::from("Current Task:\n");
+
+    match task {
+        Task::MoveTo(pos) => {
+            parsed_task.push_str(format!("Moving to ({0}, {1})", pos.0, pos.1).as_str());
+        }
+        Task::DeliverItem(item, from, to) => {
+            parsed_task.push_str(
+                format!(
+                    "Delivering {0} from ({1}, {2}) to ({3}, {4})",
+                    item.to_string(),
+                    from.1.0,
+                    from.1.1,
+                    to.1.0,
+                    to.1.1
+                )
+                .as_str(),
+            );
+        }
+        Task::Idle => {
+            parsed_task.push_str("Idling...");
+        }
+        Task::Produce(amount) => {
+            parsed_task.push_str(format!("Producing {} things", amount).as_str());
+        }
+    }
+
+    return parsed_task;
 }
 
 fn render_world_in_area(
@@ -345,7 +576,7 @@ fn render_world_in_area(
 ) {
     let box_w = world_area.width / TILE_SIZE.0;
     let box_h = world_area.height / TILE_SIZE.1;
-    
+
     let is_row_in_world = |y: i32| {
         let draw_y = y + (box_h / 2) as i32 - camera.1;
         if draw_y < 0 {
@@ -427,19 +658,19 @@ fn render_world_in_area(
         // needs to run on every iteration
         // skipping an iteration would mess up the order
         let mut rng_row = ChaCha8Rng::seed_from_u64(rng.random());
-        
+
         match is_row_in_world(y as i32) {
             Ordering::Less => continue,
             Ordering::Greater => break,
             _ => (),
         }
-        
+
         for x in 0..WIDTH {
             // needs to run on every iteration
             // skipping an iteration would mess up the order
             let tile_rand: u16 = rng_row.random();
 
-            let mut rect_at_pos = match get_rect_from_world_xy(x as i32, y as i32) {
+            let rect_at_pos = match get_rect_from_world_xy(x as i32, y as i32) {
                 None => continue,
                 Some(rect) => rect,
             };
@@ -461,18 +692,15 @@ fn render_world_in_area(
             Ordering::Greater => break,
             _ => (),
         }
-        
+
         for x in 0..WIDTH {
             let tile = &world_array[y][x];
-
-            let mut animation_dx = 0;
-            let mut animation_dy = 0;
 
             let mut rect_at_pos = match get_rect_from_world_xy(x as i32, y as i32) {
                 None => continue,
                 Some(rect) => rect,
             };
-            
+
             let (animation_dx, animation_dy) = get_movement(&old_world_array, tile, (x, y));
 
             rect_at_pos.x = (rect_at_pos.x as i32 + animation_dx) as u16;
@@ -484,11 +712,12 @@ fn render_world_in_area(
                     let square = Paragraph::new("███\n███").green();
                     frame.render_widget(square, rect_at_pos);
                 }
-                Tile::Worker(_aid) => {
+                // could display different types of workers differently depending on their id
+                Tile::Worker(_, _id) => {
                     let square = Paragraph::new("╭─╮\n╰─╯").blue();
                     frame.render_widget(square, rect_at_pos);
                 }
-                Tile::Building(_aid) => {
+                Tile::Building(_, _id) => {
                     let square = Paragraph::new("╔═╗\n╚═╝").red();
                     frame.render_widget(square, rect_at_pos);
                 }
@@ -499,13 +728,13 @@ fn render_world_in_area(
 
 fn render_fps(frame: &mut Frame, dur_copy: Duration, dur_render: Duration) {
     let width = frame.area().width;
-    
-    // time to run get_copy_of_world() 
+
+    // time to run get_copy_of_world()
     let text = format!("{} ms", dur_copy.as_millis());
     let len = text.len() as u16;
     let rect = Rect::new(width - len, 0, len, 1);
     frame.render_widget(Paragraph::new(text), rect);
-    
+
     // time to run render()
     let text = format!("{} ms", dur_render.as_millis());
     let len = text.len() as u16;
