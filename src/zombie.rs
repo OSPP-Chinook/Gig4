@@ -20,7 +20,9 @@ pub fn entity_zombie(mailbox: impl IntoIterator<Item = EntityMessage>) {
             EntityMessage::ItemTransferResponse(_) => {}
             EntityMessage::MoveResponse(_) => {}
             EntityMessage::TaskResponse(_) => {}
-
+            EntityMessage::Pause => {}
+            EntityMessage::Unpause => {}
+            
             EntityMessage::GetInventory(aid) => {
                 let _ = aid.send(EntityMessage::GetInventoryResponse(Err(
                     GetInventoryError::ImDead,
@@ -84,6 +86,8 @@ pub fn world_manager_zombie(mailbox: impl IntoIterator<Item = WorldManagerMessag
             WorldManagerMessage::SpawnWorker(_, _) => {}
             WorldManagerMessage::SpawnBuilding(_, _, _) => {}
             WorldManagerMessage::KillEntity(_) => {}
+            WorldManagerMessage::Pause => {}
+            WorldManagerMessage::Unpause => {}
 
             WorldManagerMessage::Move(_, aid) => {
                 let _ = aid.send(EntityMessage::MoveResponse(Err(MoveError::ImDead)));

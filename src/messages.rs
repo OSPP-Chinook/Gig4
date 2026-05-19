@@ -53,7 +53,13 @@ pub enum EntityMessage {
     FetchInventoryStatus(AID<PlayerManagerMessage>),
 
     // sent by player manager spontaneously
+    
     FetchCurrentTask(AID<PlayerManagerMessage>),
+    // sent by world manager spontaneously
+    Pause,
+    
+    // sent by world manager spontaneously
+    Unpause,
 }
 
 #[derive(Clone)]
