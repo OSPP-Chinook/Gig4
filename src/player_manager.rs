@@ -2,15 +2,24 @@ use crossterm::{execute, terminal};
 use rand::{RngExt, SeedableRng, rngs::ChaCha8Rng};
 
 use crossterm::event::{
-    Event, KeyCode, KeyEvent, KeyEventKind, MouseButton, MouseEvent, MouseEventKind, poll, read, EnableMouseCapture, DisableMouseCapture
+    DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind, MouseButton,
+    MouseEvent, MouseEventKind, poll, read,
 };
 
 use ratatui::{
-    Frame, Terminal, layout::{Alignment, Constraint, Layout, Margin, Offset, Rect, Spacing}, style::Stylize, symbols::merge::MergeStrategy, widgets::{Block, Borders, Clear, Padding, Paragraph}
+    Frame, Terminal,
+    layout::{Alignment, Constraint, Layout, Margin, Offset, Rect, Spacing},
+    style::Stylize,
+    symbols::merge::MergeStrategy,
+    widgets::{Block, Borders, Clear, Padding, Paragraph},
 };
 
 use std::{
-    cmp::Ordering, io::stdout, rc::Rc, sync::mpsc::Receiver, time::{Duration, Instant}
+    cmp::Ordering,
+    io::stdout,
+    rc::Rc,
+    sync::mpsc::Receiver,
+    time::{Duration, Instant},
 };
 
 use crate::aid::AIDHandle;
@@ -133,7 +142,7 @@ fn get_worker_camera(world_array: &RawWorldArray, sel_aid: &AID<EntityMessage>) 
                     if aid == sel_aid {
                         return Some(Camera(x as i32, y as i32));
                     }
-                 }
+                }
 
                 _ => (),
             }
@@ -183,19 +192,22 @@ fn render_loop(
         let mut fps: f32 = 0.;
         let mut second_counter = Instant::now();
         let mut frames = 0;
-        
-        let mut paused = false;
 
+        let mut paused = false;
 
         loop {
             if let Some(true) = check_mailbox(&mailbox, &mut inventory_string, &mut task) {
                 break Ok(());
             }
 
-            if let Some(val) = get_inputs(&mut camera, &mut selected_aid, &old_world, time_to_wait, &terminal.get_frame().area())
-            {
+            if let Some(val) = get_inputs(
+                &mut camera,
+                &mut selected_aid,
+                &old_world,
+                time_to_wait,
+                &terminal.get_frame().area(),
+            ) {
                 match val {
-
                     InputResult::Continue => {}
 
                     InputResult::Quit => {
@@ -256,9 +268,9 @@ fn mouse_to_grid_pos((x, y): (u16, u16), world_area: &Rect, camera: Camera) -> (
     let box_w = world_area.width / TILE_SIZE.0;
     let box_h = world_area.height / TILE_SIZE.1;
     return (
-                (x / TILE_SIZE.0) as i32 - (box_w / 2) as i32 + camera.0,
-                (y / TILE_SIZE.1) as i32 - (box_h / 2) as i32 + camera.1,
-            );
+        (x / TILE_SIZE.0) as i32 - (box_w / 2) as i32 + camera.0,
+        (y / TILE_SIZE.1) as i32 - (box_h / 2) as i32 + camera.1,
+    );
 }
 
 fn check_mailbox(
@@ -290,7 +302,7 @@ fn get_inputs(
     selected_aid: &mut Option<AID<EntityMessage>>,
     old_world: &RawWorldArray,
     time_to_wait: u64,
-    frame: &Rect
+    frame: &Rect,
 ) -> Option<InputResult> {
     let mut key_event: Option<KeyEvent> = None;
     let mut mouse_event: Option<MouseEvent> = None;
@@ -323,7 +335,14 @@ fn get_inputs(
     };
 
     parse_input_keyboard(&mut input, &key_event, camera, selected_aid, &old_world);
-    parse_input_mouse(&mut input, &mouse_event, frame, *camera, selected_aid, old_world);
+    parse_input_mouse(
+        &mut input,
+        &mouse_event,
+        frame,
+        *camera,
+        selected_aid,
+        old_world,
+    );
 
     return Some(InputResult::Continue);
 }
@@ -367,11 +386,18 @@ fn parse_input_keyboard(
     }
 }
 
-fn parse_input_mouse(input: &mut Input, event_opt: &Option<MouseEvent>, world_area: &Rect, camera: Camera, selected_aid: &mut Option<AID<EntityMessage>>, old_world: &RawWorldArray) {
+fn parse_input_mouse(
+    input: &mut Input,
+    event_opt: &Option<MouseEvent>,
+    world_area: &Rect,
+    camera: Camera,
+    selected_aid: &mut Option<AID<EntityMessage>>,
+    old_world: &RawWorldArray,
+) {
     if event_opt.is_none() {
         return;
     }
-    
+
     let event: MouseEvent = event_opt.unwrap();
     match event.kind {
         MouseEventKind::Moved => {
@@ -385,15 +411,12 @@ fn parse_input_mouse(input: &mut Input, event_opt: &Option<MouseEvent>, world_ar
                 let tile = &old_world[y as usize][x as usize];
                 if let Tile::Building(aid, _) = tile {
                     *selected_aid = Some(aid.clone());
-                }
-                else if let Tile::Worker(aid, _) = tile {
+                } else if let Tile::Worker(aid, _) = tile {
                     *selected_aid = Some(aid.clone());
-                }
-                else {
+                } else {
                     *selected_aid = None;
                 }
-            } 
-            else {
+            } else {
                 *selected_aid = None;
             }
         }
@@ -473,7 +496,7 @@ fn render(
         frame,
         time_1.duration_since(time_0),
         time_2.duration_since(time_1),
-        fps
+        fps,
     );
 }
 
