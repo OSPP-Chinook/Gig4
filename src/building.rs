@@ -88,15 +88,23 @@ impl Building {
             //read all messages in mailbox
             while paused {
                 if let Ok(msg) = mailbox.recv() {
-                    if let EntityMessage::Unpause = msg {
-                        paused = false;
-                        //send back all messages received while paused, could also send back 
-                        //directly but then it would constantly read messages and never sleep
-                        while let Some(pause_message) = pause_messages.pop() {
-                            _ = self.self_aid.send(pause_message);
+                    match msg {
+                        EntityMessage::Unpause => {
+                            paused = false;
+                            //send back all messages received while paused, could also send back 
+                            //directly but then it would constantly read messages and never sleep
+                            while let Some(pause_message) = pause_messages.pop() {
+                                _ = self.self_aid.send(pause_message);
+                            }
                         }
-                    } else {
-                        pause_messages.push(msg);
+                        
+                        EntityMessage::KillYourself => {
+                            break 'outer;
+                        }
+
+                        _ => {
+                            pause_messages.push(msg);
+                        }
                     }
                 }
                 continue;
