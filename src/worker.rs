@@ -226,6 +226,7 @@ impl WorkerCore {
 pub struct Worker {
     core: WorkerCore,
     alive: bool,
+    paused: bool,
     waiting: bool,
     pending_inventory_task: Option<(bool, ItemStack)>,
     world_aid: AID<WorldManagerMessage>,
@@ -279,6 +280,7 @@ impl Worker {
         Worker {
             core: WorkerCore::new(start_pos,carry_capacity),
             alive: true,
+            paused: false,
             waiting: false,
             pending_inventory_task: None,
             world_aid: world,
@@ -403,15 +405,59 @@ impl Worker {
                     self.core.current_task.clone(),
                 )));
             }
+
+            EntityMessage::Pause => {
+                self.paused = true;
+            }
+            
+            EntityMessage::Unpause => {} // not supposed to happen
         }
     }
 
     fn run(&mut self, mailbox: &Receiver<EntityMessage>) {
+        let mut pause_messages: Vec<EntityMessage> = vec![];
         'outer: loop {
+            while self.paused {
+                if let Ok(msg) = mailbox.recv() {
+                    match msg {
+                        EntityMessage::Unpause => {
+                            self.paused = false;
+                            //send back all messages received while paused, could also send back 
+                            //directly but then it would constantly read messages and never sleep
+                            while let Some(pause_message) = pause_messages.pop() {
+                                _ = self.self_aid.send(pause_message);
+                            }
+                        }
+
+                        EntityMessage::KillYourself => {
+                            break 'outer;
+                        }
+
+                        EntityMessage::FetchInventoryStatus(pm_aid) => {
+                            _ = self.inventory.send(InventoryMessage::GiveStatus(pm_aid));
+                        }
+
+                        EntityMessage::FetchCurrentTask(pm_aid) => {
+                            _ = pm_aid.send(PlayerManagerMessage::CurrentTaskResult(Some(
+                                self.core.current_task.clone(),
+                            )));
+                        }
+
+                        _ => {
+                            pause_messages.push(msg);
+                        }
+                    }
+                }
+            }
+
             while self.waiting {
                 if let Ok(msg) = mailbox.recv() {
                     self.msg_handler(msg);
-
+                    
+                    if self.paused {
+                        continue 'outer;
+                    }
+                    
                     if !self.alive {
                         break 'outer;
                     }
@@ -419,6 +465,10 @@ impl Worker {
             }
             while let Ok(msg) = mailbox.try_recv() {
                 self.msg_handler(msg);
+
+                if self.paused {
+                    continue 'outer;
+                }
 
                 if !self.alive {
                     break 'outer;

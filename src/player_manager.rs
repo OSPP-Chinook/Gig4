@@ -4,28 +4,40 @@ use rand::{
     rngs::ChaCha8Rng
 };
 
-use crossterm::event::{
-    Event, 
-    KeyCode, 
-    KeyEvent,
-    KeyEventKind, 
-    MouseButton, 
-    MouseEvent, 
-    MouseEventKind, 
-    poll, 
-    read,
+use crossterm::{
+    execute,
+    terminal,
+    event::{
+        DisableMouseCapture, 
+        EnableMouseCapture, 
+        Event, 
+        KeyCode, 
+        KeyEvent,
+        KeyEventKind, 
+        MouseButton, 
+        MouseEvent, 
+        MouseEventKind, 
+        poll, 
+        read,
+    }
 };
 
 use ratatui::{
-    Frame, layout::{
+    Frame, 
+    Terminal,
+    style::Stylize, 
+    symbols::merge::MergeStrategy, 
+    layout::{
         Alignment, Constraint, Direction, Flex, Layout, Margin, Offset, Rect, Spacing
-    }, style::Stylize, symbols::merge::MergeStrategy, widgets::{
+    }, 
+    widgets::{
         Block, Borders, Clear, Padding, Paragraph
     }
 };
 
 use std::{
     cmp::Ordering, 
+    io::stdout,
     rc::Rc, 
     sync::mpsc::Receiver, 
     time::{
@@ -58,6 +70,12 @@ struct Input {
     mouse_pos: Option<(u16, u16)>, // (x, y)
     mouse_click: MouseClick,
     key: Option<KeyCode>,
+}
+
+enum InputResult {
+    Pause,
+    Quit,
+    Continue,
 }
 
 #[derive(Copy, Clone)]
@@ -102,7 +120,7 @@ fn get_copy_of_world(world_array: &WorldGrid) -> RawWorldArray {
     return copy;
 }
 
-fn get_next_entity(
+fn get_next_worker(
     world_array: &RawWorldArray,
     selected_aid: Option<AID<EntityMessage>>,
 ) -> Option<AID<EntityMessage>> {
@@ -115,7 +133,7 @@ fn get_next_entity(
         for x in 0..WIDTH {
             let tile = &world_array[y][x];
             match tile {
-                Tile::Worker(aid, _) | Tile::Building(aid, _) => {
+                Tile::Worker(aid, _) => {
                     if found {
                         return Some(aid.clone());
                     }
@@ -146,6 +164,7 @@ fn get_entity_camera(world_array: &RawWorldArray, sel_aid: &AID<EntityMessage>) 
                         return Some(Camera(x as i32, y as i32));
                     }
                 }
+
                 _ => (),
             }
         }
@@ -164,6 +183,7 @@ pub fn new_joinable(
 
         let _ = game.send(GameManagerMessage::Quit);
         drop(game);
+        let _ = execute!(stdout(), DisableMouseCapture);
         zombie::player_manager_zombie(mailbox);
     });
 }
@@ -181,6 +201,8 @@ fn io_loop(
             (HEIGHT / 2).try_into().unwrap(),
         );
 
+        let _ = execute!(stdout(), EnableMouseCapture);
+
         let mut old_world = get_copy_of_world(&world_array);
         let mut selected_aid = None;
         let mut time_to_wait = 0;
@@ -193,17 +215,45 @@ fn io_loop(
 
         let mut show_build_menu: bool = false;
 
+        let mut fps: f32 = 0.;
+        let mut second_counter = Instant::now();
+        let mut frames = 0;
+
+        let mut paused = false;
+
         loop {
             if let Some(true) = check_mailbox(&mailbox, &mut status_data) {
                 break Ok(());
             }
 
-            if let Some(true) = get_inputs(&mut camera, &mut selected_aid, &old_world, time_to_wait, &mut show_build_menu)
-            {
-                break Ok(());
+            if let Some(val) = get_inputs(
+                &mut camera,
+                &mut selected_aid,
+                &old_world,
+                time_to_wait,
+                &terminal.get_frame().area(),
+                &mut show_build_menu
+            ) {
+                match val {
+                    InputResult::Continue => {}
+
+                    InputResult::Quit => {
+                        break Ok(());
+                    }
+
+                    InputResult::Pause => {
+                        if paused {
+                            //unpause
+                            _ = world.send(WorldManagerMessage::Unpause);
+                        } else {
+                            //pause
+                            _ = world.send(WorldManagerMessage::Pause);
+                        }
+                        paused = !paused;
+                    }
+                }
             }
 
-            // terminal.draw(|frame| render(frame, world_array, camera, input))?;
             if let Some(selected_aid) = selected_aid.clone() {
                 _ = selected_aid.send(EntityMessage::FetchInventoryStatus(aid.clone()));
                 _ = selected_aid.send(EntityMessage::FetchCurrentTask(aid.clone()));
@@ -218,13 +268,20 @@ fn io_loop(
                     &old_world,
                     &new_world,
                     camera,
-                    (time_0, time_1),
+                    (time_0, time_1, fps),
                     &selected_aid,
                     &status_data,
                     show_build_menu,
                 )
             })?;
+            frames += 1;
             old_world = new_world;
+
+            if second_counter.elapsed() >= Duration::from_secs(1) {
+                fps = frames as f32 / second_counter.elapsed().as_secs_f32();
+                frames = 0;
+                second_counter = Instant::now();
+            }
 
             // reduce wait time by how much time we spent rendering
             time_to_wait = 50u128
@@ -232,6 +289,15 @@ fn io_loop(
                 .unwrap_or(0) as u64;
         }
     })
+}
+
+fn mouse_to_grid_pos((x, y): (u16, u16), world_area: &Rect, camera: Camera) -> (i32, i32) {
+    let box_w = world_area.width / TILE_SIZE.0;
+    let box_h = world_area.height / TILE_SIZE.1;
+    return (
+        (x / TILE_SIZE.0) as i32 - (box_w / 2) as i32 + camera.0,
+        (y / TILE_SIZE.1) as i32 - (box_h / 2) as i32 + camera.1,
+    );
 }
 
 fn check_mailbox(
@@ -262,8 +328,9 @@ fn get_inputs(
     selected_aid: &mut Option<AID<EntityMessage>>,
     old_world: &RawWorldArray,
     time_to_wait: u64,
+    frame: &Rect,
     show_build_menu: &mut bool,
-) -> Option<bool> {
+) -> Option<InputResult> {
     let mut key_event: Option<KeyEvent> = None;
     let mut mouse_event: Option<MouseEvent> = None;
 
@@ -274,7 +341,10 @@ fn get_inputs(
                 // Det här måste ske utanför input handler eftersom
                 // det ska stänga av loopen
                 if event.code == KeyCode::Char('q') {
-                    return Some(true); // Break
+                    return Some(InputResult::Quit); // Break
+                }
+                if event.code == KeyCode::Char('p') {
+                    return Some(InputResult::Pause);
                 }
                 key_event = Some(event);
             }
@@ -291,10 +361,25 @@ fn get_inputs(
         key: None,
     };
 
-    parse_input_keyboard(&mut input, &key_event, camera, selected_aid, &old_world, show_build_menu);
-    parse_input_mouse(&mut input, &mouse_event);
+    parse_input_keyboard(
+        &mut input, 
+        &key_event, 
+        camera, 
+        selected_aid, 
+        &old_world, 
+        show_build_menu
+    );
 
-    return Some(false);
+    parse_input_mouse(
+        &mut input,
+        &mouse_event,
+        frame,
+        *camera,
+        selected_aid,
+        old_world,
+    );
+
+    return Some(InputResult::Continue);
 }
 
 fn parse_input_keyboard(
@@ -324,7 +409,7 @@ fn parse_input_keyboard(
             camera.change(MOVE_CAMERA, 0);
         }
         KeyCode::Char('n') => {
-            *selected_aid = get_next_entity(&old_world, selected_aid.clone());
+            *selected_aid = get_next_worker(&old_world, selected_aid.clone());
         }
         KeyCode::Char('m') => {
             if let Some(sel_aid) = &selected_aid {
@@ -333,6 +418,9 @@ fn parse_input_keyboard(
                 }
             }
         }
+        KeyCode::Esc => {
+            *selected_aid = None;
+        }
         KeyCode::Tab => {
             *show_build_menu = !*show_build_menu;
         }
@@ -340,7 +428,14 @@ fn parse_input_keyboard(
     }
 }
 
-fn parse_input_mouse(input: &mut Input, event_opt: &Option<MouseEvent>) {
+fn parse_input_mouse(
+    input: &mut Input,
+    event_opt: &Option<MouseEvent>,
+    world_area: &Rect,
+    camera: Camera,
+    selected_aid: &mut Option<AID<EntityMessage>>,
+    old_world: &RawWorldArray,
+) {
     if event_opt.is_none() {
         return;
     }
@@ -353,6 +448,19 @@ fn parse_input_mouse(input: &mut Input, event_opt: &Option<MouseEvent>) {
         MouseEventKind::Down(MouseButton::Left) => {
             input.mouse_pos = Some((event.column, event.row));
             input.mouse_click = MouseClick::Left;
+            let (x, y) = mouse_to_grid_pos((event.column, event.row), world_area, camera);
+            if x >= 0 && x < WIDTH as i32 && y >= 0 && y < HEIGHT as i32 {
+                let tile = &old_world[y as usize][x as usize];
+                if let Tile::Building(aid, _) = tile {
+                    *selected_aid = Some(aid.clone());
+                } else if let Tile::Worker(aid, _) = tile {
+                    *selected_aid = Some(aid.clone());
+                } else {
+                    *selected_aid = None;
+                }
+            } else {
+                *selected_aid = None;
+            }
         }
         MouseEventKind::Down(MouseButton::Right) => {
             input.mouse_pos = Some((event.column, event.row));
@@ -403,7 +511,7 @@ fn render(
     old_world_array: &RawWorldArray,
     world_array: &RawWorldArray,
     camera: Camera,
-    (time_0, time_1): (Instant, Instant),
+    (time_0, time_1, fps): (Instant, Instant, f32),
     selected_aid: &Option<AID<EntityMessage>>,
     status_data: &StatusData,
     show_build_menu: bool,
@@ -441,6 +549,7 @@ fn render(
         frame,
         time_1.duration_since(time_0),
         time_2.duration_since(time_1),
+        fps,
     );
 }
 
@@ -803,7 +912,7 @@ fn render_build_menu(frame: &mut Frame, build_menu_slice: Rect) {
         , build_menu_slice);
 }
 
-fn render_fps(frame: &mut Frame, dur_copy: Duration, dur_render: Duration) {
+fn render_fps(frame: &mut Frame, dur_copy: Duration, dur_render: Duration, fps: f32) {
     let width = frame.area().width;
 
     // time to run get_copy_of_world()
@@ -816,5 +925,10 @@ fn render_fps(frame: &mut Frame, dur_copy: Duration, dur_render: Duration) {
     let text = format!("{} ms", dur_render.as_millis());
     let len = text.len() as u16;
     let rect = Rect::new(width - len, 1, len, 1);
+    frame.render_widget(Paragraph::new(text), rect);
+
+    let text = format!("FPS: {:.2}", fps);
+    let len = text.len() as u16;
+    let rect = Rect::new(width - len, 2, len, 1);
     frame.render_widget(Paragraph::new(text), rect);
 }
