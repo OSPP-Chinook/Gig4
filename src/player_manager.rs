@@ -8,7 +8,7 @@ use crossterm::event::{
 
 use ratatui::{
     Frame, Terminal,
-    layout::{Alignment, Constraint, Layout, Margin, Offset, Rect, Spacing},
+    layout::{self, Alignment, Constraint, Layout, Margin, Offset, Rect, Spacing},
     style::Stylize,
     symbols::merge::MergeStrategy,
     widgets::{Block, Borders, Clear, Padding, Paragraph},
@@ -17,13 +17,12 @@ use ratatui::{
 use std::{
     cmp::Ordering,
     io::stdout,
+    ops::Add,
     rc::Rc,
-    sync::mpsc::Receiver,
+    sync::{Arc, mpsc::Receiver},
     time::{Duration, Instant},
 };
 
-use crate::aid::AIDHandle;
-use crate::game_manager::GameManagerMessage;
 use crate::zombie;
 use crate::{
     EntityMessage,
@@ -31,6 +30,14 @@ use crate::{
     messages::PlayerManagerMessage,
     task_manager::Task,
     world_manager::{HEIGHT, RawWorldArray, Tile, WIDTH, WorldGrid, WorldManagerMessage},
+};
+use crate::{
+    aid::AIDHandle,
+    assets::{Assets, BuildingId, RecipeId},
+};
+use crate::{
+    assets::{ItemStack, RecipeAsset},
+    game_manager::GameManagerMessage,
 };
 
 // Width and height of a tile on the screen in characters
@@ -49,19 +56,98 @@ enum MouseClick {
 
 struct Ui {
     selected_aid: Option<AID<EntityMessage>>,
+    asset_id: Option<String>,
+    current_recipes: Vec<RecipeAsset>,
+    is_building: Option<bool>,
     inventory_string: Option<String>,
     task: Option<Task>,
+    main_layout: Rc<[Rect]>, //index 0 is world rect, index 1 is sidebar rect
+    sidebar_layout: Rc<[Rect]>,
+    button_layout: Rc<[Rect]>,
+    buttons: Vec<(String, fn(&Ui, usize))>,
 }
 
 impl Ui {
-    fn new() -> Self {
+    fn new(screen: &Rect) -> Self {
+        let layout = get_main_layout(screen);
+        let sidebar = get_sidebar_layout(&layout[1]);
+        let button = get_button_layout(&sidebar[0]);
         return Ui {
             selected_aid: None,
             inventory_string: None,
             task: None,
+            main_layout: layout,
+            sidebar_layout: sidebar,
+            buttons: vec![],
+            button_layout: button,
+            asset_id: None,
+            is_building: None,
+            current_recipes: vec![],
         };
     }
+
+    fn create_button(&mut self, title: String, on_click: fn(&Ui, usize)) {
+        self.buttons.push((title, on_click));
+    }
+
+    fn select_unit(&mut self, aid: Option<AID<EntityMessage>>) {
+        self.selected_aid = aid;
+        self.asset_id = None;
+        self.current_recipes.clear();
+        self.buttons.clear();
+    }
 }
+
+// Takes the screen rect and divides it into world rect and sidebar rect
+fn get_main_layout(screen: &Rect) -> Rc<[Rect]> {
+    let width = screen.width / 3;
+    let m = 2; // margin: 2 x border, which doubles as 2 x space for animation
+
+    // pov_area encloses a whole number of tiles
+    let width = (width - m) / TILE_SIZE.0 * TILE_SIZE.0 + m;
+    return Layout::horizontal([Constraint::Fill(1), Constraint::Length(width)])
+        .flex(ratatui::layout::Flex::End)
+        .split(*screen);
+}
+// Takes the screen rect and divides it into world rect and sidebar rect
+fn get_sidebar_layout(sidebar: &Rect) -> Rc<[Rect]> {
+    let height = sidebar.height / 3;
+    let m = 2; // margin: 2 x border, which doubles as 2 x space for animation
+
+    // pov_area encloses a whole number of tiles
+    let height = (height - m) / TILE_SIZE.1 * TILE_SIZE.1 + m;
+
+    return Layout::vertical([
+        Constraint::Length(sidebar.height - height),
+        Constraint::Length(height),
+    ])
+    .spacing(Spacing::Overlap(1))
+    .split(*sidebar);
+}
+
+fn get_button_layout(status: &Rect) -> Rc<[Rect]> {
+    return Layout::vertical([
+        Constraint::Fill(1),
+        Constraint::Percentage(40),
+        Constraint::Percentage(5),
+    ])
+    .split(*status);
+}
+
+fn is_in_rect((x, y): (u16, u16), rect: &Rect) -> bool {
+    if x < rect.x || y < rect.y {
+        return false;
+    }
+    return x - rect.x < rect.width && y - rect.y < rect.height;
+}
+
+fn is_in_layout_rect((x, y): (u16, u16), layout: Rc<[Rect]>, index: usize) -> bool {
+    if index >= layout.len() {
+        return false;
+    }
+    return x - layout[index].x < layout[index].width && y - layout[index].y < layout[index].height;
+}
+
 struct Input {
     mouse_pos: Option<(u16, u16)>, // (x, y)
     mouse_click: MouseClick,
@@ -172,9 +258,10 @@ pub fn new_joinable(
     grid: WorldGrid,
     world: AID<WorldManagerMessage>,
     game: AID<GameManagerMessage>,
+    assets: Arc<Assets>,
 ) -> (AID<PlayerManagerMessage>, AIDHandle) {
     return AID::new_joinable(|aid, mailbox| {
-        let _ = render_loop(aid, &mailbox, world, grid);
+        let _ = render_loop(aid, &mailbox, world, grid, assets);
 
         let _ = game.send(GameManagerMessage::Quit);
         drop(game);
@@ -188,6 +275,7 @@ fn render_loop(
     mailbox: &Receiver<PlayerManagerMessage>,
     world: AID<WorldManagerMessage>,
     world_array: WorldGrid,
+    assets: Arc<Assets>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     ratatui::run(|terminal| {
         // camera starts centered on the world
@@ -202,18 +290,43 @@ fn render_loop(
         let mut time_to_wait = 0;
 
         // For Status information
-        let mut ui = Ui::new();
+        let mut ui = Ui::new(&terminal.get_frame().area());
 
         let mut fps: f32 = 0.;
         let mut second_counter = Instant::now();
         let mut frames = 0;
 
         let mut paused = false;
-
+        //ui.create_button(|_ui| println!("Pressed"));
         loop {
             if let Some(true) = check_mailbox(&mailbox, &mut ui) {
                 break Ok(());
             }
+
+            if ui.asset_id.is_some()
+                && ui.is_building.is_some()
+                && ui.is_building.unwrap()
+                && ui.current_recipes.is_empty()
+            {
+                if let Some(asset) = assets
+                    .buildings
+                    .get(&BuildingId::from(ui.asset_id.clone().unwrap()))
+                {
+                    for id in &asset.recipes {
+                        if let Some(recipe_asset) = assets.recipes.get(id) {
+                            ui.current_recipes.push(recipe_asset.clone());
+                        }
+                        ui.create_button(id.to_string(), |ui, i| {
+                            if let Some(aid) = &ui.selected_aid {
+                                _ = aid.send(EntityMessage::TaskResponse(Ok(Task::Produce(
+                                    ui.current_recipes[i].clone().id,
+                                ))));
+                            }
+                        });
+                    }
+                }
+            }
+            ui.main_layout = get_main_layout(&terminal.get_frame().area());
 
             if let Some(val) = get_inputs(
                 &mut camera,
@@ -245,6 +358,9 @@ fn render_loop(
             if let Some(selected_aid) = &ui.selected_aid {
                 _ = selected_aid.send(EntityMessage::FetchInventoryStatus(aid.clone()));
                 _ = selected_aid.send(EntityMessage::FetchCurrentTask(aid.clone()));
+                if ui.asset_id.is_none() {
+                    _ = selected_aid.send(EntityMessage::FetchAsset(aid.clone()));
+                }
             }
 
             let time_0 = Instant::now();
@@ -298,6 +414,11 @@ fn check_mailbox(mailbox: &Receiver<PlayerManagerMessage>, ui: &mut Ui) -> Optio
             }
             PlayerManagerMessage::CurrentTaskResult(res) => {
                 ui.task = res;
+            }
+
+            PlayerManagerMessage::AssetResult(res, building) => {
+                ui.asset_id = Some(res);
+                ui.is_building = Some(building);
             }
             _ => {}
         }
@@ -408,18 +529,42 @@ fn parse_input_mouse(
         MouseEventKind::Down(MouseButton::Left) => {
             input.mouse_pos = Some((event.column, event.row));
             input.mouse_click = MouseClick::Left;
-            let (x, y) = mouse_to_grid_pos((event.column, event.row), world_area, camera);
-            if x >= 0 && x < WIDTH as i32 && y >= 0 && y < HEIGHT as i32 {
-                let tile = &old_world[y as usize][x as usize];
-                if let Tile::Building(aid, _) = tile {
-                    ui.selected_aid = Some(aid.clone());
-                } else if let Tile::Worker(aid, _) = tile {
-                    ui.selected_aid = Some(aid.clone());
+            if ui.selected_aid.is_none()
+                || is_in_layout_rect(input.mouse_pos.unwrap(), ui.main_layout.clone(), 0)
+            {
+                //click is in world
+                let (x, y) = mouse_to_grid_pos((event.column, event.row), world_area, camera);
+                if x >= 0 && x < WIDTH as i32 && y >= 0 && y < HEIGHT as i32 {
+                    let tile = &old_world[y as usize][x as usize];
+                    if let Tile::Building(aid, _) = tile {
+                        ui.select_unit(Some(aid.clone()));
+                    } else if let Tile::Worker(aid, _) = tile {
+                        ui.select_unit(Some(aid.clone()));
+                    } else {
+                        ui.select_unit(None);
+                    }
                 } else {
-                    ui.selected_aid = None;
+                    ui.select_unit(None);
                 }
             } else {
-                ui.selected_aid = None;
+                let mut clicked = None;
+                let mut index = 0;
+                if is_in_rect((event.column, event.row), &ui.button_layout[1]) {
+                    index = ((event.row - ui.button_layout[1].y)
+                        / (ui.button_layout[1].height / ui.buttons.len() as u16))
+                        as usize;
+                    println!("\n\n\n                  {}", index);
+                    if index >= ui.buttons.len() {
+                        return;
+                    }
+                    clicked = Some(ui.buttons.swap_remove(index as usize));
+                }
+
+                if let Some((title, mut on_click)) = clicked {
+                    on_click(ui, index);
+                    ui.buttons.insert(index, (title, on_click));
+                }
+                println!("UI");
             }
         }
         MouseEventKind::Down(MouseButton::Right) => {
@@ -492,6 +637,39 @@ fn render(
     );
 }
 
+fn render_buttons(frame: &mut Frame, ui: &Ui) {
+    let layout =
+        Layout::vertical(vec![Constraint::Fill(1); ui.buttons.len()]).split(ui.button_layout[1]);
+    for i in 0..ui.buttons.len() {
+        frame.render_widget(
+            Paragraph::new(get_button_text(ui, i)).block(Block::new().borders(Borders::ALL)),
+            layout[i],
+        );
+    }
+}
+
+fn get_button_text(ui: &Ui, i: usize) -> String {
+    let current = &ui.current_recipes[i];
+    return format!(
+        "Recipe {}\nInput: {}\nOutput: {}\nRecipe time: {}",
+        i + 1,
+        get_itemlist_text(&current.inputs),
+        get_itemlist_text(&current.outputs),
+        current.time
+    );
+}
+
+fn get_itemlist_text(items: &Vec<ItemStack>) -> String {
+    let mut string: String = String::from("");
+    for i in 0..items.len() {
+        string += &format!("{} ({})", items[i].id, items[i].count);
+        if i < items.len() - 1 {
+            string += ", ";
+        }
+    }
+    return string;
+}
+
 fn render_selected_info(
     frame: &mut Frame,
     world_area: &Rect,
@@ -504,27 +682,23 @@ fn render_selected_info(
 
     if width > m && height > m {
         // pov_area encloses a whole number of tiles
-        let width = (width - m) / TILE_SIZE.0 * TILE_SIZE.0 + m;
         let height = (height - m) / TILE_SIZE.1 * TILE_SIZE.1 + m;
 
-        let horizontal_layout = Layout::horizontal([width])
-            .flex(ratatui::layout::Flex::End)
-            .split(frame.area());
-
-        let layout = Layout::vertical([
-            Constraint::Length(frame.area().height - height),
-            Constraint::Length(height),
-        ])
-        .spacing(Spacing::Overlap(1))
-        .split(horizontal_layout[0]);
-
-        frame.render_widget(Clear, layout[0]);
-        frame.render_widget(Clear, layout[1]);
+        frame.render_widget(Clear, ui.sidebar_layout[0]);
+        frame.render_widget(Clear, ui.sidebar_layout[1]);
 
         if let Some(pov_camera) = get_worker_camera(&world_array, &ui.selected_aid.clone().unwrap())
         {
-            render_pov(frame, pov_camera, &layout, world_array, old_world_array);
+            render_pov(
+                frame,
+                pov_camera,
+                &ui.sidebar_layout,
+                world_array,
+                old_world_array,
+            );
         }
+
+        render_buttons(frame, ui);
 
         // render this last so it covers any part of the world sticking out
         frame.render_widget(
@@ -532,10 +706,15 @@ fn render_selected_info(
                 .borders(Borders::ALL)
                 .title("─ POV: you're a worker ")
                 .merge_borders(MergeStrategy::Replace),
-            layout[1],
+            ui.sidebar_layout[1],
         );
 
-        render_status(frame, layout, &ui.inventory_string, &ui.task);
+        render_status(
+            frame,
+            ui.sidebar_layout.clone(),
+            &ui.inventory_string,
+            &ui.task,
+        );
     }
 }
 
@@ -634,7 +813,7 @@ fn parse_task(task: &Task) -> String {
             parsed_task.push_str("Idling...");
         }
         Task::Produce(amount) => {
-            parsed_task.push_str(format!("Producing {} things", amount).as_str());
+            parsed_task.push_str(format!("Producing {}", amount).as_str());
         }
     }
 

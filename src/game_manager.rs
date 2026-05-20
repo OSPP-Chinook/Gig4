@@ -27,9 +27,9 @@ pub fn main(this: AID<GameManagerMessage>, mailbox: mpsc::Receiver<GameManagerMe
     let grid = init_world_grid();
 
     let (task, task_handle) = task_manager::new_joinable(grid.clone());
-    let (world, world_handle) = world_manager::new_joinable(grid.clone(), task.clone(), assets);
+    let (world, world_handle) = world_manager::new_joinable(grid.clone(), task.clone(), assets.clone());
     let (player, player_handle) =
-        player_manager::new_joinable(grid.clone(), world.clone(), this.clone());
+        player_manager::new_joinable(grid.clone(), world.clone(), this.clone(), assets);
 
     demo(&world, &task);
 
@@ -81,7 +81,7 @@ fn demo(world: &AID<WorldManagerMessage>, task: &AID<TaskManagerMessage>) {
     let _ = world.send(WorldManagerMessage::SpawnBuilding(
         (15, 3),
         BuildingId::from("factory"),
-        true,
+        false,
     ));
 
     let _ = world.send(WorldManagerMessage::SpawnWorker(

@@ -53,8 +53,11 @@ pub enum EntityMessage {
     FetchInventoryStatus(AID<PlayerManagerMessage>),
 
     // sent by player manager spontaneously
-    
     FetchCurrentTask(AID<PlayerManagerMessage>),
+    
+    // sent by player manager spontaneously
+    FetchAsset(AID<PlayerManagerMessage>),
+
     // sent by world manager spontaneously
     Pause,
     
@@ -70,4 +73,5 @@ pub enum PlayerManagerMessage {
     Notification(String), // if we ever want to notify the player of anything special
     InventoryStatusResult(Option<String>),
     CurrentTaskResult(Option<Task>),
+    AssetResult(String, bool),
 }

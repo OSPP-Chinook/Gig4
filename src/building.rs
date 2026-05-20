@@ -102,6 +102,16 @@ impl Building {
                             break 'outer;
                         }
 
+                        EntityMessage::FetchInventoryStatus(pm_aid) => {
+                            _ = self.inventory.send(InventoryMessage::GiveStatus(pm_aid));
+                        }
+
+                        EntityMessage::FetchCurrentTask(pm_aid) => {
+                            _ = pm_aid.send(PlayerManagerMessage::CurrentTaskResult(Some(
+                                current_task.clone(),
+                            )));
+                        }
+
                         _ => {
                             pause_messages.push(msg);
                         }
@@ -174,10 +184,15 @@ impl Building {
                         )));
                     }
 
+                    EntityMessage::FetchAsset(pm_aid) => {
+                        _ = pm_aid.send(PlayerManagerMessage::AssetResult(self.id.to_string(), true));
+                    } 
+
                     EntityMessage::Pause => {
                         paused = true;
                         continue 'outer;
                     }
+
 
                     EntityMessage::GetInventoryResponse(_)
                     | EntityMessage::MoveResponse(_)

@@ -406,6 +406,10 @@ impl Worker {
                 )));
             }
 
+            EntityMessage::FetchAsset(pm_aid) => {
+                _ = pm_aid.send(PlayerManagerMessage::AssetResult(self.id.to_string(), false));
+            }
+
             EntityMessage::Pause => {
                 self.paused = true;
             }

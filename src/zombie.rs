@@ -22,6 +22,7 @@ pub fn entity_zombie(mailbox: impl IntoIterator<Item = EntityMessage>) {
             EntityMessage::TaskResponse(_) => {}
             EntityMessage::Pause => {}
             EntityMessage::Unpause => {}
+            EntityMessage::FetchAsset(_) => {}
             
             EntityMessage::GetInventory(aid) => {
                 let _ = aid.send(EntityMessage::GetInventoryResponse(Err(
@@ -122,6 +123,7 @@ pub fn player_manager_zombie(mailbox: impl IntoIterator<Item = PlayerManagerMess
             PlayerManagerMessage::Notification(_) => {}
             PlayerManagerMessage::InventoryStatusResult(_) => {}
             PlayerManagerMessage::CurrentTaskResult(_) => {}
+            PlayerManagerMessage::AssetResult(_, _) => {}
         }
     }
 }
