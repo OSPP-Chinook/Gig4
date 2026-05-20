@@ -28,6 +28,8 @@ use crate::aid::AIDHandle;
 use crate::game_manager::GameManagerMessage;
 use crate::zombie;
 use crate::{
+    assets::WorkerId,
+    assets::BuildingId,
     EntityMessage,
     aid::AID,
     task_manager::Task,
@@ -152,7 +154,14 @@ fn update_selection(world_array: &RawWorldArray, select: Selection) -> Selection
     // skip these - they don't change
     match select {
         Selection::Empty => {return select}
-        Selection::Dummy(_, _) => {return select}
+        Selection::Dummy(x, y) => {
+            let tile = &world_array[y][x];
+            match tile {
+                Tile::Dummy => {return select}
+                Tile::Empty => {return Selection::Empty}
+                _ => {return Selection::Pending(x, y)}
+            }
+        }
         _ => (),
     }
     // update position, or change pending if found
@@ -161,13 +170,22 @@ fn update_selection(world_array: &RawWorldArray, select: Selection) -> Selection
             let tile = &world_array[y][x];
             match tile {
                 Tile::Worker(aid, _) => {
-                    if let Selection::Worker(_, _, sel_aid) = select {
-                        return Selection::Worker(x, y, sel_aid);
+                    if let Selection::Worker(_, _, sel_aid) = &select {
+                        if aid == sel_aid {
+                            return Selection::Worker(x, y, aid.clone());
+                        }
+                    }
+                    if let Selection::Pending(sx, sy) = select {
+                        if x == sx && y == sy {
+                            return Selection::Worker(x, y, aid.clone());
+                        }
                     }
                 }
                 Tile::Building(aid, _) => {
-                    if let Selection::Building(_, _, sel_aid) = select {
-                        return Selection::Building(x, y, sel_aid);
+                    if let Selection::Building(_, _, sel_aid) = &select {
+                        if aid == sel_aid {
+                            return Selection::Building(x, y, aid.clone());
+                        }
                     }
                     if let Selection::Pending(sx, sy) = select {
                         if x == sx && y == sy {
@@ -404,7 +422,7 @@ fn get_inputs(
         break;
     }
 
-    parse_input_keyboard(&mut input, &key_event, camera, select, &old_world);
+    parse_input_keyboard(&mut input, &key_event, camera, select, &old_world, world_manager);
     parse_input_mouse(
         &mut input,
         &mouse_event,
@@ -424,6 +442,7 @@ fn parse_input_keyboard(
     camera: &mut Camera,
     select: &mut Selection,
     old_world: &RawWorldArray,
+    world_manager: &AID<WorldManagerMessage>,
 ) {
     if event_opt.is_none() {
         return;
@@ -449,6 +468,35 @@ fn parse_input_keyboard(
         KeyCode::Char('m') => {
             if let Some(new_camera) = get_worker_camera(&old_world, select) {
                 *camera = new_camera;
+            }
+        }
+        KeyCode::Char('1') => {
+            if let Selection::Dummy(x, y) = select {
+                let _ = world_manager.send(WorldManagerMessage::RemoveDummy((*x, *y)));
+                let _ = world_manager.send(WorldManagerMessage::SpawnWorker((*x, *y), WorkerId::from("worker")));
+                *select = Selection::Pending(*x, *y);
+            }
+        }
+        KeyCode::Char('2') => {
+            if let Selection::Dummy(x, y) = select {
+                let _ = world_manager.send(WorldManagerMessage::RemoveDummy((*x, *y)));
+                let _ = world_manager.send(WorldManagerMessage::SpawnBuilding(
+                    (*x, *y),
+                    BuildingId::from("factory"),
+                    false,
+                ));
+                *select = Selection::Pending(*x, *y);
+            }
+        }
+        KeyCode::Char('3') => {
+            if let Selection::Dummy(x, y) = select {
+                let _ = world_manager.send(WorldManagerMessage::RemoveDummy((*x, *y)));
+                let _ = world_manager.send(WorldManagerMessage::SpawnBuilding(
+                    (*x, *y),
+                    BuildingId::from("factory"),
+                    true,
+                ));
+                *select = Selection::Pending(*x, *y);
             }
         }
         _ => input.key = Some(event.code),
@@ -497,8 +545,18 @@ fn parse_input_mouse(
             input.mouse_click = MouseClick::Right;
             
             if let Some((x, y)) = mouse_to_grid_pos((event.column, event.row), world_area, camera) {
-                let _ = world_manager.send(WorldManagerMessage::SpawnDummy((x, y)));
-                *select = Selection::Pending(x, y);
+                let tile = &old_world[y][x];
+                match tile {
+                    Tile::Empty => {
+                        let _ = world_manager.send(WorldManagerMessage::SpawnDummy((x, y)));
+                        *select = Selection::Pending(x, y);
+                    }
+                    Tile::Dummy => {
+                        let _ = world_manager.send(WorldManagerMessage::RemoveDummy((x, y)));
+                        *select = Selection::Empty;
+                    }
+                    _ => (),
+                }
             }
         }
         _ => {}
@@ -630,8 +688,41 @@ fn render_selected_info(
                 .merge_borders(MergeStrategy::Replace),
             layout[1],
         );
+        
+        frame.render_widget(
+            Block::new()
+                .borders(Borders::ALL)
+                .title("─ Status ")
+                .merge_borders(MergeStrategy::Exact),
+            layout[0],
+        );
 
-        render_status(frame, layout, inventory_string, task);
+        match select {
+            Selection::Empty => {},
+            Selection::Pending(_, _) => {},
+            Selection::Worker(_, _, _) => {
+                render_status(frame, layout, inventory_string, task);
+            },
+            Selection::Building(_, _, _) => {
+                render_status(frame, layout, inventory_string, task);
+            },
+            Selection::Dummy(sx, sy) => {
+                let inner = layout[0].inner(Margin::new(2, 2));
+                frame.render_widget(
+                    Paragraph::new(concat!(
+                        "Create:\n",
+                        "1 - Worker\n",
+                        "2 - Building\n",
+                    )),
+                    inner,
+                );
+                frame.render_widget(
+                    Paragraph::new(format!("\n\n\n x {} y {}", sx, sy)),
+                    // todo
+                    inner,
+                );
+            },
+        };
     }
 }
 
@@ -696,14 +787,6 @@ fn render_status(
             sub_layout[1],
         );
     }
-
-    frame.render_widget(
-        Block::new()
-            .borders(Borders::ALL)
-            .title("─ Status ")
-            .merge_borders(MergeStrategy::Exact),
-        layout[0],
-    );
 }
 
 fn parse_task(task: &Task) -> String {
