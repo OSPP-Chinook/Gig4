@@ -333,11 +333,11 @@ fn get_inputs(
     let mut mouse_event: Option<MouseEvent> = None;
 
     // 50 ms looks better with animations
-    let mut poll_start = Instant::now();
-    let poll_time = Duration::from_millis(time_to_wait) - poll_start.elapsed();
+    // let mut poll_start = Instant::now();
+    // let poll_time = Duration::from_millis(time_to_wait) - poll_start.elapsed();
     // while poll()
-    // if poll(Duration::from_millis(time_to_wait)).ok()? {
-    if poll(poll_time).ok()? {
+    if poll(Duration::from_millis(time_to_wait)).ok()? {
+    // if poll(poll_time).ok()? {
         match read().ok()? {
             Event::Key(event) if event.kind == KeyEventKind::Press => {
                 // Det här måste ske utanför input handler eftersom
