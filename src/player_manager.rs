@@ -119,7 +119,7 @@ fn get_copy_of_world(world_array: &WorldGrid) -> RawWorldArray {
     return copy;
 }
 
-fn get_next_worker(
+fn get_next_entity(
     world_array: &RawWorldArray,
     select: Selection,
 ) -> Selection {
@@ -136,14 +136,21 @@ fn get_next_worker(
                     if found {
                         return Selection::Worker(x, y, aid.clone());
                     }
-                    match &select {
-                        Selection::Worker(_, _, sel_aid) => {
-                            if aid == sel_aid {
-                                found = true;
-                            }
+                    if let Selection::Worker(_, _, sel_aid) = &select {
+                        if aid == sel_aid {
+                            found = true;
                         }
-                        _ => (),
-                    };
+                    }
+                }
+                Tile::Building(aid, _) => {
+                    if found {
+                        return Selection::Building(x, y, aid.clone());
+                    }
+                    if let Selection::Building(_, _, sel_aid) = &select {
+                        if aid == sel_aid {
+                            found = true;
+                        }
+                    }
                 }
                 _ => (),
             }
@@ -470,7 +477,7 @@ fn parse_input_keyboard(
             camera.change(MOVE_CAMERA, 0);
         }
         KeyCode::Char('n') => {
-            *select = get_next_worker(&old_world, select.clone());
+            *select = get_next_entity(&old_world, select.clone());
         }
         KeyCode::Char('m') => {
             if let Some(new_camera) = get_worker_camera(&old_world, select) {
