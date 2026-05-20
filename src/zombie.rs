@@ -15,6 +15,7 @@ pub fn entity_zombie(mailbox: impl IntoIterator<Item = EntityMessage>) {
             // requires a response. If we forget to add something here, it
             // can cause deadlocks.
             EntityMessage::KillYourself => {}
+            EntityMessage::TimerResponse => {}
             EntityMessage::GetInventoryResponse(_) => {}
             EntityMessage::ItemTransferResponse(_) => {}
             EntityMessage::MoveResponse(_) => {}

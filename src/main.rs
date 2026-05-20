@@ -5,6 +5,7 @@ mod game_manager;
 mod inventory;
 mod player_manager;
 mod task_manager;
+mod timer;
 mod worker;
 mod world_manager;
 mod zombie;

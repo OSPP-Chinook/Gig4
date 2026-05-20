@@ -1,6 +1,7 @@
 use crate::aid::{AID, AIDHandle};
 use crate::assets::{Assets, ItemId, ItemStack, WorkerId};
 use crate::inventory::{self, InventoryMessage};
+use crate::timer::Timer;
 use crate::{
     inventory::{GetInventoryError, ItemTransferError},
     player_manager::PlayerManagerMessage,
@@ -11,7 +12,6 @@ use crate::{
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     sync::{Arc, mpsc::Receiver},
-    thread,
     time::Duration,
 };
 
@@ -26,6 +26,9 @@ const TRANSFER_TIME: Duration = Duration::from_millis(5000);
 pub enum EntityMessage {
     // sent by world manager spontaneously
     KillYourself,
+
+    // sent by timer responding to start_timer
+    TimerResponse,
 
     // sent by worker to building spontaneously
     GetInventory(AID<EntityMessage>),
@@ -264,12 +267,14 @@ impl WorkerCore {
 pub struct Worker {
     core: WorkerCore,
     alive: bool,
+    sleeping: bool,
     paused: bool,
     waiting: bool,
     pending_inventory_task: Option<(bool, ItemStack)>,
     world_aid: AID<WorldManagerMessage>,
     task_aid: AID<TaskManagerMessage>,
     inventory: AID<InventoryMessage>,
+    timer: Timer<EntityMessage>,
     self_aid: AID<EntityMessage>,
     assets: Arc<Assets>,
     id: WorkerId,
@@ -319,12 +324,14 @@ impl Worker {
         Worker {
             core: WorkerCore::new(start_pos, carry_capacity),
             alive: true,
+            sleeping: false,
             paused: false,
             waiting: false,
             pending_inventory_task: None,
             world_aid: world,
             task_aid: task,
             inventory: inventory::init(assets.clone(), inventory_size),
+            timer: Timer::new(self_aid.clone(), EntityMessage::TimerResponse),
             self_aid: self_aid,
             assets,
             id,
@@ -354,6 +361,10 @@ impl Worker {
                 self.alive = false;
             }
 
+            EntityMessage::TimerResponse => {
+                self.sleeping = false;
+            }
+
             EntityMessage::TaskResponse(res) => match res {
                 Ok(task) => {
                     self.core.new_task(task);
@@ -371,7 +382,9 @@ impl Worker {
 
                     let speed = self.assets.workers.get(&self.id).unwrap().speed;
                     let time = Duration::from_secs_f32(MOVE_TIME.as_secs_f32() / speed);
-                    thread::sleep(time);
+
+                    self.sleeping = true;
+                    self.timer.start_timer(time);
                 }
                 Err(MoveError::Occupied(pos)) => {
                     // world manager neckade flytten
@@ -481,7 +494,7 @@ impl Worker {
                 }
             }
 
-            while self.waiting {
+            while self.waiting || self.sleeping {
                 if let Ok(msg) = mailbox.recv() {
                     self.msg_handler(msg);
 
@@ -510,7 +523,8 @@ impl Worker {
             let task = self.core.process_task();
             match task {
                 SubTask::Idle => {
-                    thread::sleep(IDLE_TIME);
+                    self.sleeping = true;
+                    self.timer.start_timer(IDLE_TIME);
                 }
                 SubTask::Move(pos) => {
                     let _ = self
@@ -528,13 +542,15 @@ impl Worker {
                     self.pending_inventory_task = Some((true, item_and_amount));
                     let _ = to.send(EntityMessage::GetInventory(self.self_aid.clone()));
                     self.waiting = true;
-                    thread::sleep(TRANSFER_TIME);
+                    self.sleeping = true;
+                    self.timer.start_timer(TRANSFER_TIME);
                 }
                 SubTask::TakeItem(from, item_and_amount) => {
                     self.pending_inventory_task = Some((false, item_and_amount));
                     let _ = from.send(EntityMessage::GetInventory(self.self_aid.clone()));
                     self.waiting = true;
-                    thread::sleep(TRANSFER_TIME);
+                    self.sleeping = true;
+                    self.timer.start_timer(TRANSFER_TIME);
                 }
             }
         }
@@ -680,7 +696,7 @@ mod tests {
         core.new_task(task);
 
         // Here we expect the subtask list to have been cleared
-        assert_eq!(core.sub_tasks.len(), 0);
+        assert!(core.sub_tasks.is_empty());
     }
 
     #[test]
