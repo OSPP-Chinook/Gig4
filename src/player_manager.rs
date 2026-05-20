@@ -476,6 +476,10 @@ fn parse_input_keyboard(
         KeyCode::Char('d') => {
             camera.change(MOVE_CAMERA, 0);
         }
+        KeyCode::Esc => {
+            *select = Selection::Empty;
+            *select_2 = Selection::Empty;
+        }
         KeyCode::Char('n') => {
             *select = get_next_entity(&old_world, select.clone());
         }
