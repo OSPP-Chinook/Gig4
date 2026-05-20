@@ -297,7 +297,6 @@ fn render_loop(
         let mut frames = 0;
 
         let mut paused = false;
-        //ui.create_button(|_ui| println!("Pressed"));
         loop {
             if let Some(true) = check_mailbox(&mailbox, &mut ui) {
                 break Ok(());
@@ -553,7 +552,6 @@ fn parse_input_mouse(
                     index = ((event.row - ui.button_layout[1].y)
                         / (ui.button_layout[1].height / ui.buttons.len() as u16))
                         as usize;
-                    println!("\n\n\n                  {}", index);
                     if index >= ui.buttons.len() {
                         return;
                     }
@@ -564,7 +562,6 @@ fn parse_input_mouse(
                     on_click(ui, index);
                     ui.buttons.insert(index, (title, on_click));
                 }
-                println!("UI");
             }
         }
         MouseEventKind::Down(MouseButton::Right) => {

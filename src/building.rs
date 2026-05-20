@@ -132,11 +132,6 @@ impl Building {
                             {
                                 current_process = Some(Duration::from_millis(recipe.time as u64));
                             }
-                            if let Some(time) = &current_process
-                                && waiting
-                            {
-                                current_process = None;
-                            }
                             waiting = false;
                         }
                         Err(
