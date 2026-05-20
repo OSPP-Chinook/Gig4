@@ -288,6 +288,7 @@ fn render_loop(
             let time_0 = Instant::now();
             let new_world = get_copy_of_world(&world_array);
             let time_1 = Instant::now();
+            select = update_selection(&new_world, select);
             terminal.draw(|frame| {
                 render(
                     frame,
@@ -614,11 +615,18 @@ fn render_selected_info(
             render_pov(frame, pov_camera, &layout, world_array, old_world_array);
         }
 
+        let pov_title = match select {
+            Selection::Empty => "<error>",
+            Selection::Pending(_, _) => "<pending...>",
+            Selection::Dummy(_, _) => "dummy",
+            Selection::Worker(_, _, _) => "worker",
+            Selection::Building(_, _, _) => "building",
+        };
         // render this last so it covers any part of the world sticking out
         frame.render_widget(
             Block::new()
                 .borders(Borders::ALL)
-                .title("─ POV: you're a worker ")
+                .title(format!("─ POV: you're a {} ", pov_title))
                 .merge_borders(MergeStrategy::Replace),
             layout[1],
         );
