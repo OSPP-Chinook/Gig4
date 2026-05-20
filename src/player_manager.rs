@@ -72,11 +72,13 @@ enum InputResult {
 #[derive(Copy, Clone)]
 struct Camera(i32, i32);
 
+#[derive(Clone)]
 enum Selection {
     Empty,
+    Pending(usize, usize),
     Dummy(usize, usize),
-    Worker(AID<EntityMessage>),
-    Building(AID<EntityMessage>),
+    Worker(usize, usize, AID<EntityMessage>),
+    Building(usize, usize, AID<EntityMessage>),
 }
 
 impl Camera {
@@ -115,11 +117,11 @@ fn get_copy_of_world(world_array: &WorldGrid) -> RawWorldArray {
 
 fn get_next_worker(
     world_array: &RawWorldArray,
-    selected_aid: Option<AID<EntityMessage>>,
-) -> Option<AID<EntityMessage>> {
-    let mut found = match selected_aid {
-        Some(_) => false,
-        None => true,
+    select: Selection,
+) -> Selection {
+    let mut found = match select {
+        Selection::Empty => true,
+        _ => false,
     };
 
     for y in 0..HEIGHT {
@@ -128,46 +130,73 @@ fn get_next_worker(
             match tile {
                 Tile::Worker(aid, _) => {
                     if found {
-                        return Some(aid.clone());
+                        return Selection::Worker(x, y, aid.clone());
                     }
-                    match &selected_aid {
-                        Some(sel_aid) => {
+                    match &select {
+                        Selection::Worker(_, _, sel_aid) => {
                             if aid == sel_aid {
                                 found = true;
                             }
                         }
-                        None => (),
+                        _ => (),
                     };
                 }
                 _ => (),
             }
         }
     }
-    return None;
+    return Selection::Empty;
 }
 
-fn get_worker_camera(world_array: &RawWorldArray, sel_aid: &AID<EntityMessage>) -> Option<Camera> {
+fn update_selection(world_array: &RawWorldArray, select: Selection) -> Selection {
+    // skip these - they don't change
+    match select {
+        Selection::Empty => {return select}
+        Selection::Dummy(_, _) => {return select}
+        _ => (),
+    }
+    // update position, or change pending if found
     for y in 0..HEIGHT {
         for x in 0..WIDTH {
             let tile = &world_array[y][x];
             match tile {
                 Tile::Worker(aid, _) => {
-                    if aid == sel_aid {
-                        return Some(Camera(x as i32, y as i32));
+                    if let Selection::Worker(_, _, sel_aid) = select {
+                        return Selection::Worker(x, y, sel_aid);
                     }
                 }
                 Tile::Building(aid, _) => {
-                    if aid == sel_aid {
-                        return Some(Camera(x as i32, y as i32));
+                    if let Selection::Building(_, _, sel_aid) = select {
+                        return Selection::Building(x, y, sel_aid);
+                    }
+                    if let Selection::Pending(sx, sy) = select {
+                        if x == sx && y == sy {
+                            return Selection::Building(x, y, aid.clone());
+                        }
                     }
                 }
-
+                Tile::Dummy => {
+                    if let Selection::Pending(sx, sy) = select {
+                        if x == sx && y == sy {
+                            return Selection::Dummy(x, y);
+                        }
+                    }
+                }
                 _ => (),
             }
         }
     }
-    // can fail because worker might have died
-    return None;
+    return select;
+}
+
+fn get_worker_camera(world_array: &RawWorldArray, select: &Selection) -> Option<Camera> {
+    match select {
+        Selection::Empty => {None}
+        Selection::Worker(x, y, _) => {Some(Camera(*x as i32, *y as i32))}
+        Selection::Building(x, y, _) => {Some(Camera(*x as i32, *y as i32))}
+        Selection::Dummy(x, y) => {Some(Camera(*x as i32, *y as i32))}
+        Selection::Pending(x, y) => {Some(Camera(*x as i32, *y as i32))}
+    }
 }
 
 pub fn new_joinable(
@@ -201,7 +230,7 @@ fn render_loop(
         let _ = execute!(stdout(), EnableMouseCapture);
 
         let mut old_world = get_copy_of_world(&world_array);
-        let mut selected_aid = None;
+        let mut select = Selection::Empty;
         let mut time_to_wait = 0;
 
         // For Status information
@@ -222,7 +251,7 @@ fn render_loop(
             if let Some(val) = get_inputs(
                 &world,
                 &mut camera,
-                &mut selected_aid,
+                &mut select,
                 &old_world,
                 time_to_wait,
                 &terminal.get_frame().area(),
@@ -247,9 +276,13 @@ fn render_loop(
                 }
             }
 
-            if let Some(selected_aid) = selected_aid.clone() {
-                _ = selected_aid.send(EntityMessage::FetchInventoryStatus(aid.clone()));
-                _ = selected_aid.send(EntityMessage::FetchCurrentTask(aid.clone()));
+            if let Selection::Worker(_, _, sel_aid) = select.clone() {
+                _ = sel_aid.send(EntityMessage::FetchInventoryStatus(aid.clone()));
+                _ = sel_aid.send(EntityMessage::FetchCurrentTask(aid.clone()));
+            }
+            if let Selection::Building(_, _, sel_aid) = select.clone() {
+                _ = sel_aid.send(EntityMessage::FetchInventoryStatus(aid.clone()));
+                _ = sel_aid.send(EntityMessage::FetchCurrentTask(aid.clone()));
             }
 
             let time_0 = Instant::now();
@@ -262,7 +295,7 @@ fn render_loop(
                     &new_world,
                     camera,
                     (time_0, time_1, fps),
-                    &selected_aid,
+                    &select,
                     &inventory_string,
                     &task,
                 )
@@ -324,7 +357,7 @@ fn check_mailbox(
 fn get_inputs(
     world_manager: &AID<WorldManagerMessage>,
     camera: &mut Camera,
-    selected_aid: &mut Option<AID<EntityMessage>>,
+    select: &mut Selection,
     old_world: &RawWorldArray,
     time_to_wait: u64,
     frame: &Rect,
@@ -332,12 +365,16 @@ fn get_inputs(
     let mut key_event: Option<KeyEvent> = None;
     let mut mouse_event: Option<MouseEvent> = None;
 
+    let mut input: Input = Input {
+        mouse_pos: None,
+        mouse_click: MouseClick::None,
+        key: None,
+    };
+
     // 50 ms looks better with animations
-    // let mut poll_start = Instant::now();
-    // let poll_time = Duration::from_millis(time_to_wait) - poll_start.elapsed();
-    // while poll()
-    if poll(Duration::from_millis(time_to_wait)).ok()? {
-    // if poll(poll_time).ok()? {
+    let poll_start = Instant::now();
+    let get_time_left = || {Duration::from_millis(time_to_wait).saturating_sub(poll_start.elapsed())};
+    while poll(get_time_left()).ok()? {
         match read().ok()? {
             Event::Key(event) if event.kind == KeyEventKind::Press => {
                 // Det här måste ske utanför input handler eftersom
@@ -351,25 +388,28 @@ fn get_inputs(
                 key_event = Some(event);
             }
             Event::Mouse(event) => {
+                match event.kind {
+                    MouseEventKind::Moved => {
+                        input.mouse_pos = Some((event.column, event.row));
+                        // don't re-render everything just because of a mouse move
+                        continue;
+                    }
+                    _ => (),
+                }
                 mouse_event = Some(event);
             }
             _ => {}
         }
+        break;
     }
 
-    let mut input: Input = Input {
-        mouse_pos: None,
-        mouse_click: MouseClick::None,
-        key: None,
-    };
-
-    parse_input_keyboard(&mut input, &key_event, camera, selected_aid, &old_world);
+    parse_input_keyboard(&mut input, &key_event, camera, select, &old_world);
     parse_input_mouse(
         &mut input,
         &mouse_event,
         frame,
         *camera,
-        selected_aid,
+        select,
         old_world,
         world_manager,
     );
@@ -381,7 +421,7 @@ fn parse_input_keyboard(
     input: &mut Input,
     event_opt: &Option<KeyEvent>,
     camera: &mut Camera,
-    selected_aid: &mut Option<AID<EntityMessage>>,
+    select: &mut Selection,
     old_world: &RawWorldArray,
 ) {
     if event_opt.is_none() {
@@ -403,13 +443,11 @@ fn parse_input_keyboard(
             camera.change(MOVE_CAMERA, 0);
         }
         KeyCode::Char('n') => {
-            *selected_aid = get_next_worker(&old_world, selected_aid.clone());
+            *select = get_next_worker(&old_world, select.clone());
         }
         KeyCode::Char('m') => {
-            if let Some(sel_aid) = &selected_aid {
-                if let Some(new_camera) = get_worker_camera(&old_world, &sel_aid) {
-                    *camera = new_camera;
-                }
+            if let Some(new_camera) = get_worker_camera(&old_world, select) {
+                *camera = new_camera;
             }
         }
         _ => input.key = Some(event.code),
@@ -421,7 +459,7 @@ fn parse_input_mouse(
     event_opt: &Option<MouseEvent>,
     world_area: &Rect,
     camera: Camera,
-    selected_aid: &mut Option<AID<EntityMessage>>,
+    select: &mut Selection,
     old_world: &RawWorldArray,
     world_manager: &AID<WorldManagerMessage>,
 ) {
@@ -441,14 +479,16 @@ fn parse_input_mouse(
             if let Some((x, y)) = mouse_to_grid_pos((event.column, event.row), world_area, camera) {
                 let tile = &old_world[y][x];
                 if let Tile::Building(aid, _) = tile {
-                    *selected_aid = Some(aid.clone());
+                    *select = Selection::Building(x, y, aid.clone());
                 } else if let Tile::Worker(aid, _) = tile {
-                    *selected_aid = Some(aid.clone());
+                    *select = Selection::Worker(x, y, aid.clone());
+                } else if let Tile::Dummy = tile {
+                    *select = Selection::Dummy(x, y);
                 } else {
-                    *selected_aid = None;
+                    *select = Selection::Empty;
                 }
             } else {
-                *selected_aid = None;
+                *select = Selection::Empty;
             }
         }
         MouseEventKind::Down(MouseButton::Right) => {
@@ -457,7 +497,7 @@ fn parse_input_mouse(
             
             if let Some((x, y)) = mouse_to_grid_pos((event.column, event.row), world_area, camera) {
                 let _ = world_manager.send(WorldManagerMessage::SpawnDummy((x, y)));
-                // TODO select = dummy
+                *select = Selection::Pending(x, y);
             }
         }
         _ => {}
@@ -506,7 +546,7 @@ fn render(
     world_array: &RawWorldArray,
     camera: Camera,
     (time_0, time_1, fps): (Instant, Instant, f32),
-    selected_aid: &Option<AID<EntityMessage>>,
+    select: &Selection,
     inventory_string: &Option<String>,
     task: &Option<Task>,
 ) {
@@ -514,16 +554,19 @@ fn render(
 
     render_world_in_area(frame, &world_area, &old_world_array, &world_array, camera);
 
-    if let Some(sel_aid) = selected_aid {
-        render_selected_info(
-            frame,
-            sel_aid,
-            &world_area,
-            world_array,
-            old_world_array,
-            inventory_string,
-            task,
-        );
+    match select {
+        Selection::Empty => (),
+        _ => {
+            render_selected_info(
+                frame,
+                select,
+                &world_area,
+                world_array,
+                old_world_array,
+                inventory_string,
+                task,
+            );
+        }
     }
 
     // return; // don't draw fps
@@ -538,7 +581,7 @@ fn render(
 
 fn render_selected_info(
     frame: &mut Frame,
-    sel_aid: &AID<EntityMessage>,
+    select: &Selection,
     world_area: &Rect,
     world_array: &RawWorldArray,
     old_world_array: &RawWorldArray,
@@ -567,7 +610,7 @@ fn render_selected_info(
         frame.render_widget(Clear, layout[0]);
         frame.render_widget(Clear, layout[1]);
 
-        if let Some(pov_camera) = get_worker_camera(&world_array, sel_aid) {
+        if let Some(pov_camera) = get_worker_camera(&world_array, select) {
             render_pov(frame, pov_camera, &layout, world_array, old_world_array);
         }
 
