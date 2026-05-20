@@ -84,6 +84,8 @@ pub fn world_manager_zombie(mailbox: impl IntoIterator<Item = WorldManagerMessag
         match msg {
             WorldManagerMessage::Quit => {}
             WorldManagerMessage::SpawnObstacle(_) => {}
+            WorldManagerMessage::SpawnDummy(_) => {}
+            WorldManagerMessage::RemoveDummy(_) => {}
             WorldManagerMessage::SpawnWorker(_, _) => {}
             WorldManagerMessage::SpawnBuilding(_, _, _) => {}
             WorldManagerMessage::KillEntity(_) => {}

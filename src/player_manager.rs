@@ -61,6 +61,13 @@ enum InputResult {
 #[derive(Copy, Clone)]
 struct Camera(i32, i32);
 
+enum Selection {
+    Empty,
+    Dummy(usize, usize),
+    Worker(AID<EntityMessage>),
+    Building(AID<EntityMessage>),
+}
+
 impl Camera {
     fn change(&mut self, dx: i32, dy: i32) {
         // limit camera from going outside world
@@ -202,6 +209,7 @@ fn render_loop(
             }
 
             if let Some(val) = get_inputs(
+                &world,
                 &mut camera,
                 &mut selected_aid,
                 &old_world,
@@ -265,13 +273,17 @@ fn render_loop(
     })
 }
 
-fn mouse_to_grid_pos((x, y): (u16, u16), world_area: &Rect, camera: Camera) -> (i32, i32) {
+fn mouse_to_grid_pos((x, y): (u16, u16), world_area: &Rect, camera: Camera) -> Option<(usize, usize)> {
     let box_w = world_area.width / TILE_SIZE.0;
     let box_h = world_area.height / TILE_SIZE.1;
-    return (
-        (x / TILE_SIZE.0) as i32 - (box_w / 2) as i32 + camera.0,
-        (y / TILE_SIZE.1) as i32 - (box_h / 2) as i32 + camera.1,
-    );
+    let grid_x = (x / TILE_SIZE.0) as i32 - (box_w / 2) as i32 + camera.0;
+    let grid_y = (y / TILE_SIZE.1) as i32 - (box_h / 2) as i32 + camera.1;
+    
+    if grid_x >= 0 && grid_x < WIDTH as i32 && grid_y >= 0 && grid_y < HEIGHT as i32 {
+        return Some((grid_x as usize, grid_y as usize));
+    } else {
+        return None;
+    }
 }
 
 fn check_mailbox(
@@ -299,6 +311,7 @@ fn check_mailbox(
 }
 
 fn get_inputs(
+    world_manager: &AID<WorldManagerMessage>,
     camera: &mut Camera,
     selected_aid: &mut Option<AID<EntityMessage>>,
     old_world: &RawWorldArray,
@@ -309,7 +322,11 @@ fn get_inputs(
     let mut mouse_event: Option<MouseEvent> = None;
 
     // 50 ms looks better with animations
-    if poll(Duration::from_millis(time_to_wait)).ok()? {
+    let mut poll_start = Instant::now();
+    let poll_time = Duration::from_millis(time_to_wait) - poll_start.elapsed();
+    // while poll()
+    // if poll(Duration::from_millis(time_to_wait)).ok()? {
+    if poll(poll_time).ok()? {
         match read().ok()? {
             Event::Key(event) if event.kind == KeyEventKind::Press => {
                 // Det här måste ske utanför input handler eftersom
@@ -343,6 +360,7 @@ fn get_inputs(
         *camera,
         selected_aid,
         old_world,
+        world_manager,
     );
 
     return Some(InputResult::Continue);
@@ -394,6 +412,7 @@ fn parse_input_mouse(
     camera: Camera,
     selected_aid: &mut Option<AID<EntityMessage>>,
     old_world: &RawWorldArray,
+    world_manager: &AID<WorldManagerMessage>,
 ) {
     if event_opt.is_none() {
         return;
@@ -407,9 +426,9 @@ fn parse_input_mouse(
         MouseEventKind::Down(MouseButton::Left) => {
             input.mouse_pos = Some((event.column, event.row));
             input.mouse_click = MouseClick::Left;
-            let (x, y) = mouse_to_grid_pos((event.column, event.row), world_area, camera);
-            if x >= 0 && x < WIDTH as i32 && y >= 0 && y < HEIGHT as i32 {
-                let tile = &old_world[y as usize][x as usize];
+            
+            if let Some((x, y)) = mouse_to_grid_pos((event.column, event.row), world_area, camera) {
+                let tile = &old_world[y][x];
                 if let Tile::Building(aid, _) = tile {
                     *selected_aid = Some(aid.clone());
                 } else if let Tile::Worker(aid, _) = tile {
@@ -424,6 +443,11 @@ fn parse_input_mouse(
         MouseEventKind::Down(MouseButton::Right) => {
             input.mouse_pos = Some((event.column, event.row));
             input.mouse_click = MouseClick::Right;
+            
+            if let Some((x, y)) = mouse_to_grid_pos((event.column, event.row), world_area, camera) {
+                let _ = world_manager.send(WorldManagerMessage::SpawnDummy((x, y)));
+                // TODO select = dummy
+            }
         }
         _ => {}
     }
@@ -796,6 +820,11 @@ fn render_world_in_area(
                     let square = Paragraph::new("███\n███").green();
                     frame.render_widget(square, rect_at_pos);
                 }
+                Tile::Dummy => {
+                    let square = Paragraph::new("┌─┐\n└─┘").yellow();
+                    frame.render_widget(square, rect_at_pos);
+                }
+                
                 // could display different types of workers differently depending on their id
                 Tile::Worker(_, _id) => {
                     let square = Paragraph::new("╭─╮\n╰─╯").blue();

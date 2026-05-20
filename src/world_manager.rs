@@ -24,6 +24,8 @@ pub enum WorldManagerMessage {
     Quit,
     Move(Pos, AID<EntityMessage>),
     SpawnObstacle(Pos),
+    SpawnDummy(Pos),
+    RemoveDummy(Pos),
     SpawnWorker(Pos, WorkerId),
     SpawnBuilding(Pos, BuildingId, bool),
     KillEntity(AID<EntityMessage>),
@@ -35,6 +37,7 @@ pub enum WorldManagerMessage {
 pub enum Tile {
     Empty,
     Obstacle,
+    Dummy,
     Worker(AID<EntityMessage>, WorkerId),
     Building(AID<EntityMessage>, BuildingId),
 }
@@ -99,6 +102,24 @@ fn main(
                     && let Tile::Empty = *dest
                 {
                     *dest = Tile::Obstacle;
+                }
+            }
+            WorldManagerMessage::SpawnDummy(pos) => {
+                let grid = &mut grid.lock().unwrap();
+
+                if let Some(dest) = get_tile(grid, pos)
+                    && let Tile::Empty = *dest
+                {
+                    *dest = Tile::Dummy;
+                }
+            }
+            WorldManagerMessage::RemoveDummy(pos) => {
+                let grid = &mut grid.lock().unwrap();
+
+                if let Some(dest) = get_tile(grid, pos)
+                    && let Tile::Dummy = *dest
+                {
+                    *dest = Tile::Empty;
                 }
             }
             WorldManagerMessage::SpawnWorker(pos, id) => {
