@@ -35,7 +35,7 @@ use std::{
 
 use crate::{
     EntityMessage, aid::{
-        self, AID, AIDHandle
+        AID, AIDHandle
     }, game_manager::GameManagerMessage, messages::PlayerManagerMessage, task_manager::Task, world_manager::{ 
         HEIGHT, RawWorldArray, Tile, WIDTH, WorldGrid, WorldManagerMessage
     }, zombie 
@@ -536,8 +536,8 @@ fn render_status(
             Task::Idle => {
                 parsed_task.push_str("Idling...");
             }
-            Task::Produce(amount) => {
-                parsed_task.push_str(format!("Producing {} things", amount).as_str());
+            Task::Produce(recipe) => {
+                parsed_task.push_str(format!("Producing {}", recipe.to_string()).as_str());
             }
         }
 
