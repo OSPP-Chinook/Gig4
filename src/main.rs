@@ -96,13 +96,13 @@ mod tests {
         factory_aid1: aid::AID<InventoryMessage>,
         factory_aid2: aid::AID<InventoryMessage>,
     ) {
-        _ = worker_aid.send(InventoryMessage::PrintInventory(String::from("Worker")));
+        _ = worker_aid.send(InventoryMessage::_PrintInventory(String::from("Worker")));
         sleep(Duration::from_millis(500));
 
-        _ = factory_aid1.send(InventoryMessage::PrintInventory(String::from("Factory 1")));
+        _ = factory_aid1.send(InventoryMessage::_PrintInventory(String::from("Factory 1")));
         sleep(Duration::from_millis(500));
 
-        _ = factory_aid2.send(InventoryMessage::PrintInventory(String::from("Factory 2")));
+        _ = factory_aid2.send(InventoryMessage::_PrintInventory(String::from("Factory 2")));
         sleep(Duration::from_millis(500));
     }
 }

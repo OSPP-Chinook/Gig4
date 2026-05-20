@@ -44,7 +44,7 @@ pub fn inventory_zombie(mailbox: impl IntoIterator<Item = InventoryMessage>) {
     for msg in mailbox {
         match msg {
             InventoryMessage::ChangeRecipe => {}
-            InventoryMessage::PrintInventory(_) => {}
+            InventoryMessage::_PrintInventory(_) => {}
             InventoryMessage::KillYourself => {}
 
             InventoryMessage::Add(entity, _)
@@ -132,7 +132,7 @@ mod tests {
 
     use crate::{
         aid::AID,
-        assets::{self, Assets, BuildingId, ItemId, ItemStack, WorkerId},
+        assets::{Assets, BuildingId, ItemId, ItemStack, WorkerId},
         building::Building,
         inventory, player_manager, task_manager,
         worker::Worker,

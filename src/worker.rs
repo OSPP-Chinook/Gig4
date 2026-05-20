@@ -1,5 +1,5 @@
 use crate::aid::{AID, AIDHandle};
-use crate::assets::{Assets, ItemId, ItemStack, WorkerId};
+use crate::assets::{Assets, ItemStack, WorkerId};
 use crate::inventory::{self, InventoryMessage};
 use crate::messages::{
     EntityMessage, GetInventoryError, ItemTransferError, MoveError, PlayerManagerMessage, TaskError,
@@ -514,7 +514,7 @@ impl Worker {
 mod tests {
     use super::*;
 
-    fn dummy<T: Clone + Send + 'static>() -> AID<T> {
+    fn _dummy<T: Clone + Send + 'static>() -> AID<T> {
         AID::new(move |_aid, _mailbox| {
             // gör ingenting
         })

@@ -28,7 +28,7 @@ pub enum InventoryMessage {
     TakeFrom(AID<EntityMessage>, AID<InventoryMessage>, ItemList),
     GiveTo(AID<EntityMessage>, AID<InventoryMessage>, ItemList),
     ChangeRecipe, // tell all waiting that their request can't be fulfilled
-    PrintInventory(String),
+    _PrintInventory(String), // Debugging
     GiveStatus(AID<PlayerManagerMessage>),
     KillYourself,
 
@@ -215,7 +215,7 @@ fn match_message(message: InventoryMessage, inventory: &mut Inventory) {
 
         InventoryMessage::ChangeRecipe => inventory.change_recipe(),
 
-        InventoryMessage::PrintInventory(name) => inventory.print_inv(name),
+        InventoryMessage::_PrintInventory(name) => inventory.print_inv(name),
 
         InventoryMessage::KillYourself => inventory.alive = false,
 

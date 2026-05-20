@@ -6,7 +6,6 @@ use rand::{
 
 use crossterm::{
     execute,
-    terminal,
     event::{
         DisableMouseCapture, 
         EnableMouseCapture, 
@@ -24,7 +23,6 @@ use crossterm::{
 
 use ratatui::{
     Frame, 
-    Terminal,
     style::Stylize, 
     symbols::merge::MergeStrategy, 
     layout::{
@@ -52,7 +50,7 @@ use crate::{
     EntityMessage, aid::{
         AID, AIDHandle
     }, assets::{
-        Assets, RecipeAsset 
+        Assets,
     }, game_manager::GameManagerMessage, messages::PlayerManagerMessage, task_manager::Task, world_manager::{ 
         HEIGHT, RawWorldArray, Tile, WIDTH, WorldGrid, WorldManagerMessage
     }, zombie
@@ -679,7 +677,11 @@ fn render_status(
                         }
                     } 
 
-                    parsed_task.push_str(format!("Producing {0} from {1}", output_string, input_string).as_str());
+                    parsed_task.push_str(format!(
+                        "Producing {0} from {1}", 
+                        output_string, 
+                        input_string
+                    ).as_str());
                 }
             }
         }
