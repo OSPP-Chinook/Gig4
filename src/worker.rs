@@ -1,17 +1,19 @@
 use crate::aid::{AID, AIDHandle};
 use crate::assets::{Assets, ItemId, ItemStack, WorkerId};
 use crate::inventory::{self, InventoryMessage};
-use crate::messages::{
-    EntityMessage, GetInventoryError, ItemTransferError, MoveError, PlayerManagerMessage, TaskError,
-};
-use crate::task_manager::{Task, TaskManagerMessage};
 use crate::timer::Timer;
-use crate::world_manager::{HEIGHT, Pos, WIDTH, WorldManagerMessage};
-use crate::zombie;
-use std::collections::{HashMap, HashSet, VecDeque};
-use std::sync::Arc;
-use std::sync::mpsc::Receiver;
-use std::time::Duration;
+use crate::{
+    inventory::{GetInventoryError, ItemTransferError},
+    player_manager::PlayerManagerMessage,
+    task_manager::{Task, TaskError, TaskManagerMessage},
+    world_manager::{HEIGHT, Pos, WIDTH, WorldManagerMessage},
+    zombie,
+};
+use std::{
+    collections::{HashMap, HashSet, VecDeque},
+    sync::{Arc, mpsc::Receiver},
+    time::Duration,
+};
 
 // duration to wait while idling
 const IDLE_TIME: Duration = Duration::from_millis(500);
@@ -19,6 +21,42 @@ const IDLE_TIME: Duration = Duration::from_millis(500);
 const MOVE_TIME: Duration = Duration::from_millis(250);
 // duration to wait after transferring items
 const TRANSFER_TIME: Duration = Duration::from_millis(5000);
+
+#[derive(Clone)]
+pub enum EntityMessage {
+    // sent by world manager spontaneously
+    KillYourself,
+
+    // sent by timer responding to start_timer
+    TimerResponse,
+
+    // sent by worker to building spontaneously
+    GetInventory(AID<EntityMessage>),
+
+    // sent by building to worker responding to GetInventory
+    GetInventoryResponse(Result<AID<InventoryMessage>, GetInventoryError>),
+
+    // sent by inventory responding to Add/Remove/GiveTo/TakeFrom
+    ItemTransferResponse(Result<(), ItemTransferError>),
+
+    // sent by world manager to worker responding to Move
+    MoveResponse(Result<Pos, MoveError>),
+
+    // sent by task manager respondong to GiveMeNewTask
+    TaskResponse(Result<Task, TaskError>),
+
+    // sent by player manager spontaneously
+    FetchInventoryStatus(AID<PlayerManagerMessage>),
+
+    // sent by player manager spontaneously
+    FetchCurrentTask(AID<PlayerManagerMessage>),
+
+    // sent by world manager spontaneously
+    Pause,
+
+    // sent by world manager spontaneously
+    Unpause,
+}
 
 /// Ren logik- och state för en worker.
 ///
@@ -48,6 +86,12 @@ enum SubTask {
     TakeItem(AID<EntityMessage>, ItemStack),
     GiveItem(AID<EntityMessage>, ItemStack),
     Done,
+}
+
+#[derive(Clone)]
+pub enum MoveError {
+    ImDead,
+    Occupied(Pos),
 }
 
 fn manhattan_distance(from: Pos, to: Pos) -> usize {
@@ -515,6 +559,7 @@ impl Worker {
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
 
     fn dummy<T: Clone + Send + 'static>() -> AID<T> {
@@ -650,6 +695,7 @@ mod tests {
         let task = Task::Idle;
         core.new_task(task);
 
+        // Here we expect the subtask list to have been cleared
         assert!(core.sub_tasks.is_empty());
     }
 

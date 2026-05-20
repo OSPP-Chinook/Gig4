@@ -3,8 +3,8 @@ use std::{sync::mpsc, thread, time::Duration};
 use crate::{
     aid::AID,
     assets::{Assets, BuildingId, ItemId, WorkerId},
-    messages::PlayerManagerMessage,
     player_manager,
+    player_manager::PlayerManagerMessage,
     task_manager::{self, TaskManagerMessage},
     world_manager::{self, WorldManagerMessage, init_world_grid},
 };
