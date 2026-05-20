@@ -34,6 +34,9 @@ pub enum EntityMessage {
     // sent by world manager spontaneously
     KillYourself,
 
+    // sent by timer responding to start_timer
+    TimerResponse,
+
     // sent by worker to building spontaneously
     GetInventory(AID<EntityMessage>),
 
@@ -53,11 +56,11 @@ pub enum EntityMessage {
     FetchInventoryStatus(AID<PlayerManagerMessage>),
 
     // sent by player manager spontaneously
-    
     FetchCurrentTask(AID<PlayerManagerMessage>),
+
     // sent by world manager spontaneously
     Pause,
-    
+
     // sent by world manager spontaneously
     Unpause,
 }

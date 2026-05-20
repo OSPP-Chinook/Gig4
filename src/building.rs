@@ -4,12 +4,12 @@ use crate::{
     inventory::{self, InventoryMessage},
     messages::{EntityMessage, ItemTransferError, PlayerManagerMessage, TaskError},
     task_manager::{Task, TaskManagerMessage},
+    timer::Timer,
     world_manager::WorldManagerMessage,
     zombie,
 };
 use std::{
     sync::{Arc, mpsc::Receiver},
-    thread,
     time::Duration,
     vec,
 };
@@ -21,6 +21,7 @@ pub struct Building {
     task_aid: AID<TaskManagerMessage>,
     self_aid: AID<EntityMessage>,
     inventory: AID<InventoryMessage>,
+    timer: Timer<EntityMessage>,
     assets: Arc<Assets>,
     id: BuildingId,
 }
@@ -62,8 +63,9 @@ impl Building {
         Building {
             world_aid,
             task_aid,
-            self_aid,
             inventory: inventory::init(assets.clone(), inventory_size),
+            timer: Timer::new(self_aid.clone(), EntityMessage::TimerResponse),
+            self_aid,
             assets,
             id,
         }
@@ -81,6 +83,7 @@ impl Building {
         let mut current_task = Task::Idle;
         let mut active_recipe: Option<RecipeAsset> = None;
         let mut current_process: Option<Duration> = None;
+        let mut sleeping = false;
         let mut waiting = false;
         let mut paused = false;
         let mut pause_messages: Vec<EntityMessage> = vec![];
@@ -91,13 +94,13 @@ impl Building {
                     match msg {
                         EntityMessage::Unpause => {
                             paused = false;
-                            //send back all messages received while paused, could also send back 
+                            //send back all messages received while paused, could also send back
                             //directly but then it would constantly read messages and never sleep
                             while let Some(pause_message) = pause_messages.pop() {
                                 _ = self.self_aid.send(pause_message);
                             }
                         }
-                        
+
                         EntityMessage::KillYourself => {
                             break 'outer;
                         }
@@ -109,10 +112,18 @@ impl Building {
                 }
                 continue;
             }
-            while let Ok(msg) = mailbox.try_recv() {
+
+            while let Some(msg) = if sleeping {
+                mailbox.recv().ok()
+            } else {
+                mailbox.try_recv().ok()
+            } {
                 match msg {
                     EntityMessage::KillYourself => {
                         break 'outer;
+                    }
+                    EntityMessage::TimerResponse => {
+                        sleeping = false;
                     }
                     EntityMessage::ItemTransferResponse(res) => match res {
                         Ok(()) => {
@@ -213,7 +224,9 @@ impl Building {
                     current_process = Some(time_left.saturating_sub(MACHINE_TICK_SPEED));
                 }
             }
-            thread::sleep(MACHINE_TICK_SPEED);
+
+            self.timer.start_timer(MACHINE_TICK_SPEED);
+            sleeping = true;
         }
     }
 }

@@ -16,13 +16,14 @@ pub fn entity_zombie(mailbox: impl IntoIterator<Item = EntityMessage>) {
             // requires a response. If we forget to add something here, it
             // can cause deadlocks.
             EntityMessage::KillYourself => {}
+            EntityMessage::TimerResponse => {}
             EntityMessage::GetInventoryResponse(_) => {}
             EntityMessage::ItemTransferResponse(_) => {}
             EntityMessage::MoveResponse(_) => {}
             EntityMessage::TaskResponse(_) => {}
             EntityMessage::Pause => {}
             EntityMessage::Unpause => {}
-            
+
             EntityMessage::GetInventory(aid) => {
                 let _ = aid.send(EntityMessage::GetInventoryResponse(Err(
                     GetInventoryError::ImDead,
@@ -150,7 +151,7 @@ mod tests {
         let (mock, mailbox) = AID::mock();
 
         let (worker_aid, worker_handle) =
-            Worker::new_joinable(world, task, (0, 0), 10,assets, WorkerId::from("worker"));
+            Worker::new_joinable(world, task, (0, 0), 10, assets, WorkerId::from("worker"));
 
         let _ = worker_aid.send(EntityMessage::KillYourself);
         thread::sleep(Duration::from_millis(250));

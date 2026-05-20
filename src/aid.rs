@@ -16,7 +16,6 @@ pub type AIDHandle = thread::JoinHandle<()>;
 
 impl<T> AID<T> {
     // creates a channel and spawns a thread running f
-    #[cfg(test)]
     pub fn new<F>(f: F) -> Self
     where
         F: FnOnce(AID<T>, mpsc::Receiver<T>),
