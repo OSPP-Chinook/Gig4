@@ -30,6 +30,7 @@ use crate::zombie;
 use crate::{
     assets::WorkerId,
     assets::BuildingId,
+    assets::RecipeId,
     EntityMessage,
     aid::AID,
     task_manager::Task,
@@ -483,7 +484,7 @@ fn parse_input_keyboard(
                 let _ = world_manager.send(WorldManagerMessage::SpawnBuilding(
                     (*x, *y),
                     BuildingId::from("factory"),
-                    false,
+                    Task::Idle,
                 ));
                 *select = Selection::Pending(*x, *y);
             }
@@ -494,7 +495,7 @@ fn parse_input_keyboard(
                 let _ = world_manager.send(WorldManagerMessage::SpawnBuilding(
                     (*x, *y),
                     BuildingId::from("factory"),
-                    true,
+                    Task::Produce(RecipeId::from("recipe_mutexium")),
                 ));
                 *select = Selection::Pending(*x, *y);
             }
@@ -713,6 +714,7 @@ fn render_selected_info(
                         "Create:\n",
                         "1 - Worker\n",
                         "2 - Building\n",
+                        "3 - Building that produces\n",
                     )),
                     inner,
                 );

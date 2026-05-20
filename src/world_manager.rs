@@ -26,7 +26,7 @@ pub enum WorldManagerMessage {
     SpawnDummy(Pos),
     RemoveDummy(Pos),
     SpawnWorker(Pos, WorkerId),
-    SpawnBuilding(Pos, BuildingId, bool),
+    SpawnBuilding(Pos, BuildingId, Task),
     KillEntity(AID<EntityMessage>),
     Pause,
     Unpause,
@@ -147,10 +147,10 @@ fn main(
                 {
                     let aid = Building::new(this.clone(), task.clone(), assets.clone(), id.clone());
                     // temporary until buildings can get tasks some other way
-                    if assign_task {
-                        let _ = aid.send(EntityMessage::TaskResponse(Ok(Task::Produce(
-                            RecipeId::from("recipe_mutexium"),
-                        ))));
+                    if let Task::Idle = assign_task {
+                        // do nothing
+                    } else {
+                        let _ = aid.send(EntityMessage::TaskResponse(Ok(assign_task)));
                     }
                     *dest = Tile::Building(aid.clone(), id);
                     entity_lookup.insert(aid, pos);
