@@ -39,7 +39,10 @@ use std::{
     cmp::Ordering, 
     io::stdout,
     rc::Rc, 
-    sync::mpsc::Receiver, 
+    sync::{
+        Arc, 
+        mpsc::Receiver, 
+    },
     time::{
         Duration, Instant
     }
@@ -48,9 +51,11 @@ use std::{
 use crate::{
     EntityMessage, aid::{
         AID, AIDHandle
+    }, assets::{
+        Assets, RecipeAsset 
     }, game_manager::GameManagerMessage, messages::PlayerManagerMessage, task_manager::Task, world_manager::{ 
         HEIGHT, RawWorldArray, Tile, WIDTH, WorldGrid, WorldManagerMessage
-    }, zombie 
+    }, zombie
 };
 
 // Width and height of a tile on the screen in characters
@@ -177,9 +182,10 @@ pub fn new_joinable(
     grid: WorldGrid,
     world: AID<WorldManagerMessage>,
     game: AID<GameManagerMessage>,
+    assets: Arc<Assets>,
 ) -> (AID<PlayerManagerMessage>, AIDHandle) {
     return AID::new_joinable(|aid, mailbox| {
-        let _ = io_loop(aid, &mailbox, world, grid);
+        let _ = io_loop(aid, &mailbox, world, grid, assets);
 
         let _ = game.send(GameManagerMessage::Quit);
         drop(game);
@@ -193,6 +199,7 @@ fn io_loop(
     mailbox: &Receiver<PlayerManagerMessage>,
     world: AID<WorldManagerMessage>,
     world_array: WorldGrid,
+    assets: Arc<Assets>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     ratatui::run(|terminal| {
         // camera starts centered on the world
@@ -272,6 +279,7 @@ fn io_loop(
                     &selected_aid,
                     &status_data,
                     show_build_menu,
+                    assets.clone(),
                 )
             })?;
             frames += 1;
@@ -515,6 +523,7 @@ fn render(
     selected_aid: &Option<AID<EntityMessage>>,
     status_data: &StatusData,
     show_build_menu: bool,
+    assets: Arc<Assets>,
 ) {
     let world_area = frame.area();
 
@@ -536,6 +545,7 @@ fn render(
             old_world_array,
             status_data,
             horizontal_split[2],
+            assets,
         );
     }
 
@@ -561,6 +571,7 @@ fn render_selected_info(
     old_world_array: &RawWorldArray,
     status_data: &StatusData,
     selected_window_slice: Rect,
+    assets: Arc<Assets>,
 ) {
     let height = world_area.height / 2;
     let m: u16 = 2; // margin: 2 x border, which doubles as 2 x space for animation
@@ -592,7 +603,7 @@ fn render_selected_info(
             selected_layout[1],
         );
 
-        render_status(frame, selected_layout, status_data);
+        render_status(frame, selected_layout, status_data, assets);
     }
 }
 
@@ -621,8 +632,9 @@ fn render_status(
     frame: &mut Frame,
     layout: Rc<[Rect]>,
     status_data: &StatusData,
+    assets: Arc<Assets>,
 ) {
-    fn parse_task(task: &Task) -> String {
+    fn parse_task(task: &Task, assets: Arc<Assets>) -> String {
         let mut parsed_task: String = String::from("Current Task:\n");
 
         match task {
@@ -646,7 +658,29 @@ fn render_status(
                 parsed_task.push_str("Idling...");
             }
             Task::Produce(recipe) => {
-                parsed_task.push_str(format!("Producing {}", recipe.to_string()).as_str());
+                if let Some(recipe_asset) = assets.recipes.get(recipe) {
+                    let mut output_string: String = String::from("nothing");
+
+                    if recipe_asset.outputs.len() > 0 {
+                        output_string = String::new();
+
+                        for output in recipe_asset.outputs.clone() {
+                            output_string.push_str(&output.id.to_string());
+                        }
+                    } 
+
+                    let mut input_string: String = String::from("nothing");
+
+                    if recipe_asset.inputs.len() > 0 {
+                        input_string = String::new();
+
+                        for input in recipe_asset.inputs.clone() {
+                            input_string.push_str(&input.id.to_string());
+                        }
+                    } 
+
+                    parsed_task.push_str(format!("Producing {0} from {1}", output_string, input_string).as_str());
+                }
             }
         }
 
@@ -660,7 +694,7 @@ fn render_status(
     let mut task_text: String = format!("Fetching Task..."); 
 
     if let Some(task) = &status_data.task {
-        task_text = parse_task(task);
+        task_text = parse_task(task, assets);
     }
 
     frame.render_widget(            

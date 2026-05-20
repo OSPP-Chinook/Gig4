@@ -132,7 +132,7 @@ mod tests {
 
     use crate::{
         aid::AID,
-        assets::{Assets, BuildingId, ItemId, ItemStack, WorkerId},
+        assets::{self, Assets, BuildingId, ItemId, ItemStack, WorkerId},
         building::Building,
         inventory, player_manager, task_manager,
         worker::Worker,
@@ -273,10 +273,12 @@ mod tests {
 
     #[test]
     fn player_dies() {
+        let assets = Arc::new(Assets::load(Path::new("assets")).unwrap());
+
         let world = AID::mock().0;
         let game = AID::mock().0;
         let grid = world_manager::init_world_grid();
-        let (player_aid, player_handle) = player_manager::new_joinable(grid, world, game);
+        let (player_aid, player_handle) = player_manager::new_joinable(grid, world, game, assets);
 
         let _ = player_aid.send(PlayerManagerMessage::Quit);
         drop(player_aid);
