@@ -18,7 +18,7 @@ use crossterm::event::{
 
 use ratatui::{
     Frame, layout::{
-        Alignment, Constraint, Direction, Flex, Layout, Margin, Offset, Rect, Spacing, VerticalAlignment
+        Alignment, Constraint, Direction, Flex, Layout, Margin, Offset, Rect, Spacing
     }, style::Stylize, symbols::merge::MergeStrategy, widgets::{
         Block, Borders, Clear, Padding, Paragraph
     }
@@ -34,18 +34,11 @@ use std::{
 };
 
 use crate::{
-    game_manager::GameManagerMessage, 
-    inventory, 
-    messages::PlayerManagerMessage, 
-    task_manager::Task, 
-    zombie,
-    EntityMessage, 
-    aid::{
-        AID, AIDHandle
-    }, 
-    world_manager::{ 
+    EntityMessage, aid::{
+        self, AID, AIDHandle
+    }, game_manager::GameManagerMessage, messages::PlayerManagerMessage, task_manager::Task, world_manager::{ 
         HEIGHT, RawWorldArray, Tile, WIDTH, WorldGrid, WorldManagerMessage
-    }, 
+    }, zombie 
 };
 
 // Width and height of a tile on the screen in characters
@@ -109,7 +102,7 @@ fn get_copy_of_world(world_array: &WorldGrid) -> RawWorldArray {
     return copy;
 }
 
-fn get_next_worker(
+fn get_next_entity(
     world_array: &RawWorldArray,
     selected_aid: Option<AID<EntityMessage>>,
 ) -> Option<AID<EntityMessage>> {
@@ -122,7 +115,7 @@ fn get_next_worker(
         for x in 0..WIDTH {
             let tile = &world_array[y][x];
             match tile {
-                Tile::Worker(aid, _) => {
+                Tile::Worker(aid, _) | Tile::Building(aid, _) => {
                     if found {
                         return Some(aid.clone());
                     }
@@ -135,6 +128,7 @@ fn get_next_worker(
                         None => (),
                     };
                 }
+
                 _ => (),
             }
         }
@@ -142,12 +136,12 @@ fn get_next_worker(
     return None;
 }
 
-fn get_worker_camera(world_array: &RawWorldArray, sel_aid: &AID<EntityMessage>) -> Option<Camera> {
+fn get_entity_camera(world_array: &RawWorldArray, sel_aid: &AID<EntityMessage>) -> Option<Camera> {
     for y in 0..HEIGHT {
         for x in 0..WIDTH {
             let tile = &world_array[y][x];
             match tile {
-                Tile::Worker(aid, _) => {
+                Tile::Worker(aid, _) | Tile::Building(aid, _) => {
                     if aid == sel_aid {
                         return Some(Camera(x as i32, y as i32));
                     }
@@ -330,11 +324,11 @@ fn parse_input_keyboard(
             camera.change(MOVE_CAMERA, 0);
         }
         KeyCode::Char('n') => {
-            *selected_aid = get_next_worker(&old_world, selected_aid.clone());
+            *selected_aid = get_next_entity(&old_world, selected_aid.clone());
         }
         KeyCode::Char('m') => {
             if let Some(sel_aid) = &selected_aid {
-                if let Some(new_camera) = get_worker_camera(&old_world, &sel_aid) {
+                if let Some(new_camera) = get_entity_camera(&old_world, &sel_aid) {
                     *camera = new_camera;
                 }
             }
@@ -476,7 +470,7 @@ fn render_selected_info(
         frame.render_widget(Clear, selected_layout[0]);
         frame.render_widget(Clear, selected_layout[1]);
 
-        if let Some(pov_camera) = get_worker_camera(&world_array, sel_aid) {
+        if let Some(pov_camera) = get_entity_camera(&world_array, sel_aid) {
             render_pov(frame, pov_camera, &selected_layout, world_array, old_world_array);
         }
 
@@ -772,13 +766,37 @@ fn render_build_menu(frame: &mut Frame, build_menu_slice: Rect) {
 
     let build_menu_box = Block::new().borders(Borders::ALL).title("─ Build Menu ");
 
-    frame.render_widget(Paragraph::new(" 100 Mutexium ").block(Block::bordered().title("Item 1")), items[0].centered(Constraint::Percentage(100), Constraint::Percentage(100)));
+    frame.render_widget(
+        Paragraph::new("100 Mutexium")
+            .block(Block::bordered().title("Item 1")), 
+        items[0].centered(
+            Constraint::Percentage(100), 
+            Constraint::Percentage(100)
+        ));
 
-    frame.render_widget(Paragraph::new(" 200 Semaphorite ").block(Block::bordered().title("Item 2")), items[1].centered(Constraint::Percentage(100), Constraint::Percentage(100)));
+    frame.render_widget(
+        Paragraph::new("200 Semaphorite")
+            .block(Block::bordered().title("Item 2")), 
+        items[1].centered(
+            Constraint::Percentage(100), 
+            Constraint::Percentage(100)
+        ));
 
-    frame.render_widget(Paragraph::new(" 100 Mutexium, 10 Actorisite ").block(Block::bordered().title("Item 3")), items[2].centered(Constraint::Percentage(100), Constraint::Percentage(100)));
+    frame.render_widget(
+        Paragraph::new("100 Mutexium, 10 Actorisite")
+            .block(Block::bordered().title("Item 3")),
+        items[2].centered(
+            Constraint::Percentage(100), 
+            Constraint::Percentage(100)
+        ));
 
-    frame.render_widget(Paragraph::new(" 500 Actorisite ").block(Block::bordered().title("Item 4")), items[3].centered(Constraint::Percentage(100), Constraint::Percentage(100)));
+    frame.render_widget(
+        Paragraph::new("500 Actorisite")
+            .block(Block::bordered().title("Item 4")), 
+        items[3].centered(
+            Constraint::Percentage(100), 
+            Constraint::Percentage(100)
+    ));
 
     frame.render_widget(
         build_menu_box
