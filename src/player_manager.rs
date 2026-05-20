@@ -31,6 +31,7 @@ use crate::{
     assets::WorkerId,
     assets::BuildingId,
     assets::RecipeId,
+    assets::ItemId,
     EntityMessage,
     aid::AID,
     task_manager::Task,
@@ -250,6 +251,7 @@ fn render_loop(
 
         let mut old_world = get_copy_of_world(&world_array);
         let mut select = Selection::Empty;
+        let mut select_2 = Selection::Empty;
         let mut time_to_wait = 0;
 
         // For Status information
@@ -271,6 +273,7 @@ fn render_loop(
                 &world,
                 &mut camera,
                 &mut select,
+                &mut select_2,
                 &old_world,
                 time_to_wait,
                 &terminal.get_frame().area(),
@@ -316,6 +319,7 @@ fn render_loop(
                     camera,
                     (time_0, time_1, fps),
                     &select,
+                    &select_2,
                     &inventory_string,
                     &task,
                 )
@@ -378,6 +382,7 @@ fn get_inputs(
     world_manager: &AID<WorldManagerMessage>,
     camera: &mut Camera,
     select: &mut Selection,
+    select_2: &mut Selection,
     old_world: &RawWorldArray,
     time_to_wait: u64,
     frame: &Rect,
@@ -423,7 +428,7 @@ fn get_inputs(
         break;
     }
 
-    parse_input_keyboard(&mut input, &key_event, camera, select, &old_world, world_manager);
+    parse_input_keyboard(&mut input, &key_event, camera, select, select_2, &old_world, world_manager);
     parse_input_mouse(
         &mut input,
         &mouse_event,
@@ -442,6 +447,7 @@ fn parse_input_keyboard(
     event_opt: &Option<KeyEvent>,
     camera: &mut Camera,
     select: &mut Selection,
+    select_2: &mut Selection,
     old_world: &RawWorldArray,
     world_manager: &AID<WorldManagerMessage>,
 ) {
@@ -469,6 +475,31 @@ fn parse_input_keyboard(
         KeyCode::Char('m') => {
             if let Some(new_camera) = get_worker_camera(&old_world, select) {
                 *camera = new_camera;
+            }
+        }
+        KeyCode::Char('g') => {
+            if let Selection::Building(x0, y0, aid0) = select_2 {
+                if let Selection::Building(x1, y1, aid1) = select {
+                    if aid0 == aid1 {
+                        // don't make a path to itself
+                    } else {
+                        let _ = world_manager.send(WorldManagerMessage::CreatePath(
+                            ItemId::from("mutexium"),
+                            (*x0, *y0),
+                            (*x1, *y1),
+                        ));
+                        
+                        *select_2 = Selection::Empty;
+                    }
+                } else {
+                    *select_2 = Selection::Empty;
+                }
+            } else {
+                if let Selection::Building(x, y, aid) = select {
+                    *select_2 = select.clone();
+                } else {
+                    *select_2 = Selection::Empty;
+                }
             }
         }
         KeyCode::Char('1') => {
@@ -500,6 +531,18 @@ fn parse_input_keyboard(
                 *select = Selection::Pending(*x, *y);
             }
         }
+        KeyCode::Char('4') => {
+            if let Selection::Dummy(x, y) = select {
+                let _ = world_manager.send(WorldManagerMessage::RemoveDummy((*x, *y)));
+                let _ = world_manager.send(WorldManagerMessage::SpawnBuilding(
+                    (*x, *y),
+                    BuildingId::from("factory"),
+                    Task::Produce(RecipeId::from("recipe_mutexium_double")),
+                ));
+                *select = Selection::Pending(*x, *y);
+            }
+        }
+        
         _ => input.key = Some(event.code),
     }
 }
@@ -607,6 +650,7 @@ fn render(
     camera: Camera,
     (time_0, time_1, fps): (Instant, Instant, f32),
     select: &Selection,
+    select_2: &Selection,
     inventory_string: &Option<String>,
     task: &Option<Task>,
 ) {
@@ -627,6 +671,20 @@ fn render(
                 task,
             );
         }
+    }
+    
+    if let Selection::Building(x, y, _) = select_2 {
+        frame.render_widget(
+            Block::new()
+                .borders(Borders::ALL)
+                .title("─ Go to ")
+                .merge_borders(MergeStrategy::Replace),
+            Rect::new(0, 0, 21, 4),
+        );
+        frame.render_widget(
+            Paragraph::new("Select destination,\nthen press G"),
+            Rect::new(1, 1, 21, 2),
+        );
     }
 
     // return; // don't draw fps
@@ -713,14 +771,10 @@ fn render_selected_info(
                     Paragraph::new(concat!(
                         "Create:\n",
                         "1 - Worker\n",
-                        "2 - Building\n",
-                        "3 - Building that produces\n",
+                        "2 - Building (empty)\n",
+                        "3 - Building that produces mutexium\n",
+                        "4 - Building that uses mutexium\n",
                     )),
-                    inner,
-                );
-                frame.render_widget(
-                    Paragraph::new(format!("\n\n\n x {} y {}", sx, sy)),
-                    // todo
                     inner,
                 );
             },

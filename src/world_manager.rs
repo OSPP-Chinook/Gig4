@@ -6,7 +6,7 @@ use std::{
 
 use crate::{
     aid::{AID, AIDHandle},
-    assets::{Assets, BuildingId, RecipeId, WorkerId},
+    assets::{Assets, BuildingId, RecipeId, WorkerId, ItemId},
     building::Building,
     task_manager::{Task, TaskManagerMessage},
     worker::{EntityMessage, MoveError, Worker},
@@ -30,6 +30,7 @@ pub enum WorldManagerMessage {
     KillEntity(AID<EntityMessage>),
     Pause,
     Unpause,
+    CreatePath(ItemId, Pos, Pos),
 }
 
 #[derive(Clone)]
@@ -175,6 +176,10 @@ fn main(
                 for (entity, _) in &entity_lookup {
                     _ = entity.send(EntityMessage::Unpause);
                 }
+            }
+            
+            WorldManagerMessage::CreatePath(item, from, to) => {
+                _ = task.send(TaskManagerMessage::CreatePath(item, from, to));
             }
         }
     }
