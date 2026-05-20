@@ -1,10 +1,11 @@
 use crate::{
     aid::{AID, AIDHandle},
     assets::{Assets, BuildingId, RecipeAsset},
-    inventory::{self, InventoryMessage},
-    messages::{EntityMessage, ItemTransferError, PlayerManagerMessage, TaskError},
-    task_manager::{Task, TaskManagerMessage},
+    inventory::{self, InventoryMessage, ItemTransferError},
+    player_manager::PlayerManagerMessage,
+    task_manager::{Task, TaskError, TaskManagerMessage},
     timer::Timer,
+    worker::EntityMessage,
     world_manager::WorldManagerMessage,
     zombie,
 };

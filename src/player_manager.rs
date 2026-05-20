@@ -1,13 +1,15 @@
-use crossterm::{execute, terminal};
+use crossterm::{
+    event::{DisableMouseCapture, EnableMouseCapture},
+    execute,
+};
 use rand::{RngExt, SeedableRng, rngs::ChaCha8Rng};
 
 use crossterm::event::{
-    DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind, MouseButton,
-    MouseEvent, MouseEventKind, poll, read,
+    Event, KeyCode, KeyEvent, KeyEventKind, MouseButton, MouseEvent, MouseEventKind, poll, read,
 };
 
 use ratatui::{
-    Frame, Terminal,
+    Frame,
     layout::{Alignment, Constraint, Layout, Margin, Offset, Rect, Spacing},
     style::Stylize,
     symbols::merge::MergeStrategy,
@@ -28,9 +30,8 @@ use crate::zombie;
 use crate::{
     EntityMessage,
     aid::AID,
-    messages::PlayerManagerMessage,
     task_manager::Task,
-    world_manager::{HEIGHT, RawWorldArray, Tile, WIDTH, WorldGrid, WorldManagerMessage},
+    world_manager::{HEIGHT, Pos, RawWorldArray, Tile, WIDTH, WorldGrid, WorldManagerMessage},
 };
 
 // Width and height of a tile on the screen in characters
@@ -40,6 +41,16 @@ const TILE_SIZE: (u16, u16) = (3, 2);
 // Default: 1. Set to -1 for inverted movement.
 // The default setting looks weird now, but it will make sense when the world is more populated.
 const MOVE_CAMERA: i32 = 1;
+
+#[derive(Clone)]
+pub enum PlayerManagerMessage {
+    ShowTileInfo(Pos, Tile),
+    TileNotFound(Pos),
+    Notification(String), // if we ever want to notify the player of anything special
+    InventoryStatusResult(Option<String>),
+    CurrentTaskResult(Option<Task>),
+    Quit,
+}
 
 enum MouseClick {
     None,

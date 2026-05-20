@@ -1,10 +1,9 @@
 use crate::{
+    inventory::{GetInventoryError, ItemTransferError},
     inventory::{GiveMeItemsError, InventoryMessage, TakeMyItemsError},
-    messages::{
-        EntityMessage, GetInventoryError, ItemTransferError, MoveError, PlayerManagerMessage,
-        TaskError,
-    },
-    task_manager::TaskManagerMessage,
+    player_manager::PlayerManagerMessage,
+    task_manager::{TaskError, TaskManagerMessage},
+    worker::{EntityMessage, MoveError},
     world_manager::WorldManagerMessage,
 };
 
