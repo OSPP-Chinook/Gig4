@@ -1,9 +1,9 @@
 use crate::{
-    inventory::{GiveMeItemsError, InventoryMessage, TakeMyItemsError},
-    worker::{EntityMessage, MoveError},
     inventory::{GetInventoryError, ItemTransferError},
+    inventory::{GiveMeItemsError, InventoryMessage, TakeMyItemsError},
     player_manager::PlayerManagerMessage,
-    task_manager::{TaskManagerMessage, TaskError},
+    task_manager::{TaskError, TaskManagerMessage},
+    worker::{EntityMessage, MoveError},
     world_manager::WorldManagerMessage,
 };
 
@@ -19,6 +19,8 @@ pub fn entity_zombie(mailbox: impl IntoIterator<Item = EntityMessage>) {
             EntityMessage::ItemTransferResponse(_) => {}
             EntityMessage::MoveResponse(_) => {}
             EntityMessage::TaskResponse(_) => {}
+            EntityMessage::Pause => {}
+            EntityMessage::Unpause => {}
 
             EntityMessage::GetInventory(aid) => {
                 let _ = aid.send(EntityMessage::GetInventoryResponse(Err(
@@ -83,6 +85,8 @@ pub fn world_manager_zombie(mailbox: impl IntoIterator<Item = WorldManagerMessag
             WorldManagerMessage::SpawnWorker(_, _) => {}
             WorldManagerMessage::SpawnBuilding(_, _, _) => {}
             WorldManagerMessage::KillEntity(_) => {}
+            WorldManagerMessage::Pause => {}
+            WorldManagerMessage::Unpause => {}
 
             WorldManagerMessage::Move(_, aid) => {
                 let _ = aid.send(EntityMessage::MoveResponse(Err(MoveError::ImDead)));
@@ -145,7 +149,7 @@ mod tests {
         let (mock, mailbox) = AID::mock();
 
         let (worker_aid, worker_handle) =
-            Worker::new_joinable(world, task, (0, 0), 10,assets, WorkerId::from("worker"));
+            Worker::new_joinable(world, task, (0, 0), 10, assets, WorkerId::from("worker"));
 
         let _ = worker_aid.send(EntityMessage::KillYourself);
         thread::sleep(Duration::from_millis(250));

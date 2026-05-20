@@ -1,21 +1,15 @@
 mod aid;
 mod assets;
 mod building;
-mod task_manager;
 mod game_manager;
 mod inventory;
 mod player_manager;
+mod task_manager;
 mod worker;
 mod world_manager;
 mod zombie;
 
-use crate::{
-    aid::AID,
-    assets::{Assets, ItemId, ItemStack},
-    inventory::InventoryMessage,
-    worker::EntityMessage,
-};
-use std::{path::Path, sync::Arc, thread::sleep, time::Duration};
+use crate::{aid::AID, worker::EntityMessage};
 
 fn main() {
     println!("Hello, world!");

@@ -8,8 +8,8 @@ use crate::{
     aid::{AID, AIDHandle},
     assets::{Assets, BuildingId, RecipeId, WorkerId},
     building::Building,
-    worker::{EntityMessage, MoveError, Worker},
     task_manager::{Task, TaskManagerMessage},
+    worker::{EntityMessage, MoveError, Worker},
     zombie,
 };
 
@@ -26,6 +26,8 @@ pub enum WorldManagerMessage {
     SpawnWorker(Pos, WorkerId),
     SpawnBuilding(Pos, BuildingId, bool),
     KillEntity(AID<EntityMessage>),
+    Pause,
+    Unpause,
 }
 
 #[derive(Clone)]
@@ -104,8 +106,14 @@ fn main(
                 if let Some(dest) = get_tile(grid, pos)
                     && let Tile::Empty = *dest
                 {
-                    let aid =
-                        Worker::new(this.clone(), task.clone(), pos,10 ,assets.clone(), id.clone());
+                    let aid = Worker::new(
+                        this.clone(),
+                        task.clone(),
+                        pos,
+                        10,
+                        assets.clone(),
+                        id.clone(),
+                    );
                     *dest = Tile::Worker(aid.clone(), id);
                     entity_lookup.insert(aid, pos);
                 }
@@ -134,6 +142,17 @@ fn main(
                     *get_tile(grid, pos).unwrap() = Tile::Empty;
 
                     let _ = aid.send(EntityMessage::KillYourself);
+                }
+            }
+            WorldManagerMessage::Pause => {
+                for (entity, _) in &entity_lookup {
+                    _ = entity.send(EntityMessage::Pause);
+                }
+            }
+
+            WorldManagerMessage::Unpause => {
+                for (entity, _) in &entity_lookup {
+                    _ = entity.send(EntityMessage::Unpause);
                 }
             }
         }

@@ -1,8 +1,8 @@
 use crate::{
     aid::{AID, AIDHandle},
     assets::{Assets, ItemId, ItemList, ItemStack},
-    worker::EntityMessage,
     player_manager::PlayerManagerMessage,
+    worker::EntityMessage,
     zombie,
 };
 use std::{
