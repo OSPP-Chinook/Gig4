@@ -81,17 +81,10 @@ pub fn inventory_zombie(mailbox: impl IntoIterator<Item = InventoryMessage>) {
 pub fn world_manager_zombie(mailbox: impl IntoIterator<Item = WorldManagerMessage>) {
     for msg in mailbox {
         match msg {
-            WorldManagerMessage::Quit => {}
-            WorldManagerMessage::SpawnObstacle(_) => {}
-            WorldManagerMessage::SpawnWorker(_, _) => {}
-            WorldManagerMessage::SpawnBuilding(_, _, _) => {}
-            WorldManagerMessage::KillEntity(_) => {}
-            WorldManagerMessage::Pause => {}
-            WorldManagerMessage::Unpause => {}
-
             WorldManagerMessage::Move(_, aid) => {
                 let _ = aid.send(EntityMessage::MoveResponse(Err(MoveError::ImDead)));
             }
+            _ => {}
         }
     }
 }
@@ -99,16 +92,10 @@ pub fn world_manager_zombie(mailbox: impl IntoIterator<Item = WorldManagerMessag
 pub fn task_manager_zombie(mailbox: impl IntoIterator<Item = TaskManagerMessage>) {
     for msg in mailbox {
         match msg {
-            TaskManagerMessage::Quit => {}
-            TaskManagerMessage::KillMe(_) => {}
-            TaskManagerMessage::RemoveMyTask(_) => {}
-            TaskManagerMessage::GiveTaskTo(_, _) => {}
-            TaskManagerMessage::CreatePath(_, _, _) => {}
-            TaskManagerMessage::CreateMoveTask(_) => {}
-
             TaskManagerMessage::GiveMeNewTask(aid) => {
                 let _ = aid.send(EntityMessage::TaskResponse(Err(TaskError::ImDead)));
             }
+            _ => {}
         }
     }
 }

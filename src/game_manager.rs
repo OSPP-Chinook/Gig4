@@ -2,10 +2,10 @@ use std::{sync::mpsc, thread, time::Duration};
 
 use crate::{
     aid::AID,
-    assets::{Assets, BuildingId, ItemId, WorkerId},
+    assets::{Assets, BuildingId, ItemId, WorkerId, RecipeId},
     player_manager,
     player_manager::PlayerManagerMessage,
-    task_manager::{self, TaskManagerMessage},
+    task_manager::{self, TaskManagerMessage, Task},
     world_manager::{self, WorldManagerMessage, init_world_grid},
 };
 use std::{path::Path, sync::Arc};
@@ -76,12 +76,12 @@ fn demo(world: &AID<WorldManagerMessage>, task: &AID<TaskManagerMessage>) {
     let _ = world.send(WorldManagerMessage::SpawnBuilding(
         (3, 5),
         BuildingId::from("factory"),
-        false,
+        Task::Idle,
     ));
     let _ = world.send(WorldManagerMessage::SpawnBuilding(
         (15, 3),
         BuildingId::from("factory"),
-        true,
+        Task::Produce(RecipeId::from("recipe_mutexium")),
     ));
 
     let _ = world.send(WorldManagerMessage::SpawnWorker(

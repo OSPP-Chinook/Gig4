@@ -9,5 +9,21 @@
             }
         ],
         "time": 1000
+    },
+    {
+        "id": "recipe_mutexium_double",
+        "inputs": [
+            {
+                "id": "mutexium",
+                "count": 2
+            }
+        ],
+        "outputs": [
+            {
+                "id": "semaphorite",
+                "count": 1
+            }
+        ],
+        "time": 1000
     }
 ]
