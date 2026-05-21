@@ -11,32 +11,60 @@ use crate::{
     zombie,
 };
 
+/// A task for a worker or building.
 #[derive(Clone, PartialEq)]
 pub enum Task {
+    /// Instructs a worker to move to some position.
     MoveTo(Pos),
-    DeliverItem(ItemId, (AID<EntityMessage>, Pos), (AID<EntityMessage>, Pos)), //Deliver Item from A to B.
-    Produce(RecipeId),                                                         //produce recipe id
+    /// Instructs a worker to deliver an item (specified by `ItemId`) from one building to another.
+    DeliverItem(ItemId, (AID<EntityMessage>, Pos), (AID<EntityMessage>, Pos)),
+    /// Instructs a building to produce according to a recipe, given by `RecipeId`.
+    Produce(RecipeId),
+    /// Instructs a building or worker to not do anything meaningful.
     Idle,
 }
 
+/// A message that the task manager can receive.
 #[derive(Clone)]
 pub enum TaskManagerMessage {
-    KillMe(AID<EntityMessage>), //Tasks involving entity will no longer be fulfillable
-    RemoveMyTask(AID<EntityMessage>), //Entitys current task is no longer fulfillable
-    GiveMeNewTask(AID<EntityMessage>), //Worker at pos A requests a new task
-    GiveTaskTo(Task, AID<EntityMessage>), //Give some entity a task (if player wants a building to produce etc)
-    CreatePath(ItemId, Pos, Pos),         //Create a path that delivers Item from A to B
+    /// A message sent by an entity that is about to die.
+    /// 
+    /// The task manager will forget the entity. It will also remove its tasks
+    /// and any tasks that deliver items to or from that entity.
+    KillMe(AID<EntityMessage>),
+    /// A request from an entity to abandon its current task.
+    RemoveMyTask(AID<EntityMessage>),
+    /// A request from an entity to get a new task.
+    /// 
+    /// This is usually requested by workers.
+    GiveMeNewTask(AID<EntityMessage>),
+    /// A request to give a task to a specific entity.
+    /// 
+    /// This is usually requested by the player manager.
+    GiveTaskTo(Task, AID<EntityMessage>),
+    /// A request to schedule delivery of an item from one building to another.
+    /// 
+    /// The player manager sends this message when the player requests a delivery.
+    CreatePath(ItemId, Pos, Pos),
+    // /// A request to unschedule the delivery of an item from one building to another.
+
+    // /// The player manager sends this message when the player requests to stop a delivery.
+    // RemovePath(ItemId, Pos, Pos),
+    /// A request to make a worker move to a particular position.
     CreateMoveTask(Pos),
+    /// A request to quit the task manager, sent when quitting the game.
     Quit,
-    // AddWorkerTask(TaskDescription),           // Player adds a task that they want workers to start doing
-    // RemoveWorkerTask(TaskDescription),        // Player removes a task, i. e. request workers to stop doing it
 }
 
+/// An error resulting from a request to schedule a task.
 #[derive(Clone)]
 pub enum TaskError {
+    /// The task manager is dying (in a zombie state).
     ImDead,
 }
 
+/// The task manager's main loop, wherein the task manager processes incoming
+/// messages and performs its logic.
 fn main(mailbox: &Receiver<TaskManagerMessage>, grid: WorldGrid) {
     //Maps AID to assigned task
     let mut task_list: HashMap<AID<EntityMessage>, Task> = HashMap::new();
@@ -96,6 +124,7 @@ fn main(mailbox: &Receiver<TaskManagerMessage>, grid: WorldGrid) {
     }
 }
 
+/// Creates and launches a new joinable instance of the task manager.
 pub fn new_joinable(grid: WorldGrid) -> (AID<TaskManagerMessage>, AIDHandle) {
     return AID::new_joinable(|aid, mailbox| {
         drop(aid);
@@ -105,7 +134,14 @@ pub fn new_joinable(grid: WorldGrid) -> (AID<TaskManagerMessage>, AIDHandle) {
     });
 }
 
-//Gets a new tasks and updates queue and map accordingly, returns new task.
+/// Computes the next task to be assigned to a worker and updates the task
+/// manager's internal state.
+/// 
+/// The task manager's internal table of assigned tasks (the `task_list`)
+/// is keyed by `aid`, which is the AID of the assigned worker. If the worker
+/// had a task previously assigned to it, that previous task will become
+/// available for other workers to take, as this function places it in the
+/// `task_queue`.
 fn assign_task(
     aid: AID<EntityMessage>,
     task_queue: &mut VecDeque<Task>,
