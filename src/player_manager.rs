@@ -46,19 +46,13 @@ use std::{
 };
 
 use crate::{
-    EntityMessage, 
-    zombie,
-    game_manager::GameManagerMessage,
-    task_manager::Task,
-    aid::{
+    EntityMessage, aid::{
         AID, AIDHandle
-    }, 
-    assets::{
-        Assets, WorkerId, BuildingId, RecipeId, ItemId,
-    }, 
-    world_manager::{ 
+    }, assets::{
+        Assets, BuildingId, ItemId, RecipeId, WorkerAsset, WorkerId
+    }, game_manager::GameManagerMessage, task_manager::Task, world_manager::{ 
         HEIGHT, Pos, RawWorldArray, Tile, WIDTH, WorldGrid, WorldManagerMessage
-    }, 
+    }, zombie 
 };
 
 // Width and height of a tile on the screen in characters
@@ -108,6 +102,13 @@ enum Selection {
     Building(usize, usize, AID<EntityMessage>),
 }
 
+#[derive(Clone)]
+enum Placable {
+    None,
+    Worker(WorkerId),
+    Building(BuildingId),
+}
+
 impl Camera {
     fn change(&mut self, dx: i32, dy: i32) {
         // limit camera from going outside world
@@ -148,6 +149,11 @@ impl Widget for &mut MenuButtonWidget {
         self.last_area = block.inner(area);
         block.render(area, buf);
     }
+}
+
+struct BuildMode {
+    active: bool,
+    kind: Placable,
 }
 
 // We do this for two reasons:
@@ -257,7 +263,7 @@ fn update_selection(world_array: &RawWorldArray, select: Selection) -> Selection
     return select;
 }
 
-fn get_worker_camera(_world_array: &RawWorldArray, select: &Selection) -> Option<Camera> {
+fn get_entity_camera(_world_array: &RawWorldArray, select: &Selection) -> Option<Camera> {
     match select {
         Selection::Empty => {None}
         Selection::Worker(x, y, _) => {Some(Camera(*x as i32, *y as i32))}
@@ -323,7 +329,7 @@ fn io_loop(
             MenuButtonWidget { last_area: Rect::new(0, 0, 0, 0) }, // build factory button
         ];
 
-        let mut is_in_place_mode = false;
+        let mut build_mode = BuildMode { active: false, kind: Placable::None };
 
         loop {
             if let Some(true) = check_mailbox(&mailbox, &mut status_data) {
@@ -340,7 +346,7 @@ fn io_loop(
                 &terminal.get_frame().area(),
                 &mut show_build_menu,
                 &menu_buttons,
-                &mut is_in_place_mode,
+                &mut build_mode,
             ) {
                 match val {
                     InputResult::Continue => {}
@@ -453,7 +459,7 @@ fn get_inputs(
     frame: &Rect,
     show_build_menu: &mut bool,
     menu_buttons: &Vec<MenuButtonWidget>,
-    is_in_place_mode: &mut bool,
+    build_mode: &mut BuildMode,
 ) -> Option<InputResult> {
     let mut key_event: Option<KeyEvent> = None;
     let mut mouse_event: Option<MouseEvent> = None;
@@ -517,7 +523,7 @@ fn get_inputs(
         world_manager,
         show_build_menu,
         menu_buttons,
-        is_in_place_mode,
+        build_mode,
     );
 
     return Some(InputResult::Continue);
@@ -560,7 +566,7 @@ fn parse_input_keyboard(
         }
         KeyCode::Char('m') => {
             if *select != Selection::Empty {
-                if let Some(new_camera) = get_worker_camera(&old_world, &select) {
+                if let Some(new_camera) = get_entity_camera(&old_world, &select) {
                     *camera = new_camera;
                 }
             }
@@ -649,7 +655,7 @@ fn parse_input_mouse(
     world_manager: &AID<WorldManagerMessage>,
     menu_open: &bool,
     menu_buttons: &Vec<MenuButtonWidget>,
-    is_in_place_mode: &mut bool,
+    build_mode: &mut BuildMode,
 ) {
     if event_opt.is_none() {
         return;
@@ -665,11 +671,25 @@ fn parse_input_mouse(
             input.mouse_pos = Some((x, y));
             input.mouse_click = MouseClick::Left;
             
-            if *is_in_place_mode {
+            if build_mode.active {
                 if let Some((x, y)) = mouse_to_grid_pos((x, y), world_area, camera) {
                     let tile = &old_world[y][x];
                     match tile {
                         Tile::Empty => {
+                            match build_mode.kind.clone() {
+                                Placable::Worker(id) => {
+                                    _ = world_manager.send(WorldManagerMessage::SpawnWorker((x, y), id));
+                                }
+
+                                Placable::Building(id) => {
+                                    _ = world_manager.send(WorldManagerMessage::SpawnBuilding((x, y), id, Task::Idle));
+                                }
+
+                                Placable::None => { 
+                                    // Shouldnt happen 
+                                }
+                            }
+
                             let _ = world_manager.send(WorldManagerMessage::SpawnDummy((x, y)));
                             *select = Selection::Pending(x, y);
                         }
@@ -680,18 +700,23 @@ fn parse_input_mouse(
                         _ => (),
                     }
 
-                    *is_in_place_mode = false;
+                    build_mode.active = false;
                 }
             }
 
             else if *menu_open && event.column < 40 {
                 let worker_button = &menu_buttons[0];
                 let building_button = &menu_buttons[1];
-                if worker_button.last_area.contains(Position::new(x, y)) || 
-                    building_button.last_area.contains(Position::new(event.column, event.row)) 
+                if worker_button.last_area.contains(Position { x, y }) 
                 {
-                    *is_in_place_mode = true;
-                } 
+                    build_mode.kind = Placable::Worker(WorkerId::from("worker"));
+                    build_mode.active = true;
+                }
+
+                else if building_button.last_area.contains(Position { x, y }){
+                    build_mode.kind = Placable::Building(BuildingId::from("factory"));
+                    build_mode.active = true;
+                }
             }
 
             else {
@@ -869,7 +894,7 @@ fn render_selected_info(
         frame.render_widget(Clear, selected_layout[0]);
         frame.render_widget(Clear, selected_layout[1]);
 
-        if let Some(pov_camera) = get_worker_camera(&world_array, select) {
+        if let Some(pov_camera) = get_entity_camera(&world_array, select) {
             render_pov(frame, pov_camera, &selected_layout, world_array, old_world_array);
         }
 
