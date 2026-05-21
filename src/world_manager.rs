@@ -6,11 +6,10 @@ use std::{
 
 use crate::{
     aid::{AID, AIDHandle},
-    assets::{Assets, BuildingId, RecipeId, WorkerId},
+    assets::{Assets, BuildingId, RecipeId, WorkerId, ItemId},
     building::Building,
-    messages::{EntityMessage, MoveError},
     task_manager::{Task, TaskManagerMessage},
-    worker::Worker,
+    worker::{EntityMessage, MoveError, Worker},
     zombie,
 };
 
@@ -24,17 +23,21 @@ pub enum WorldManagerMessage {
     Quit,
     Move(Pos, AID<EntityMessage>),
     SpawnObstacle(Pos),
+    SpawnDummy(Pos),
+    RemoveDummy(Pos),
     SpawnWorker(Pos, WorkerId),
-    SpawnBuilding(Pos, BuildingId, bool),
+    SpawnBuilding(Pos, BuildingId),
     KillEntity(AID<EntityMessage>),
     Pause,
-    Unpause
+    Unpause,
+    CreatePath(ItemId, Pos, Pos),
 }
 
 #[derive(Clone)]
 pub enum Tile {
     Empty,
     Obstacle,
+    Dummy,
     Worker(AID<EntityMessage>, WorkerId),
     Building(AID<EntityMessage>, BuildingId),
 }
@@ -101,31 +104,49 @@ fn main(
                     *dest = Tile::Obstacle;
                 }
             }
+            WorldManagerMessage::SpawnDummy(pos) => {
+                let grid = &mut grid.lock().unwrap();
+
+                if let Some(dest) = get_tile(grid, pos)
+                    && let Tile::Empty = *dest
+                {
+                    *dest = Tile::Dummy;
+                }
+            }
+            WorldManagerMessage::RemoveDummy(pos) => {
+                let grid = &mut grid.lock().unwrap();
+
+                if let Some(dest) = get_tile(grid, pos)
+                    && let Tile::Dummy = *dest
+                {
+                    *dest = Tile::Empty;
+                }
+            }
             WorldManagerMessage::SpawnWorker(pos, id) => {
                 let grid = &mut grid.lock().unwrap();
 
                 if let Some(dest) = get_tile(grid, pos)
                     && let Tile::Empty = *dest
                 {
-                    let aid =
-                        Worker::new(this.clone(), task.clone(), pos,10 ,assets.clone(), id.clone());
+                    let aid = Worker::new(
+                        this.clone(),
+                        task.clone(),
+                        pos,
+                        10,
+                        assets.clone(),
+                        id.clone(),
+                    );
                     *dest = Tile::Worker(aid.clone(), id);
                     entity_lookup.insert(aid, pos);
                 }
             }
-            WorldManagerMessage::SpawnBuilding(pos, id, assign_task) => {
+            WorldManagerMessage::SpawnBuilding(pos, id) => {
                 let grid = &mut grid.lock().unwrap();
 
                 if let Some(dest) = get_tile(grid, pos)
                     && let Tile::Empty = *dest
                 {
                     let aid = Building::new(this.clone(), task.clone(), assets.clone(), id.clone());
-                    // temporary until buildings can get tasks some other way
-                    if assign_task {
-                        let _ = aid.send(EntityMessage::TaskResponse(Ok(Task::Produce(
-                            RecipeId::from("recipe_mutexium"),
-                        ))));
-                    }
                     *dest = Tile::Building(aid.clone(), id);
                     entity_lookup.insert(aid, pos);
                 }
@@ -149,6 +170,10 @@ fn main(
                 for (entity, _) in &entity_lookup {
                     _ = entity.send(EntityMessage::Unpause);
                 }
+            }
+            
+            WorldManagerMessage::CreatePath(item, from, to) => {
+                _ = task.send(TaskManagerMessage::CreatePath(item, from, to));
             }
         }
     }
@@ -174,7 +199,7 @@ pub fn new_joinable(
 mod tests {
     use std::{path::Path, thread, time::Duration};
 
-    use crate::messages::GetInventoryError;
+    use crate::inventory::GetInventoryError;
 
     use super::*;
 

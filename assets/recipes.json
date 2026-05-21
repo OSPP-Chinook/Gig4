@@ -15,15 +15,15 @@
         "inputs": [
             {
                 "id": "mutexium",
-                "count": 8
+                "count": 2
             }
         ],
         "outputs": [
             {
                 "id": "semaphorite",
-                "count": 3
+                "count": 1
             }
         ],
-        "time": 4000
+        "time": 1000
     }
 ]

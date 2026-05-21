@@ -1,10 +1,9 @@
 use crate::{
+    inventory::{GetInventoryError, ItemTransferError},
     inventory::{GiveMeItemsError, InventoryMessage, TakeMyItemsError},
-    messages::{
-        EntityMessage, GetInventoryError, ItemTransferError, MoveError, PlayerManagerMessage,
-        TaskError,
-    },
-    task_manager::TaskManagerMessage,
+    player_manager::PlayerManagerMessage,
+    task_manager::{TaskError, TaskManagerMessage},
+    worker::{EntityMessage, MoveError},
     world_manager::WorldManagerMessage,
 };
 
@@ -16,14 +15,15 @@ pub fn entity_zombie(mailbox: impl IntoIterator<Item = EntityMessage>) {
             // requires a response. If we forget to add something here, it
             // can cause deadlocks.
             EntityMessage::KillYourself => {}
+            EntityMessage::TimerResponse => {}
             EntityMessage::GetInventoryResponse(_) => {}
             EntityMessage::ItemTransferResponse(_) => {}
             EntityMessage::MoveResponse(_) => {}
             EntityMessage::TaskResponse(_) => {}
             EntityMessage::Pause => {}
             EntityMessage::Unpause => {}
-            EntityMessage::FetchAsset(_) => {}
             
+
             EntityMessage::GetInventory(aid) => {
                 let _ = aid.send(EntityMessage::GetInventoryResponse(Err(
                     GetInventoryError::ImDead,
@@ -82,17 +82,10 @@ pub fn inventory_zombie(mailbox: impl IntoIterator<Item = InventoryMessage>) {
 pub fn world_manager_zombie(mailbox: impl IntoIterator<Item = WorldManagerMessage>) {
     for msg in mailbox {
         match msg {
-            WorldManagerMessage::Quit => {}
-            WorldManagerMessage::SpawnObstacle(_) => {}
-            WorldManagerMessage::SpawnWorker(_, _) => {}
-            WorldManagerMessage::SpawnBuilding(_, _, _) => {}
-            WorldManagerMessage::KillEntity(_) => {}
-            WorldManagerMessage::Pause => {}
-            WorldManagerMessage::Unpause => {}
-
             WorldManagerMessage::Move(_, aid) => {
                 let _ = aid.send(EntityMessage::MoveResponse(Err(MoveError::ImDead)));
             }
+            _ => {}
         }
     }
 }
@@ -100,16 +93,10 @@ pub fn world_manager_zombie(mailbox: impl IntoIterator<Item = WorldManagerMessag
 pub fn task_manager_zombie(mailbox: impl IntoIterator<Item = TaskManagerMessage>) {
     for msg in mailbox {
         match msg {
-            TaskManagerMessage::Quit => {}
-            TaskManagerMessage::KillMe(_) => {}
-            TaskManagerMessage::RemoveMyTask(_) => {}
-            TaskManagerMessage::GiveTaskTo(_, _) => {}
-            TaskManagerMessage::CreatePath(_, _, _) => {}
-            TaskManagerMessage::CreateMoveTask(_) => {}
-
             TaskManagerMessage::GiveMeNewTask(aid) => {
                 let _ = aid.send(EntityMessage::TaskResponse(Err(TaskError::ImDead)));
             }
+            _ => {}
         }
     }
 }
@@ -123,7 +110,6 @@ pub fn player_manager_zombie(mailbox: impl IntoIterator<Item = PlayerManagerMess
             PlayerManagerMessage::Notification(_) => {}
             PlayerManagerMessage::InventoryStatusResult(_) => {}
             PlayerManagerMessage::CurrentTaskResult(_) => {}
-            PlayerManagerMessage::AssetResult(_, _) => {}
         }
     }
 }
@@ -152,7 +138,7 @@ mod tests {
         let (mock, mailbox) = AID::mock();
 
         let (worker_aid, worker_handle) =
-            Worker::new_joinable(world, task, (0, 0), 10,assets, WorkerId::from("worker"));
+            Worker::new_joinable(world, task, (0, 0), 10, assets, WorkerId::from("worker"));
 
         let _ = worker_aid.send(EntityMessage::KillYourself);
         thread::sleep(Duration::from_millis(250));
