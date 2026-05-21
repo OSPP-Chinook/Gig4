@@ -128,18 +128,20 @@ impl Building {
                     }
                     EntityMessage::ItemTransferResponse(res) => match res {
                         Ok(()) => {
-                            if let Some(recipe) = &active_recipe
+
+                            if let Some(_) = &current_process
+                                && waiting
+                            {
+                                current_process = None;
+                                waiting = false;
+
+                            } else if let Some(recipe) = &active_recipe
                                 && waiting
                                 && current_process == None
                             {
                                 current_process = Some(Duration::from_millis(recipe.time as u64));
+                                waiting = false;
                             }
-                            if let Some(time) = &current_process
-                                && waiting
-                            {
-                                current_process = None;
-                            }
-                            waiting = false;
                         }
                         Err(
                             ItemTransferError::RecipeChange
@@ -214,12 +216,12 @@ impl Building {
             }
 
             if let Some(time_left) = current_process {
-                if time_left.is_zero() {
+                if time_left.is_zero() && !waiting{
                     _ = self.inventory.send(InventoryMessage::Add(
                         self.self_aid.clone(),
-                        active_recipe.as_ref().unwrap().outputs.clone(),
+                        active_recipe.clone().unwrap().outputs,
                     ));
-                    current_process = None;
+                    waiting = true;
                     continue;
                 } else {
                     current_process = Some(time_left.saturating_sub(MACHINE_TICK_SPEED));
