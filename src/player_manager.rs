@@ -21,11 +21,15 @@ use crossterm::{
 
 use ratatui::{
     Frame,
-    layout::{Alignment, Constraint, Direction, Flex, Layout, Margin, Offset, Position, Rect, Spacing},
     macros::ratatui_core::widgets,
     style::Stylize,
     symbols::merge::MergeStrategy,
-    widgets::{Block, Borders, Clear, Padding, Paragraph, Widget},
+    layout::{
+        Alignment, Constraint, Direction, Flex, Layout, Margin, Offset, Position, Rect, Spacing
+    },
+    widgets::{
+        Block, Borders, Clear, Padding, Paragraph, Widget
+    },
 };
 
 use std::{
@@ -44,11 +48,15 @@ use std::{
 use crate::{
     EntityMessage, 
     zombie,
+    game_manager::GameManagerMessage,
+    task_manager::Task,
     aid::{
         AID, AIDHandle
-    }, assets::{
+    }, 
+    assets::{
         Assets, WorkerId, BuildingId, RecipeId, ItemId,
-    }, game_manager::GameManagerMessage, task_manager::Task, world_manager::{ 
+    }, 
+    world_manager::{ 
         HEIGHT, Pos, RawWorldArray, Tile, WIDTH, WorldGrid, WorldManagerMessage
     }, 
 };
@@ -315,6 +323,8 @@ fn io_loop(
             MenuButtonWidget { last_area: Rect::new(0, 0, 0, 0) }, // build factory button
         ];
 
+        let mut is_in_place_mode = false;
+
         loop {
             if let Some(true) = check_mailbox(&mailbox, &mut status_data) {
                 break Ok(());
@@ -330,6 +340,7 @@ fn io_loop(
                 &terminal.get_frame().area(),
                 &mut show_build_menu,
                 &menu_buttons,
+                &mut is_in_place_mode,
             ) {
                 match val {
                     InputResult::Continue => {}
@@ -442,6 +453,7 @@ fn get_inputs(
     frame: &Rect,
     show_build_menu: &mut bool,
     menu_buttons: &Vec<MenuButtonWidget>,
+    is_in_place_mode: &mut bool,
 ) -> Option<InputResult> {
     let mut key_event: Option<KeyEvent> = None;
     let mut mouse_event: Option<MouseEvent> = None;
@@ -505,6 +517,7 @@ fn get_inputs(
         world_manager,
         show_build_menu,
         menu_buttons,
+        is_in_place_mode,
     );
 
     return Some(InputResult::Continue);
@@ -636,6 +649,7 @@ fn parse_input_mouse(
     world_manager: &AID<WorldManagerMessage>,
     menu_open: &bool,
     menu_buttons: &Vec<MenuButtonWidget>,
+    is_in_place_mode: &mut bool,
 ) {
     if event_opt.is_none() {
         return;
@@ -647,22 +661,37 @@ fn parse_input_mouse(
             input.mouse_pos = Some((event.column, event.row));
         }
         MouseEventKind::Down(MouseButton::Left) => {
-            input.mouse_pos = Some((event.column, event.row));
+            let (x, y) = (event.column, event.row);
+            input.mouse_pos = Some((x, y));
             input.mouse_click = MouseClick::Left;
             
-            if *menu_open && event.column < 40 {
-                let (x, y) = (event.column, event.row);
+            if *is_in_place_mode {
+                if let Some((x, y)) = mouse_to_grid_pos((x, y), world_area, camera) {
+                    let tile = &old_world[y][x];
+                    match tile {
+                        Tile::Empty => {
+                            let _ = world_manager.send(WorldManagerMessage::SpawnDummy((x, y)));
+                            *select = Selection::Pending(x, y);
+                        }
+                        Tile::Dummy => {
+                            let _ = world_manager.send(WorldManagerMessage::RemoveDummy((x, y)));
+                            *select = Selection::Empty;
+                        }
+                        _ => (),
+                    }
+
+                    *is_in_place_mode = false;
+                }
+            }
+
+            else if *menu_open && event.column < 40 {
                 let worker_button = &menu_buttons[0];
                 let building_button = &menu_buttons[1];
-                if worker_button.last_area.contains(Position::new(x, y)) {
-                    let _ = world_manager.send(WorldManagerMessage::SpawnWorker((x.into(), y.into()), WorkerId::from("worker")));
-                    *select = Selection::Pending(x.into(), y.into());
+                if worker_button.last_area.contains(Position::new(x, y)) || 
+                    building_button.last_area.contains(Position::new(event.column, event.row)) 
+                {
+                    *is_in_place_mode = true;
                 } 
-
-                else if  building_button.last_area.contains(Position::new(event.column, event.row)) {
-                    let _ = world_manager.send(WorldManagerMessage::SpawnBuilding((x.into(), y.into()), BuildingId::from("factory"), Task::Idle));
-                    *select = Selection::Pending(x.into(), y.into());
-                }
             }
 
             else {
@@ -682,25 +711,25 @@ fn parse_input_mouse(
                 }
             }
         }
-        MouseEventKind::Down(MouseButton::Right) => {
-            input.mouse_pos = Some((event.column, event.row));
-            input.mouse_click = MouseClick::Right;
+        // MouseEventKind::Down(MouseButton::Right) => {
+        //     input.mouse_pos = Some((event.column, event.row));
+        //     input.mouse_click = MouseClick::Right;
             
-            if let Some((x, y)) = mouse_to_grid_pos((event.column, event.row), world_area, camera) {
-                let tile = &old_world[y][x];
-                match tile {
-                    Tile::Empty => {
-                        let _ = world_manager.send(WorldManagerMessage::SpawnDummy((x, y)));
-                        *select = Selection::Pending(x, y);
-                    }
-                    Tile::Dummy => {
-                        let _ = world_manager.send(WorldManagerMessage::RemoveDummy((x, y)));
-                        *select = Selection::Empty;
-                    }
-                    _ => (),
-                }
-            }
-        }
+        //     if let Some((x, y)) = mouse_to_grid_pos((event.column, event.row), world_area, camera) {
+        //         let tile = &old_world[y][x];
+        //         match tile {
+        //             Tile::Empty => {
+        //                 let _ = world_manager.send(WorldManagerMessage::SpawnDummy((x, y)));
+        //                 *select = Selection::Pending(x, y);
+        //             }
+        //             Tile::Dummy => {
+        //                 let _ = world_manager.send(WorldManagerMessage::RemoveDummy((x, y)));
+        //                 *select = Selection::Empty;
+        //             }
+        //             _ => (),
+        //         }
+        //     }
+        // }
         _ => {}
     }
 }
