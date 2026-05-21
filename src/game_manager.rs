@@ -27,9 +27,9 @@ pub fn main(this: AID<GameManagerMessage>, mailbox: mpsc::Receiver<GameManagerMe
     let grid = init_world_grid();
 
     let (task, task_handle) = task_manager::new_joinable(grid.clone());
-    let (world, world_handle) = world_manager::new_joinable(grid.clone(), task.clone(), assets);
+    let (world, world_handle) = world_manager::new_joinable(grid.clone(), task.clone(), assets.clone());
     let (player, player_handle) =
-        player_manager::new_joinable(grid.clone(), world.clone(), this.clone());
+        player_manager::new_joinable(grid.clone(), world.clone(), this.clone(), assets.clone());
 
     demo(&world, &task);
 
