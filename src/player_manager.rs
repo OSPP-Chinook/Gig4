@@ -1,43 +1,54 @@
-use crossterm::{
-    event::{DisableMouseCapture, EnableMouseCapture},
-    execute,
+use rand::{
+    RngExt, SeedableRng, distr::slice::Empty, rngs::ChaCha8Rng, seq::IndexedMutRandom
 };
-use rand::{RngExt, SeedableRng, rngs::ChaCha8Rng};
 
-use crossterm::event::{
-    Event, KeyCode, KeyEvent, KeyEventKind, MouseButton, MouseEvent, MouseEventKind, poll, read,
+use crossterm::{
+    execute,
+    event::{
+        DisableMouseCapture, 
+        EnableMouseCapture, 
+        Event, 
+        KeyCode, 
+        KeyEvent,
+        KeyEventKind, 
+        MouseButton, 
+        MouseEvent, 
+        MouseEventKind, 
+        poll, 
+        read,
+    }
 };
 
 use ratatui::{
-    Frame, Terminal,
-    layout::{Alignment, Constraint, Layout, Margin, Offset, Rect, Spacing},
+    Frame,
+    macros::ratatui_core::widgets,
     style::Stylize,
     symbols::merge::MergeStrategy,
-    widgets::{Block, Borders, Clear, Padding, Paragraph},
+    layout::{
+        Alignment, Constraint, Direction, Flex, Layout, Margin, Offset, Position, Rect, Spacing
+    },
+    widgets::{
+        Block, Borders, Clear, Padding, Paragraph, Widget
+    },
 };
 
 use std::{
-    cmp::Ordering, io::stdout, ops::Add, panic, rc::Rc, sync::{Arc, mpsc::Receiver}, time::{Duration, Instant}
+    cmp::Ordering, io::stdout, panic, rc::Rc, sync::{
+        Arc, 
+        mpsc::Receiver, 
+    }, time::{
+        Duration, Instant
+    }
 };
 
-use crate::zombie;
 use crate::{
-    assets::WorkerId,
-    assets::BuildingId,
-    assets::RecipeId,
-    assets::ItemId,
-    EntityMessage,
-    aid::AID,
-    task_manager::Task,
-    world_manager::{HEIGHT, Pos, RawWorldArray, Tile, WIDTH, WorldGrid, WorldManagerMessage},
-};
-use crate::{
-    aid::AIDHandle,
-    assets::{Assets},
-};
-use crate::{
-    assets::{ItemStack, RecipeAsset},
-    game_manager::GameManagerMessage,
+    EntityMessage, aid::{
+        AID, AIDHandle
+    }, assets::{
+        Assets, BuildingId, ItemId, ItemStack, RecipeAsset, RecipeId, WorkerAsset, WorkerId
+    }, game_manager::GameManagerMessage, task_manager::Task, world_manager::{ 
+        HEIGHT, Pos, RawWorldArray, Tile, WIDTH, WorldGrid, WorldManagerMessage
+    }, zombie 
 };
 
 // Width and height of a tile on the screen in characters
@@ -75,6 +86,10 @@ struct Ui {
     buttons: Vec<(String, fn(&Ui, usize))>,
     select2: Selection,
     select1: Selection,
+    status_data: StatusData,
+    menu_buttons: Vec<MenuButtonWidget>,
+    show_build_menu: bool,
+    build_mode: BuildMode,
 }
 
 impl Ui {
@@ -93,6 +108,13 @@ impl Ui {
             button_layout: button,
             is_building: None,
             current_recipes: vec![],
+            status_data: StatusData { inventory_string: None, task: None },
+            menu_buttons: vec![
+            MenuButtonWidget { last_area: Rect::new(0, 0, 0, 0) }, // build worker button
+            MenuButtonWidget { last_area: Rect::new(0, 0, 0, 0) }, // build factory button
+            ],
+            show_build_menu: false,
+            build_mode: BuildMode { active: false, kind: Placable::None },
 
         };
     }
@@ -177,6 +199,13 @@ enum Selection {
     Building(usize, usize, AID<EntityMessage>, BuildingId),
 }
 
+#[derive(Clone)]
+enum Placable {
+    None,
+    Worker(WorkerId),
+    Building(BuildingId),
+}
+
 impl Camera {
     fn change(&mut self, dx: i32, dy: i32) {
         // limit camera from going outside world
@@ -200,6 +229,28 @@ impl Camera {
         self.0 = x;
         self.1 = y;
     }
+}
+
+struct StatusData { 
+    inventory_string: Option<String>,
+    task: Option<Task>,
+}
+
+struct MenuButtonWidget {
+    last_area: Rect,
+}
+
+impl Widget for &mut MenuButtonWidget {
+    fn render(self, area: Rect, buf: &mut ratatui::prelude::Buffer) {
+        let block = Block::default().borders(Borders::all());
+        self.last_area = block.inner(area);
+        block.render(area, buf);
+    }
+}
+
+struct BuildMode {
+    active: bool,
+    kind: Placable,
 }
 
 // We do this for two reasons:
@@ -244,6 +295,7 @@ fn get_next_entity(
                         }
                     }
                 }
+
                 _ => (),
             }
         }
@@ -308,7 +360,7 @@ fn update_selection(world_array: &RawWorldArray, select: Selection) -> Selection
     return select;
 }
 
-fn get_worker_camera(select: &Selection) -> Option<Camera> {
+fn get_entity_camera(select: &Selection) -> Option<Camera> {
     match select {
         Selection::Empty => {None}
         Selection::Worker(x, y, _, _) => {Some(Camera(*x as i32, *y as i32))}
@@ -327,7 +379,7 @@ pub fn new_joinable(
     return AID::new_joinable(|aid, mailbox| {
         let _ = execute!(stdout(), EnableMouseCapture);
         
-        let _ = panic::catch_unwind(|| render_loop(aid, &mailbox, world, grid, assets));
+        let _ = panic::catch_unwind(|| io_loop(aid, &mailbox, world, grid, assets));
         let _ = execute!(stdout(), DisableMouseCapture);
 
         let _ = game.send(GameManagerMessage::Quit);
@@ -336,7 +388,7 @@ pub fn new_joinable(
     });
 }
 
-fn render_loop(
+fn io_loop(
     aid: AID<PlayerManagerMessage>,
     mailbox: &Receiver<PlayerManagerMessage>,
     world: AID<WorldManagerMessage>,
@@ -355,12 +407,14 @@ fn render_loop(
 
         // For Status information
         let mut ui = Ui::new(&terminal.get_frame().area());
-
+        
+        
         let mut fps: f32 = 0.;
         let mut second_counter = Instant::now();
         let mut frames = 0;
-
+        
         let mut paused = false;
+
         loop {
             if let Some(true) = check_mailbox(&mailbox, &mut ui) {
                 break Ok(());
@@ -437,7 +491,8 @@ fn render_loop(
                     &new_world,
                     camera,
                     (time_0, time_1, fps),
-                    &ui,
+                    &mut ui,
+                    assets.clone()
                 )
             })?;
             frames += 1;
@@ -478,10 +533,10 @@ fn check_mailbox(mailbox: &Receiver<PlayerManagerMessage>, ui: &mut Ui) -> Optio
 
             // TODO: Handle more message types
             PlayerManagerMessage::InventoryStatusResult(res) => {
-                ui.inventory_string = res;
+                ui.status_data.inventory_string = res;
             }
             PlayerManagerMessage::CurrentTaskResult(res) => {
-                ui.task = res;
+                ui.status_data.task = res;
             }
             _ => {}
         }
@@ -539,14 +594,24 @@ fn get_inputs(
         break;
     }
 
-    let mut input: Input = Input {
-        mouse_pos: None,
-        mouse_click: MouseClick::None,
-        key: None,
-    };
-
-    parse_input_keyboard(&mut input, &key_event, camera, ui, &old_world, world_manager);
-    parse_input_mouse(&mut input, &mouse_event, frame, *camera, ui, old_world, world_manager);
+    parse_input_keyboard(
+        &mut input, 
+        &key_event, 
+        camera, 
+        ui,
+        &old_world, 
+        world_manager
+    );
+    
+    parse_input_mouse(
+        &mut input,
+        &mouse_event,
+        frame,
+        *camera,
+        ui,
+        old_world,
+        world_manager,
+    );
 
     return Some(InputResult::Continue);
 }
@@ -557,7 +622,7 @@ fn parse_input_keyboard(
     camera: &mut Camera,
     ui: &mut Ui,
     old_world: &RawWorldArray,
-    world_manager: &AID<WorldManagerMessage>,
+    world_manager: &AID<WorldManagerMessage>
 ) {
     if event_opt.is_none() {
         return;
@@ -585,13 +650,18 @@ fn parse_input_keyboard(
             ui.select1 = get_next_entity(&old_world, ui.select1.clone());
         }
         KeyCode::Char('m') => {
-            if let Some(new_camera) = get_worker_camera(&ui.select1) {
-                *camera = new_camera;
+            if ui.select1 != Selection::Empty {
+                if let Some(new_camera) = get_entity_camera(&ui.select1) {
+                    *camera = new_camera;
+                }
             }
         }
+        KeyCode::Tab => {
+            ui.show_build_menu = !ui.show_build_menu;
+        }
         KeyCode::Char('g') => {
-            if let Selection::Building(x0, y0, aid0, id) = &ui.select2 {
-                if let Selection::Building(x1, y1, aid1, id) = &ui.select1 {
+            if let Selection::Building(x0, y0, aid0, _) = &ui.select2 {
+                if let Selection::Building(x1, y1, aid1, _) = &ui.select1 {
                     if aid0 == aid1 {
                         // don't make a path to itself
                     } else {
@@ -607,7 +677,7 @@ fn parse_input_keyboard(
                     ui.select2 = Selection::Empty;
                 }
             } else {
-                if let Selection::Building(x, y, aid, _) = &ui.select1 {
+                if let Selection::Building(_, _, _, _) = &ui.select1 {
                     ui.select2 = ui.select1.clone();
                 } else {
                     ui.select2 = Selection::Empty;
@@ -656,6 +726,7 @@ fn parse_input_keyboard(
     }
 }
 
+
 fn parse_input_mouse(
     input: &mut Input,
     event_opt: &Option<MouseEvent>,
@@ -675,26 +746,79 @@ fn parse_input_mouse(
             input.mouse_pos = Some((event.column, event.row));
         }
         MouseEventKind::Down(MouseButton::Left) => {
-            input.mouse_pos = Some((event.column, event.row));
+            let (x, y) = (event.column, event.row);
+            input.mouse_pos = Some((x, y));
             input.mouse_click = MouseClick::Left;
-            if ui.select1 ==  Selection::Empty
+            
+            if ui.build_mode.active {
+                if let Some((x, y)) = mouse_to_grid_pos((x, y), world_area, camera) {
+                    let tile = &old_world[y][x];
+                    match tile {
+                        Tile::Empty => {
+                            match ui.build_mode.kind.clone() {
+                                Placable::Worker(id) => {
+                                    _ = world_manager.send(WorldManagerMessage::SpawnWorker((x, y), id));
+                                }
+
+                                Placable::Building(id) => {
+                                    _ = world_manager.send(WorldManagerMessage::SpawnBuilding((x, y), id));
+                                }
+
+                                Placable::None => { 
+                                    // Shouldnt happen 
+                                }
+                            }
+
+                            let _ = world_manager.send(WorldManagerMessage::SpawnDummy((x, y)));
+                            ui.select1 = Selection::Pending(x, y);
+                        }
+                        Tile::Dummy => {
+                            let _ = world_manager.send(WorldManagerMessage::RemoveDummy((x, y)));
+                            ui.select1 = Selection::Empty;
+                        }
+                        _ => (),
+                    }
+
+                    ui.build_mode.active = false;
+                }
+            }
+
+            else if ui.show_build_menu && event.column < 40 {
+                let worker_button = &ui.menu_buttons[0];
+                let building_button = &ui.menu_buttons[1];
+                if worker_button.last_area.contains(Position { x, y }) 
+                {
+                    ui.build_mode.kind = Placable::Worker(WorkerId::from("worker"));
+                    ui.build_mode.active = true;
+                }
+
+                else if building_button.last_area.contains(Position { x, y }){
+                    ui.build_mode.kind = Placable::Building(BuildingId::from("factory"));
+                    ui.build_mode.active = true;
+                }
+            }
+            else if ui.select1 == Selection::Empty
                 || is_in_layout_rect(input.mouse_pos.unwrap(), ui.main_layout.clone(), 0)
             {
                 if let Some((x, y)) = mouse_to_grid_pos((event.column, event.row), world_area, camera) {
-                let tile = &old_world[y][x];
-                if let Tile::Building(aid, id) = tile {
-                    ui.select1 = Selection::Building(x, y, aid.clone(), id.clone());
-                } else if let Tile::Worker(aid, id) = tile {
-                    ui.select1 = Selection::Worker(x, y, aid.clone(), id.clone());
-                } else if let Tile::Dummy = tile {
-                    ui.select1 = Selection::Dummy(x, y);
-                } else {
-                    ui.select1 = Selection::Empty;
+                    ui.current_recipes.clear();
+                    ui.buttons.clear();
+                    let tile = &old_world[y][x];
+                    if let Tile::Building(aid, id) = tile {
+                        ui.select1 = Selection::Building(x, y, aid.clone(), id.clone());
+                    } else if let Tile::Worker(aid, id) = tile {
+                        ui.select1 = Selection::Worker(x, y, aid.clone(), id.clone());
+                    } else if let Tile::Dummy = tile {
+                        ui.select1 = Selection::Dummy(x, y);
+                    } else {
+                        ui.select1 = Selection::Empty;
+                    }
                 }
-            } else {
-                ui.select1 = Selection::Empty;
             }
-            } else {
+
+            
+            
+            else {
                 let mut clicked = None;
                 let mut index = 0;
                 if is_in_rect((event.column, event.row), &ui.button_layout[1]) {
@@ -707,31 +831,31 @@ fn parse_input_mouse(
                     clicked = Some(ui.buttons.swap_remove(index as usize));
                 }
 
-                if let Some((title, mut on_click)) = clicked {
+                if let Some((title, on_click)) = clicked {
                     on_click(ui, index);
                     ui.buttons.insert(index, (title, on_click));
                 }
             }
         }
-        MouseEventKind::Down(MouseButton::Right) => {
-            input.mouse_pos = Some((event.column, event.row));
-            input.mouse_click = MouseClick::Right;
+        // MouseEventKind::Down(MouseButton::Right) => {
+        //     input.mouse_pos = Some((event.column, event.row));
+        //     input.mouse_click = MouseClick::Right;
             
-            if let Some((x, y)) = mouse_to_grid_pos((event.column, event.row), world_area, camera) {
-                let tile = &old_world[y][x];
-                match tile {
-                    Tile::Empty => {
-                        let _ = world_manager.send(WorldManagerMessage::SpawnDummy((x, y)));
-                        ui.select1 = Selection::Pending(x, y);
-                    }
-                    Tile::Dummy => {
-                        let _ = world_manager.send(WorldManagerMessage::RemoveDummy((x, y)));
-                        ui.select1 = Selection::Empty;
-                    }
-                    _ => (),
-                }
-            }
-        }
+        //     if let Some((x, y)) = mouse_to_grid_pos((event.column, event.row), world_area, camera) {
+        //         let tile = &old_world[y][x];
+        //         match tile {
+        //             Tile::Empty => {
+        //                 let _ = world_manager.send(WorldManagerMessage::SpawnDummy((x, y)));
+        //                 *select = Selection::Pending(x, y);
+        //             }
+        //             Tile::Dummy => {
+        //                 let _ = world_manager.send(WorldManagerMessage::RemoveDummy((x, y)));
+        //                 *select = Selection::Empty;
+        //             }
+        //             _ => (),
+        //         }
+        //     }
+        // }
         _ => {}
     }
 }
@@ -778,11 +902,24 @@ fn render(
     world_array: &RawWorldArray,
     camera: Camera,
     (time_0, time_1, fps): (Instant, Instant, f32),
-    ui: &Ui,
+    ui: &mut Ui,
+    assets: Arc<Assets>,
 ) {
     let world_area = frame.area();
 
     render_world_in_area(frame, &world_area, &old_world_array, &world_array, camera);
+
+    let margin: u16 = 2;
+    let selected_width: u16 = (world_area.width / 3 - margin) / TILE_SIZE.0 * TILE_SIZE.0 + margin;
+    let menu_width = 40;
+
+    let horizontal_split = Layout::horizontal([
+        menu_width, 
+        world_area.width - selected_width - menu_width, 
+        selected_width
+    ])
+    .flex(ratatui::layout::Flex::Start)
+    .split(frame.area());
 
     match &ui.select1 {
         Selection::Empty => (),
@@ -792,7 +929,8 @@ fn render(
                 &world_area,
                 world_array,
                 old_world_array,
-                ui
+                ui,
+                assets
             );
         }
     }
@@ -809,6 +947,10 @@ fn render(
             Paragraph::new("Select destination,\nthen press G"),
             Rect::new(1, 1, 21, 2),
         );
+    }
+
+    if ui.show_build_menu {
+        render_build_menu(frame, horizontal_split[0], &mut ui.menu_buttons);
     }
 
     // return; // don't draw fps
@@ -860,16 +1002,18 @@ fn render_selected_info(
     world_array: &RawWorldArray,
     old_world_array: &RawWorldArray,
     ui: &Ui,
+    assets:Arc<Assets>,     
 ) {
-    let (width, height) = (world_area.width / 3, world_area.height / 2);
-    let m = 2; // margin: 2 x border, which doubles as 2 x space for animation
+    let height = world_area.height / 2;
+    let m: u16 = 2; // margin: 2 x border, which doubles as 2 x space for animation
 
-    if width > m && height > m {
+    if  height > m {
+        let height = (height - m) / TILE_SIZE.1 * TILE_SIZE.1 + m;
 
         frame.render_widget(Clear, ui.sidebar_layout[0]);
         frame.render_widget(Clear, ui.sidebar_layout[1]);
 
-        if let Some(pov_camera) = get_worker_camera(&ui.select1) {
+        if let Some(pov_camera) = get_entity_camera(&ui.select1) {
             render_pov(frame, pov_camera, &ui.sidebar_layout, world_array, old_world_array);
         }
 
@@ -899,12 +1043,29 @@ fn render_selected_info(
             ui.sidebar_layout[0],
         );
 
-        render_status(
-            frame,
-            ui.sidebar_layout.clone(),
-            &ui.inventory_string,
-            &ui.task,
-        );
+        match &ui.select1 {
+            Selection::Empty => {},
+            Selection::Pending(_, _) => {},
+            Selection::Worker(_, _, _, _) => {
+                render_status(frame, ui.sidebar_layout[0], &ui.status_data, assets);
+            },
+            Selection::Building(_, _, _, _) => {
+                render_status(frame, ui.sidebar_layout[0], &ui.status_data, assets);
+            },
+            Selection::Dummy(sx, sy) => {
+                let inner = ui.sidebar_layout[1].inner(Margin::new(2, 2));
+                frame.render_widget(
+                    Paragraph::new(concat!(
+                        "Create:\n",
+                        "1 - Worker\n",
+                        "2 - Building (empty)\n",
+                        "3 - Building that produces mutexium\n",
+                        "4 - Building that uses mutexium\n",
+                    )),
+                    inner,
+                );
+            },
+        };
     }
 }
 
@@ -931,75 +1092,106 @@ fn render_pov(
 
 fn render_status(
     frame: &mut Frame,
-    layout: Rc<[Rect]>,
-    inventory_string: &Option<String>,
-    task: &Option<Task>,
+    area_rect: Rect,
+    status_data: &StatusData,
+    assets: Arc<Assets>,
 ) {
+    fn parse_task(task: &Task, assets: Arc<Assets>) -> String {
+        let mut parsed_task: String = String::from("Current Task:\n");
+
+        match task {
+            Task::MoveTo(pos) => {
+                parsed_task.push_str(format!("Moving to ({0}, {1})", pos.0, pos.1).as_str());
+            }
+            Task::DeliverItem(item, from, to) => {
+                parsed_task.push_str(
+                    format!(
+                        "Delivering {0} from ({1}, {2}) to ({3}, {4})",
+                        item.to_string(),
+                        from.1.0,
+                        from.1.1,
+                        to.1.0,
+                        to.1.1
+                    )
+                    .as_str(),
+                );
+            }
+            Task::Idle => {
+                parsed_task.push_str("Idling...");
+            }
+            Task::Produce(recipe) => {
+                if let Some(recipe_asset) = assets.recipes.get(recipe) {
+                    let mut output_string: String = String::from("nothing");
+
+                    if recipe_asset.outputs.len() > 0 {
+                        output_string = String::new();
+
+                        for output in recipe_asset.outputs.clone() {
+                            output_string.push_str(&output.id.to_string());
+                        }
+                    } 
+
+                    let mut input_string: String = String::from("nothing");
+
+                    if recipe_asset.inputs.len() > 0 {
+                        input_string = String::new();
+
+                        for input in recipe_asset.inputs.clone() {
+                            input_string.push_str(&input.id.to_string());
+                        }
+                    } 
+
+                    parsed_task.push_str(format!(
+                        "Producing {0} from {1}", 
+                        output_string, 
+                        input_string
+                    ).as_str());
+                }
+            }
+        }
+
+        return parsed_task;
+    }
+
     let sub_layout =
-        Layout::vertical([Constraint::Length(7), Constraint::Percentage(75)]).split(layout[0]);
+        Layout::vertical([Constraint::Length(7), Constraint::Percentage(75)]).split(area_rect);
 
-    if let Some(task) = task {
-        frame.render_widget(
-            Paragraph::new(parse_task(task))
-                .block(Block::new().padding(Padding::uniform(2)))
-                .alignment(Alignment::Center),
-            sub_layout[0],
-        );
-    } else {
-        frame.render_widget(
-            Paragraph::new(format!("Fetching Task..."))
-                .block(Block::new().padding(Padding::uniform(2)))
-                .alignment(Alignment::Center),
-            sub_layout[0],
-        );
+    // Render Task
+    let mut task_text: String = format!("Fetching Task..."); 
+
+    if let Some(task) = &status_data.task {
+        task_text = parse_task(task, assets);
     }
 
-    if let Some(inventory_string) = inventory_string {
-        frame.render_widget(
-            Paragraph::new(inventory_string.clone())
-                .block(Block::new().padding(Padding::uniform(2)))
-                .alignment(Alignment::Center),
-            sub_layout[1],
-        );
-    } else {
-        frame.render_widget(
-            Paragraph::new(format!("Fetching Data..."))
-                .block(Block::new().padding(Padding::uniform(2)))
-                .alignment(Alignment::Center),
-            sub_layout[1],
-        );
-    }
-}
+    frame.render_widget(            
+        Paragraph::new(task_text)
+            .block(Block::new().padding(Padding::uniform(2)))
+            .alignment(Alignment::Center),
+            sub_layout[0]
+    );
 
-fn parse_task(task: &Task) -> String {
-    let mut parsed_task: String = String::from("Current Task:\n");
+    // Render Inventory
+    let mut inventory_text: String = format!("Fetching Data...");
 
-    match task {
-        Task::MoveTo(pos) => {
-            parsed_task.push_str(format!("Moving to ({0}, {1})", pos.0, pos.1).as_str());
-        }
-        Task::DeliverItem(item, from, to) => {
-            parsed_task.push_str(
-                format!(
-                    "Delivering {0} from ({1}, {2}) to ({3}, {4})",
-                    item.to_string(),
-                    from.1.0,
-                    from.1.1,
-                    to.1.0,
-                    to.1.1
-                )
-                .as_str(),
-            );
-        }
-        Task::Idle => {
-            parsed_task.push_str("Idling...");
-        }
-        Task::Produce(amount) => {
-            parsed_task.push_str(format!("Producing {}", amount).as_str());
-        }
+    if let Some(inventory_string) = &status_data.inventory_string {
+        inventory_text = inventory_string.clone();
     }
 
-    return parsed_task;
+    frame.render_widget(
+        Paragraph::new(inventory_text)
+            .block(Block::new().padding(Padding::uniform(2)))
+            .alignment(Alignment::Center),
+        sub_layout[1],
+    );
+
+    // Render Status Box
+    frame.render_widget(
+        Block::new()
+            .borders(Borders::ALL)
+            .title("─ Status ")
+            .merge_borders(MergeStrategy::Exact),
+        area_rect,
+    );
 }
 
 fn render_world_in_area(
@@ -1164,6 +1356,60 @@ fn render_world_in_area(
             }
         }
     }
+}
+
+fn render_build_menu(frame: &mut Frame, build_menu_slice: Rect, menu_buttons: &mut Vec<MenuButtonWidget>) {
+    frame.render_widget(Clear, build_menu_slice);
+
+    let margin = 2;
+    let items = Layout::new(Direction::Vertical, [
+        Constraint::Length(10),
+        Constraint::Length(10),
+        Constraint::Length(10),
+    ]).flex(Flex::Start)
+        .split(build_menu_slice.inner(Margin::new(margin, margin))); 
+
+
+    let build_menu_box = Block::new().borders(Borders::ALL).title("─ Build Menu ");
+
+    let worker_button = &mut menu_buttons[0];
+
+    worker_button.render(
+        items[0].centered(
+            Constraint::Percentage(100), 
+            Constraint::Percentage(100), 
+        ),
+        frame.buffer_mut()
+    );
+
+    frame.render_widget(
+        Paragraph::new("100 Mutexium")
+            .block(Block::bordered().title("─ Worker ")), 
+        items[0].centered(
+            Constraint::Percentage(100), 
+            Constraint::Percentage(100)
+        ));
+
+    let building_button = &mut menu_buttons[1];
+    building_button.render(
+        items[1].centered(
+            Constraint::Percentage(100), 
+            Constraint::Percentage(100), 
+        ),
+        frame.buffer_mut()
+    );
+
+    frame.render_widget(
+        Paragraph::new("200 Semaphorite")
+            .block(Block::bordered().title("─ Factory ")), 
+        items[1].centered(
+            Constraint::Percentage(100), 
+            Constraint::Percentage(100)
+        ));
+
+    frame.render_widget(
+        build_menu_box
+        , build_menu_slice);
 }
 
 fn render_fps(frame: &mut Frame, dur_copy: Duration, dur_render: Duration, fps: f32) {

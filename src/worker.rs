@@ -1,5 +1,5 @@
 use crate::aid::{AID, AIDHandle};
-use crate::assets::{Assets, ItemId, ItemStack, WorkerId};
+use crate::assets::{Assets, ItemStack, WorkerId};
 use crate::inventory::{self, InventoryMessage};
 use crate::timer::Timer;
 use crate::{
@@ -562,7 +562,7 @@ mod tests {
 
     use super::*;
 
-    fn dummy<T: Clone + Send + 'static>() -> AID<T> {
+    fn _dummy<T: Clone + Send + 'static>() -> AID<T> {
         AID::new(move |_aid, _mailbox| {
             // gör ingenting
         })

@@ -45,7 +45,7 @@ pub fn inventory_zombie(mailbox: impl IntoIterator<Item = InventoryMessage>) {
     for msg in mailbox {
         match msg {
             InventoryMessage::ChangeRecipe => {}
-            InventoryMessage::PrintInventory(_) => {}
+            InventoryMessage::_PrintInventory(_) => {}
             InventoryMessage::KillYourself => {}
 
             InventoryMessage::Add(entity, _)
@@ -261,10 +261,12 @@ mod tests {
 
     #[test]
     fn player_dies() {
+        let assets = Arc::new(Assets::load(Path::new("assets")).unwrap());
+
         let world = AID::mock().0;
         let game = AID::mock().0;
         let grid = world_manager::init_world_grid();
-        let (player_aid, player_handle) = player_manager::new_joinable(grid, world, game);
+        let (player_aid, player_handle) = player_manager::new_joinable(grid, world, game, assets);
 
         let _ = player_aid.send(PlayerManagerMessage::Quit);
         drop(player_aid);
