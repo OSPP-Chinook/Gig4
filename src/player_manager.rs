@@ -22,14 +22,10 @@ use crossterm::{
 };
 
 use ratatui::{
-    Frame, 
-    style::Stylize, 
-    symbols::merge::MergeStrategy, 
-    layout::{
-        Alignment, Constraint, Direction, Flex, Layout, Margin, Offset, Rect, Spacing
-    }, 
-    widgets::{
-        Block, Borders, Clear, Padding, Paragraph
+    Frame, layout::{
+        Alignment, Constraint, Direction, Flex, Layout, Margin, Offset, Position, Rect, Spacing
+    }, macros::ratatui_core::widgets, style::Stylize, symbols::merge::MergeStrategy, widgets::{
+        Block, Borders, Clear, Padding, Paragraph, Widget
     }
 };
 
@@ -112,6 +108,18 @@ impl Camera {
 struct StatusData { 
     inventory_string: Option<String>,
     task: Option<Task>,
+}
+
+struct MenuButtonWidget {
+    last_area: Rect,
+}
+
+impl Widget for &mut MenuButtonWidget {
+    fn render(self, area: Rect, buf: &mut ratatui::prelude::Buffer) {
+        let block = Block::default().borders(Borders::all());
+        self.last_area = block.inner(area);
+        block.render(area, buf);
+    }
 }
 
 // We do this for two reasons:
@@ -528,11 +536,16 @@ fn render(
     render_world_in_area(frame, &world_area, &old_world_array, &world_array, camera);
 
     let margin: u16 = 2;
-    let width: u16 = (world_area.width / 3 - margin) / TILE_SIZE.0 * TILE_SIZE.0 + margin;
+    let selected_width: u16 = (world_area.width / 3 - margin) / TILE_SIZE.0 * TILE_SIZE.0 + margin;
+    let menu_width = 40;
 
-    let horizontal_split = Layout::horizontal([width / 2 + margin, width + width / 2, width])
-        .flex(ratatui::layout::Flex::End)
-        .split(frame.area());
+    let horizontal_split = Layout::horizontal([
+        menu_width, 
+        world_area.width - selected_width - menu_width, 
+        selected_width
+    ])
+    .flex(ratatui::layout::Flex::Start)
+    .split(frame.area());
 
     if let Some(sel_aid) = selected_aid {
         render_selected_info(
@@ -559,6 +572,9 @@ fn render(
         time_2.duration_since(time_1),
         fps,
     );
+
+    let mut test: MenuButtonWidget = MenuButtonWidget { last_area: Rect::new(0, 0, 20, 20) };
+    test.render(Rect::new(1, 1, 50, 50), frame.buffer_mut());
 }
 
 fn render_selected_info(
@@ -575,7 +591,6 @@ fn render_selected_info(
     let m: u16 = 2; // margin: 2 x border, which doubles as 2 x space for animation
 
     if  height > m {
-        // pov_area encloses a whole number of tiles
         let height = (height - m) / TILE_SIZE.1 * TILE_SIZE.1 + m;
 
         let selected_layout = Layout::vertical([
@@ -598,10 +613,10 @@ fn render_selected_info(
                 .borders(Borders::ALL)
                 .title("─ POV: you're a worker ")
                 .merge_borders(MergeStrategy::Replace),
-            selected_layout[1],
+            selected_layout[0],
         );
 
-        render_status(frame, selected_layout, status_data, assets);
+        render_status(frame, selected_layout[1], status_data, assets);
     }
 }
 
@@ -612,7 +627,7 @@ fn render_pov(
     world_array: &RawWorldArray,
     old_world_array: &RawWorldArray,
 ) {
-    let pov_area_inner = layout[1].inner(Margin::new(1, 1));
+    let pov_area_inner = layout[0].inner(Margin::new(1, 1));
     let Camera(x, y) = pov_camera;
     let (x, y) = (x as usize, y as usize);
     let (dx, dy) = get_movement(&old_world_array, &world_array[y][x], (x, y));
@@ -628,7 +643,7 @@ fn render_pov(
 
 fn render_status(
     frame: &mut Frame,
-    layout: Rc<[Rect]>,
+    area_rect: Rect,
     status_data: &StatusData,
     assets: Arc<Assets>,
 ) {
@@ -690,7 +705,7 @@ fn render_status(
     }
 
     let sub_layout =
-        Layout::vertical([Constraint::Length(7), Constraint::Percentage(75)]).split(layout[0]);
+        Layout::vertical([Constraint::Length(7), Constraint::Percentage(75)]).split(area_rect);
 
     // Render Task
     let mut task_text: String = format!("Fetching Task..."); 
@@ -726,7 +741,7 @@ fn render_status(
             .borders(Borders::ALL)
             .title("─ Status ")
             .merge_borders(MergeStrategy::Exact),
-        layout[0],
+        area_rect,
     );
 }
 
@@ -893,18 +908,10 @@ fn render_build_menu(frame: &mut Frame, build_menu_slice: Rect) {
     frame.render_widget(Clear, build_menu_slice);
 
     let margin = 2;
-    let height = frame.area().height;
     let items = Layout::new(Direction::Vertical, [
-        height / 10, 
-        height / 10, 
-        height / 10, 
-        height / 10, 
-        height / 10, 
-        height / 10, 
-        height / 10, 
-        height / 10, 
-        height / 10, 
-        height / 10, 
+        Constraint::Length(10),
+        Constraint::Length(10),
+        Constraint::Length(10),
     ]).flex(Flex::Start)
         .split(build_menu_slice.inner(Margin::new(margin, margin))); 
 
@@ -913,7 +920,7 @@ fn render_build_menu(frame: &mut Frame, build_menu_slice: Rect) {
 
     frame.render_widget(
         Paragraph::new("100 Mutexium")
-            .block(Block::bordered().title("Item 1")), 
+            .block(Block::bordered().title("─ Worker ")), 
         items[0].centered(
             Constraint::Percentage(100), 
             Constraint::Percentage(100)
@@ -921,27 +928,11 @@ fn render_build_menu(frame: &mut Frame, build_menu_slice: Rect) {
 
     frame.render_widget(
         Paragraph::new("200 Semaphorite")
-            .block(Block::bordered().title("Item 2")), 
+            .block(Block::bordered().title("─ Factory ")), 
         items[1].centered(
             Constraint::Percentage(100), 
             Constraint::Percentage(100)
         ));
-
-    frame.render_widget(
-        Paragraph::new("100 Mutexium, 10 Actorisite")
-            .block(Block::bordered().title("Item 3")),
-        items[2].centered(
-            Constraint::Percentage(100), 
-            Constraint::Percentage(100)
-        ));
-
-    frame.render_widget(
-        Paragraph::new("500 Actorisite")
-            .block(Block::bordered().title("Item 4")), 
-        items[3].centered(
-            Constraint::Percentage(100), 
-            Constraint::Percentage(100)
-    ));
 
     frame.render_widget(
         build_menu_box
