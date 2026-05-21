@@ -22,11 +22,12 @@ use crossterm::{
 };
 
 use ratatui::{
-    Frame, layout::{
-        Alignment, Constraint, Direction, Flex, Layout, Margin, Offset, Position, Rect, Spacing
-    }, macros::ratatui_core::widgets, style::Stylize, symbols::merge::MergeStrategy, widgets::{
-        Block, Borders, Clear, Padding, Paragraph, Widget
-    }
+    Frame,
+    layout::{Alignment, Constraint, Direction, Flex, Layout, Margin, Offset, Position, Rect, Spacing},
+    macros::ratatui_core::widgets,
+    style::Stylize,
+    symbols::merge::MergeStrategy,
+    widgets::{Block, Borders, Clear, Padding, Paragraph, Widget},
 };
 
 use std::{
@@ -43,13 +44,15 @@ use std::{
 };
 
 use crate::{
-    EntityMessage, aid::{
+    EntityMessage, 
+    zombie,
+    aid::{
         AID, AIDHandle
     }, assets::{
         Assets,
-    }, game_manager::GameManagerMessage, messages::PlayerManagerMessage, task_manager::Task, world_manager::{ 
-        HEIGHT, RawWorldArray, Tile, WIDTH, WorldGrid, WorldManagerMessage
-    }, zombie
+    }, game_manager::GameManagerMessage, task_manager::Task, world_manager::{ 
+        HEIGHT, Pos, RawWorldArray, Tile, WIDTH, WorldGrid, WorldManagerMessage
+    }, 
 };
 
 // Width and height of a tile on the screen in characters
@@ -59,6 +62,16 @@ const TILE_SIZE: (u16, u16) = (3, 2);
 // Default: 1. Set to -1 for inverted movement.
 // The default setting looks weird now, but it will make sense when the world is more populated.
 const MOVE_CAMERA: i32 = 1;
+
+#[derive(Clone)]
+pub enum PlayerManagerMessage {
+    ShowTileInfo(Pos, Tile),
+    TileNotFound(Pos),
+    Notification(String), // if we ever want to notify the player of anything special
+    InventoryStatusResult(Option<String>),
+    CurrentTaskResult(Option<Task>),
+    Quit,
+}
 
 enum MouseClick {
     None,

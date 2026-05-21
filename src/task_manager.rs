@@ -5,8 +5,8 @@ use std::{
 
 use crate::{
     aid::{AID, AIDHandle},
+    worker::EntityMessage,
     assets::{ItemId, RecipeId},
-    messages::EntityMessage,
     world_manager::{Pos, Tile, WorldGrid},
     zombie,
 };
@@ -28,6 +28,13 @@ pub enum TaskManagerMessage {
     CreatePath(ItemId, Pos, Pos),         //Create a path that delivers Item from A to B
     CreateMoveTask(Pos),
     Quit,
+    // AddWorkerTask(TaskDescription),           // Player adds a task that they want workers to start doing
+    // RemoveWorkerTask(TaskDescription),        // Player removes a task, i. e. request workers to stop doing it
+}
+
+#[derive(Clone)]
+pub enum TaskError {
+    ImDead,
 }
 
 fn main(mailbox: &Receiver<TaskManagerMessage>, grid: WorldGrid) {

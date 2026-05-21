@@ -1,7 +1,8 @@
 use crate::{
     aid::{AID, AIDHandle},
     assets::{Assets, ItemId, ItemList, ItemStack},
-    messages::{EntityMessage, ItemTransferError, PlayerManagerMessage},
+    player_manager::PlayerManagerMessage,
+    worker::EntityMessage,
     zombie,
 };
 use std::{
@@ -18,6 +19,21 @@ pub enum GiveMeItemsError {
 #[derive(Clone)]
 pub enum TakeMyItemsError {
     ImDead,
+}
+
+#[derive(Clone)]
+pub enum GetInventoryError {
+    ImDead,
+    ImWorker,
+}
+
+#[derive(Clone)]
+pub enum ItemTransferError {
+    ImDead,
+    TheyreDead,
+    RecipeChange,
+    InsufficientItems,
+    TooManyItems,
 }
 
 #[derive(Clone)]

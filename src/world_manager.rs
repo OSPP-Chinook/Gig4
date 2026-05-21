@@ -8,9 +8,8 @@ use crate::{
     aid::{AID, AIDHandle},
     assets::{Assets, BuildingId, RecipeId, WorkerId},
     building::Building,
-    messages::{EntityMessage, MoveError},
     task_manager::{Task, TaskManagerMessage},
-    worker::Worker,
+    worker::{EntityMessage, MoveError, Worker},
     zombie,
 };
 
@@ -28,7 +27,7 @@ pub enum WorldManagerMessage {
     SpawnBuilding(Pos, BuildingId, bool),
     KillEntity(AID<EntityMessage>),
     Pause,
-    Unpause
+    Unpause,
 }
 
 #[derive(Clone)]
@@ -107,8 +106,14 @@ fn main(
                 if let Some(dest) = get_tile(grid, pos)
                     && let Tile::Empty = *dest
                 {
-                    let aid =
-                        Worker::new(this.clone(), task.clone(), pos,10 ,assets.clone(), id.clone());
+                    let aid = Worker::new(
+                        this.clone(),
+                        task.clone(),
+                        pos,
+                        10,
+                        assets.clone(),
+                        id.clone(),
+                    );
                     *dest = Tile::Worker(aid.clone(), id);
                     entity_lookup.insert(aid, pos);
                 }
@@ -174,7 +179,7 @@ pub fn new_joinable(
 mod tests {
     use std::{path::Path, thread, time::Duration};
 
-    use crate::messages::GetInventoryError;
+    use crate::inventory::GetInventoryError;
 
     use super::*;
 
