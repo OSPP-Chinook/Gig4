@@ -6,7 +6,7 @@ use std::{
 
 use crate::{
     aid::{AID, AIDHandle},
-    assets::{Assets, BuildingId, RecipeId, WorkerId},
+    assets::{Assets, BuildingId, RecipeId, WorkerId, ItemId},
     building::Building,
     task_manager::{Task, TaskManagerMessage},
     worker::{EntityMessage, MoveError, Worker},
@@ -23,17 +23,21 @@ pub enum WorldManagerMessage {
     Quit,
     Move(Pos, AID<EntityMessage>),
     SpawnObstacle(Pos),
+    SpawnDummy(Pos),
+    RemoveDummy(Pos),
     SpawnWorker(Pos, WorkerId),
-    SpawnBuilding(Pos, BuildingId, bool),
+    SpawnBuilding(Pos, BuildingId, Task),
     KillEntity(AID<EntityMessage>),
     Pause,
     Unpause,
+    CreatePath(ItemId, Pos, Pos),
 }
 
 #[derive(Clone)]
 pub enum Tile {
     Empty,
     Obstacle,
+    Dummy,
     Worker(AID<EntityMessage>, WorkerId),
     Building(AID<EntityMessage>, BuildingId),
 }
@@ -100,6 +104,24 @@ fn main(
                     *dest = Tile::Obstacle;
                 }
             }
+            WorldManagerMessage::SpawnDummy(pos) => {
+                let grid = &mut grid.lock().unwrap();
+
+                if let Some(dest) = get_tile(grid, pos)
+                    && let Tile::Empty = *dest
+                {
+                    *dest = Tile::Dummy;
+                }
+            }
+            WorldManagerMessage::RemoveDummy(pos) => {
+                let grid = &mut grid.lock().unwrap();
+
+                if let Some(dest) = get_tile(grid, pos)
+                    && let Tile::Dummy = *dest
+                {
+                    *dest = Tile::Empty;
+                }
+            }
             WorldManagerMessage::SpawnWorker(pos, id) => {
                 let grid = &mut grid.lock().unwrap();
 
@@ -126,10 +148,10 @@ fn main(
                 {
                     let aid = Building::new(this.clone(), task.clone(), assets.clone(), id.clone());
                     // temporary until buildings can get tasks some other way
-                    if assign_task {
-                        let _ = aid.send(EntityMessage::TaskResponse(Ok(Task::Produce(
-                            RecipeId::from("recipe_mutexium"),
-                        ))));
+                    if let Task::Idle = assign_task {
+                        // do nothing
+                    } else {
+                        let _ = aid.send(EntityMessage::TaskResponse(Ok(assign_task)));
                     }
                     *dest = Tile::Building(aid.clone(), id);
                     entity_lookup.insert(aid, pos);
@@ -154,6 +176,10 @@ fn main(
                 for (entity, _) in &entity_lookup {
                     _ = entity.send(EntityMessage::Unpause);
                 }
+            }
+            
+            WorldManagerMessage::CreatePath(item, from, to) => {
+                _ = task.send(TaskManagerMessage::CreatePath(item, from, to));
             }
         }
     }

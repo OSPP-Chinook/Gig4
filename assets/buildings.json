@@ -11,7 +11,8 @@
         "y_size": 1,
         "inventory_size": 100,
         "recipes": [
-            "recipe_mutexium"
+            "recipe_mutexium",
+            "recipe_mutexium_double"
         ],
         "production_speed": 1.0
     }
