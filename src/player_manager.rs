@@ -15,12 +15,7 @@ use ratatui::{
 };
 
 use std::{
-    cmp::Ordering,
-    io::stdout,
-    ops::Add,
-    rc::Rc,
-    sync::{Arc, mpsc::Receiver},
-    time::{Duration, Instant},
+    cmp::Ordering, io::stdout, ops::Add, panic, rc::Rc, sync::{Arc, mpsc::Receiver}, time::{Duration, Instant}
 };
 
 use crate::zombie;
@@ -261,11 +256,13 @@ pub fn new_joinable(
     assets: Arc<Assets>,
 ) -> (AID<PlayerManagerMessage>, AIDHandle) {
     return AID::new_joinable(|aid, mailbox| {
-        let _ = render_loop(aid, &mailbox, world, grid, assets);
+        let _ = execute!(stdout(), EnableMouseCapture);
+        
+        let _ = panic::catch_unwind(|| render_loop(aid, &mailbox, world, grid, assets));
+        let _ = execute!(stdout(), DisableMouseCapture);
 
         let _ = game.send(GameManagerMessage::Quit);
         drop(game);
-        let _ = execute!(stdout(), DisableMouseCapture);
         zombie::player_manager_zombie(mailbox);
     });
 }
@@ -283,8 +280,6 @@ fn render_loop(
             (WIDTH / 2).try_into().unwrap(),
             (HEIGHT / 2).try_into().unwrap(),
         );
-
-        let _ = execute!(stdout(), EnableMouseCapture);
 
         let mut old_world = get_copy_of_world(&world_array);
         let mut time_to_wait = 0;
