@@ -247,6 +247,11 @@ fn io_loop(
 
         let mut paused = false;
 
+        let mut menu_buttons: Vec<MenuButtonWidget> = vec![
+            MenuButtonWidget { last_area: Rect::new(0, 0, 0, 0) }, // build worker button
+            MenuButtonWidget { last_area: Rect::new(0, 0, 0, 0) }, // build factory button
+        ];
+
         loop {
             if let Some(true) = check_mailbox(&mailbox, &mut status_data) {
                 break Ok(());
