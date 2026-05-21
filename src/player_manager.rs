@@ -1,5 +1,5 @@
 use rand::{
-    RngExt, SeedableRng, distr::slice::Empty, rngs::ChaCha8Rng
+    RngExt, SeedableRng, distr::slice::Empty, rngs::ChaCha8Rng, seq::IndexedMutRandom
 };
 
 use crossterm::{
@@ -328,7 +328,8 @@ fn io_loop(
                 &old_world,
                 time_to_wait,
                 &terminal.get_frame().area(),
-                &mut show_build_menu
+                &mut show_build_menu,
+                &menu_buttons,
             ) {
                 match val {
                     InputResult::Continue => {}
@@ -375,6 +376,7 @@ fn io_loop(
                     assets.clone(),
                     &select,
                     &select_2,
+                    &mut menu_buttons,
                 )
             })?;
             frames += 1;
@@ -439,6 +441,7 @@ fn get_inputs(
     time_to_wait: u64,
     frame: &Rect,
     show_build_menu: &mut bool,
+    menu_buttons: &Vec<MenuButtonWidget>,
 ) -> Option<InputResult> {
     let mut key_event: Option<KeyEvent> = None;
     let mut mouse_event: Option<MouseEvent> = None;
@@ -500,6 +503,8 @@ fn get_inputs(
         select,
         old_world,
         world_manager,
+        show_build_menu,
+        menu_buttons,
     );
 
     return Some(InputResult::Continue);
@@ -629,6 +634,8 @@ fn parse_input_mouse(
     select: &mut Selection,
     old_world: &RawWorldArray,
     world_manager: &AID<WorldManagerMessage>,
+    menu_open: &bool,
+    menu_buttons: &Vec<MenuButtonWidget>,
 ) {
     if event_opt.is_none() {
         return;
@@ -643,19 +650,36 @@ fn parse_input_mouse(
             input.mouse_pos = Some((event.column, event.row));
             input.mouse_click = MouseClick::Left;
             
-            if let Some((x, y)) = mouse_to_grid_pos((event.column, event.row), world_area, camera) {
-                let tile = &old_world[y][x];
-                if let Tile::Building(aid, _) = tile {
-                    *select = Selection::Building(x, y, aid.clone());
-                } else if let Tile::Worker(aid, _) = tile {
-                    *select = Selection::Worker(x, y, aid.clone());
-                } else if let Tile::Dummy = tile {
-                    *select = Selection::Dummy(x, y);
+            if *menu_open && event.column < 40 {
+                let (x, y) = (event.column, event.row);
+                let worker_button = &menu_buttons[0];
+                let building_button = &menu_buttons[1];
+                if worker_button.last_area.contains(Position::new(x, y)) {
+                    let _ = world_manager.send(WorldManagerMessage::SpawnWorker((x.into(), y.into()), WorkerId::from("worker")));
+                    *select = Selection::Pending(x.into(), y.into());
+                } 
+
+                else if  building_button.last_area.contains(Position::new(event.column, event.row)) {
+                    let _ = world_manager.send(WorldManagerMessage::SpawnBuilding((x.into(), y.into()), BuildingId::from("factory"), Task::Idle));
+                    *select = Selection::Pending(x.into(), y.into());
+                }
+            }
+
+            else {
+                if let Some((x, y)) = mouse_to_grid_pos((event.column, event.row), world_area, camera) {
+                    let tile = &old_world[y][x];
+                    if let Tile::Building(aid, _) = tile {
+                        *select = Selection::Building(x, y, aid.clone());
+                    } else if let Tile::Worker(aid, _) = tile {
+                        *select = Selection::Worker(x, y, aid.clone());
+                    } else if let Tile::Dummy = tile {
+                        *select = Selection::Dummy(x, y);
+                    } else {
+                        *select = Selection::Empty;
+                    }
                 } else {
                     *select = Selection::Empty;
                 }
-            } else {
-                *select = Selection::Empty;
             }
         }
         MouseEventKind::Down(MouseButton::Right) => {
@@ -728,6 +752,7 @@ fn render(
     assets: Arc<Assets>,
     select: &Selection,
     select_2: &Selection,
+    menu_buttons: &mut Vec<MenuButtonWidget>
 ) {
     let world_area = frame.area();
 
@@ -776,7 +801,7 @@ fn render(
     }
 
     if show_build_menu {
-        render_build_menu(frame, horizontal_split[0]);
+        render_build_menu(frame, horizontal_split[0], menu_buttons);
     }
 
     // return; // don't draw fps
@@ -787,9 +812,6 @@ fn render(
         time_2.duration_since(time_1),
         fps,
     );
-
-    let mut test: MenuButtonWidget = MenuButtonWidget { last_area: Rect::new(0, 0, 20, 20) };
-    test.render(Rect::new(1, 1, 50, 50), frame.buffer_mut());
 }
 
 fn render_selected_info(
@@ -1161,7 +1183,7 @@ fn render_world_in_area(
     }
 }
 
-fn render_build_menu(frame: &mut Frame, build_menu_slice: Rect) {
+fn render_build_menu(frame: &mut Frame, build_menu_slice: Rect, menu_buttons: &mut Vec<MenuButtonWidget>) {
     frame.render_widget(Clear, build_menu_slice);
 
     let margin = 2;
@@ -1175,6 +1197,16 @@ fn render_build_menu(frame: &mut Frame, build_menu_slice: Rect) {
 
     let build_menu_box = Block::new().borders(Borders::ALL).title("─ Build Menu ");
 
+    let worker_button = &mut menu_buttons[0];
+
+    worker_button.render(
+        items[0].centered(
+            Constraint::Percentage(100), 
+            Constraint::Percentage(100), 
+        ),
+        frame.buffer_mut()
+    );
+
     frame.render_widget(
         Paragraph::new("100 Mutexium")
             .block(Block::bordered().title("─ Worker ")), 
@@ -1182,6 +1214,15 @@ fn render_build_menu(frame: &mut Frame, build_menu_slice: Rect) {
             Constraint::Percentage(100), 
             Constraint::Percentage(100)
         ));
+
+    let building_button = &mut menu_buttons[1];
+    building_button.render(
+        items[1].centered(
+            Constraint::Percentage(100), 
+            Constraint::Percentage(100), 
+        ),
+        frame.buffer_mut()
+    );
 
     frame.render_widget(
         Paragraph::new("200 Semaphorite")
