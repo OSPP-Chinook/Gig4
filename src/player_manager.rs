@@ -553,6 +553,13 @@ fn parse_input_keyboard(
                 *select = Selection::Pending(*x, *y);
             }
         }
+        KeyCode::Char('5') => {
+            if let Selection::Dummy(x, y) = select {
+                let _ = world_manager.send(WorldManagerMessage::RemoveDummy((*x, *y)));
+                let _ = world_manager.send(WorldManagerMessage::SpawnObstacle((*x, *y)));
+                *select = Selection::Pending(*x, *y);
+            }
+        }
         
         _ => input.key = Some(event.code),
     }
