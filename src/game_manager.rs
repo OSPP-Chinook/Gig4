@@ -31,7 +31,7 @@ pub fn main(this: AID<GameManagerMessage>, mailbox: mpsc::Receiver<GameManagerMe
     let (player, player_handle) =
         player_manager::new_joinable(grid.clone(), world.clone(), this.clone(), assets);
 
-    demo(&world, &task);
+    //demo(&world, &task);
 
     for msg in mailbox {
         match msg {

@@ -1,5 +1,5 @@
 use rand::{
-    RngExt, SeedableRng, distr::slice::Empty, rngs::ChaCha8Rng, seq::IndexedMutRandom
+    RngExt, SeedableRng, rngs::ChaCha8Rng
 };
 
 use crossterm::{
@@ -21,7 +21,6 @@ use crossterm::{
 
 use ratatui::{
     Frame,
-    macros::ratatui_core::widgets,
     style::Stylize,
     symbols::merge::MergeStrategy,
     layout::{
@@ -45,7 +44,7 @@ use crate::{
     EntityMessage, aid::{
         AID, AIDHandle
     }, assets::{
-        Assets, BuildingId, ItemId, ItemStack, RecipeAsset, RecipeId, WorkerAsset, WorkerId
+        Assets, BuildingId, ItemId, ItemStack, RecipeAsset, WorkerId
     }, game_manager::GameManagerMessage, task_manager::Task, world_manager::{ 
         HEIGHT, Pos, RawWorldArray, Tile, WIDTH, WorldGrid, WorldManagerMessage
     }, zombie 
@@ -77,15 +76,12 @@ enum MouseClick {
 
 struct Ui {
     current_recipes: Vec<RecipeAsset>,
-    is_building: Option<bool>,
-    inventory_string: Option<String>,
-    task: Option<Task>,
     main_layout: Rc<[Rect]>, //index 0 is world rect, index 1 is sidebar rect
     sidebar_layout: Rc<[Rect]>,
     button_layout: Rc<[Rect]>,
     buttons: Vec<(String, fn(&Ui, usize))>,
-    select2: Selection,
-    select1: Selection,
+    selected_path_start: Selection,
+    selected_entity: Selection,
     status_data: StatusData,
     menu_buttons: Vec<MenuButtonWidget>,
     show_build_menu: bool,
@@ -98,15 +94,12 @@ impl Ui {
         let sidebar = get_sidebar_layout(&layout[1]);
         let button = get_button_layout(&sidebar[0]);
         return Ui {
-            select2: Selection::Empty,
-            select1: Selection::Empty,
-            inventory_string: None,
-            task: None,
+            selected_path_start: Selection::Empty,
+            selected_entity: Selection::Empty,
             main_layout: layout,
             sidebar_layout: sidebar,
             buttons: vec![],
             button_layout: button,
-            is_building: None,
             current_recipes: vec![],
             status_data: StatusData { inventory_string: None, task: None },
             menu_buttons: vec![
@@ -420,7 +413,7 @@ fn io_loop(
                 break Ok(());
             }
 
-            if let Selection::Building(_, _, _, id) = ui.select1.clone()
+            if let Selection::Building(_, _, _, id) = ui.selected_entity.clone()
                 && ui.current_recipes.is_empty()
             {
                 if let Some(asset) = assets
@@ -432,7 +425,7 @@ fn io_loop(
                             ui.current_recipes.push(recipe_asset.clone());
                         }
                         ui.create_button(id.to_string(), |ui, i| {
-                            if let Selection::Building(_, _, aid, _) = &ui.select1 {
+                            if let Selection::Building(_, _, aid, _) = &ui.selected_entity {
                                 _ = aid.send(EntityMessage::TaskResponse(Ok(Task::Produce(
                                     ui.current_recipes[i].id.clone(),
                                 ))));
@@ -471,11 +464,11 @@ fn io_loop(
                 }
             }
 
-            if let Selection::Worker(_, _, sel_aid, _) = ui.select1.clone() {
+            if let Selection::Worker(_, _, sel_aid, _) = ui.selected_entity.clone() {
                 _ = sel_aid.send(EntityMessage::FetchInventoryStatus(aid.clone()));
                 _ = sel_aid.send(EntityMessage::FetchCurrentTask(aid.clone()));
             }
-            if let Selection::Building(_, _, sel_aid, _) = ui.select1.clone() {
+            if let Selection::Building(_, _, sel_aid, _) = ui.selected_entity.clone() {
                 _ = sel_aid.send(EntityMessage::FetchInventoryStatus(aid.clone()));
                 _ = sel_aid.send(EntityMessage::FetchCurrentTask(aid.clone()));
             }
@@ -483,7 +476,7 @@ fn io_loop(
             let time_0 = Instant::now();
             let new_world = get_copy_of_world(&world_array);
             let time_1 = Instant::now();
-            ui.select1 = update_selection(&new_world, ui.select1);
+            ui.selected_entity = update_selection(&new_world, ui.selected_entity);
             terminal.draw(|frame| {
                 render(
                     frame,
@@ -643,15 +636,15 @@ fn parse_input_keyboard(
             camera.change(MOVE_CAMERA, 0);
         }
         KeyCode::Esc => {
-            ui.select1 = Selection::Empty;
-            ui.select2 = Selection::Empty;
+            ui.selected_entity = Selection::Empty;
+            ui.selected_path_start = Selection::Empty;
         }
         KeyCode::Char('n') => {
-            ui.select1 = get_next_entity(&old_world, ui.select1.clone());
+            ui.selected_entity = get_next_entity(&old_world, ui.selected_entity.clone());
         }
         KeyCode::Char('m') => {
-            if ui.select1 != Selection::Empty {
-                if let Some(new_camera) = get_entity_camera(&ui.select1) {
+            if ui.selected_entity != Selection::Empty {
+                if let Some(new_camera) = get_entity_camera(&ui.selected_entity) {
                     *camera = new_camera;
                 }
             }
@@ -660,8 +653,8 @@ fn parse_input_keyboard(
             ui.show_build_menu = !ui.show_build_menu;
         }
         KeyCode::Char('g') => {
-            if let Selection::Building(x0, y0, aid0, _) = &ui.select2 {
-                if let Selection::Building(x1, y1, aid1, _) = &ui.select1 {
+            if let Selection::Building(x0, y0, aid0, _) = &ui.selected_path_start {
+                if let Selection::Building(x1, y1, aid1, _) = &ui.selected_entity {
                     if aid0 == aid1 {
                         // don't make a path to itself
                     } else {
@@ -671,54 +664,54 @@ fn parse_input_keyboard(
                             (*x1, *y1),
                         ));
                         
-                        ui.select2 = Selection::Empty;
+                        ui.selected_path_start = Selection::Empty;
                     }
                 } else {
-                    ui.select2 = Selection::Empty;
+                    ui.selected_path_start = Selection::Empty;
                 }
             } else {
-                if let Selection::Building(_, _, _, _) = &ui.select1 {
-                    ui.select2 = ui.select1.clone();
+                if let Selection::Building(_, _, _, _) = &ui.selected_entity {
+                    ui.selected_path_start = ui.selected_entity.clone();
                 } else {
-                    ui.select2 = Selection::Empty;
+                    ui.selected_path_start = Selection::Empty;
                 }
             }
         }
         KeyCode::Char('1') => {
-            if let Selection::Dummy(x, y) = &ui.select1 {
+            if let Selection::Dummy(x, y) = &ui.selected_entity {
                 let _ = world_manager.send(WorldManagerMessage::RemoveDummy((*x, *y)));
                 let _ = world_manager.send(WorldManagerMessage::SpawnWorker((*x, *y), WorkerId::from("worker")));
-                ui.select1 = Selection::Pending(*x, *y);
+                ui.selected_entity = Selection::Pending(*x, *y);
             }
         }
         KeyCode::Char('2') => {
-            if let Selection::Dummy(x, y) = &ui.select1 {
+            if let Selection::Dummy(x, y) = &ui.selected_entity {
                 let _ = world_manager.send(WorldManagerMessage::RemoveDummy((*x, *y)));
                 let _ = world_manager.send(WorldManagerMessage::SpawnBuilding(
                     (*x, *y),
                     BuildingId::from("factory"),
                 ));
-                ui.select1 = Selection::Pending(*x, *y);
+                ui.selected_entity = Selection::Pending(*x, *y);
             }
         }
         KeyCode::Char('3') => {
-            if let Selection::Dummy(x, y) = &ui.select1 {
+            if let Selection::Dummy(x, y) = &ui.selected_entity {
                 let _ = world_manager.send(WorldManagerMessage::RemoveDummy((*x, *y)));
                 let _ = world_manager.send(WorldManagerMessage::SpawnBuilding(
                     (*x, *y),
                     BuildingId::from("factory"),
                 ));
-                ui.select1 = Selection::Pending(*x, *y);
+                ui.selected_entity = Selection::Pending(*x, *y);
             }
         }
         KeyCode::Char('4') => {
-            if let Selection::Dummy(x, y) = &ui.select1 {
+            if let Selection::Dummy(x, y) = &ui.selected_entity {
                 let _ = world_manager.send(WorldManagerMessage::RemoveDummy((*x, *y)));
                 let _ = world_manager.send(WorldManagerMessage::SpawnBuilding(
                     (*x, *y),
                     BuildingId::from("factory"),
                 ));
-                ui.select1 = Selection::Pending(*x, *y);
+                ui.selected_entity = Selection::Pending(*x, *y);
             }
         }
         
@@ -770,11 +763,11 @@ fn parse_input_mouse(
                             }
 
                             let _ = world_manager.send(WorldManagerMessage::SpawnDummy((x, y)));
-                            ui.select1 = Selection::Pending(x, y);
+                            ui.selected_entity = Selection::Pending(x, y);
                         }
                         Tile::Dummy => {
                             let _ = world_manager.send(WorldManagerMessage::RemoveDummy((x, y)));
-                            ui.select1 = Selection::Empty;
+                            ui.selected_entity = Selection::Empty;
                         }
                         _ => (),
                     }
@@ -797,7 +790,7 @@ fn parse_input_mouse(
                     ui.build_mode.active = true;
                 }
             }
-            else if ui.select1 == Selection::Empty
+            else if ui.selected_entity == Selection::Empty
                 || is_in_layout_rect(input.mouse_pos.unwrap(), ui.main_layout.clone(), 0)
             {
                 if let Some((x, y)) = mouse_to_grid_pos((event.column, event.row), world_area, camera) {
@@ -805,13 +798,13 @@ fn parse_input_mouse(
                     ui.buttons.clear();
                     let tile = &old_world[y][x];
                     if let Tile::Building(aid, id) = tile {
-                        ui.select1 = Selection::Building(x, y, aid.clone(), id.clone());
+                        ui.selected_entity = Selection::Building(x, y, aid.clone(), id.clone());
                     } else if let Tile::Worker(aid, id) = tile {
-                        ui.select1 = Selection::Worker(x, y, aid.clone(), id.clone());
+                        ui.selected_entity = Selection::Worker(x, y, aid.clone(), id.clone());
                     } else if let Tile::Dummy = tile {
-                        ui.select1 = Selection::Dummy(x, y);
+                        ui.selected_entity = Selection::Dummy(x, y);
                     } else {
-                        ui.select1 = Selection::Empty;
+                        ui.selected_entity = Selection::Empty;
                     }
                 }
             }
@@ -921,7 +914,7 @@ fn render(
     .flex(ratatui::layout::Flex::Start)
     .split(frame.area());
 
-    match &ui.select1 {
+    match &ui.selected_entity {
         Selection::Empty => (),
         _ => {
             render_selected_info(
@@ -935,17 +928,21 @@ fn render(
         }
     }
     
-    if let Selection::Building(x, y, _, _) = ui.select2 {
+    if let Selection::Building(_, _, _, _) = ui.selected_path_start {
+        let mut x = 0;
+        if ui.show_build_menu {
+            x += 40;
+        }
         frame.render_widget(
             Block::new()
                 .borders(Borders::ALL)
                 .title("─ Go to ")
                 .merge_borders(MergeStrategy::Replace),
-            Rect::new(0, 0, 21, 4),
+            Rect::new(x, 0, 21, 4),
         );
         frame.render_widget(
             Paragraph::new("Select destination,\nthen press G"),
-            Rect::new(1, 1, 21, 2),
+            Rect::new(x + 1, 1, 21, 2),
         );
     }
 
@@ -1008,18 +1005,17 @@ fn render_selected_info(
     let m: u16 = 2; // margin: 2 x border, which doubles as 2 x space for animation
 
     if  height > m {
-        let height = (height - m) / TILE_SIZE.1 * TILE_SIZE.1 + m;
 
         frame.render_widget(Clear, ui.sidebar_layout[0]);
         frame.render_widget(Clear, ui.sidebar_layout[1]);
 
-        if let Some(pov_camera) = get_entity_camera(&ui.select1) {
+        if let Some(pov_camera) = get_entity_camera(&ui.selected_entity) {
             render_pov(frame, pov_camera, &ui.sidebar_layout, world_array, old_world_array);
         }
 
         render_buttons(frame, ui);
 
-        let pov_title = match ui.select1 {
+        let pov_title = match ui.selected_entity {
             Selection::Empty => "<error>",
             Selection::Pending(_, _) => "<pending...>",
             Selection::Dummy(_, _) => "dummy",
@@ -1043,7 +1039,7 @@ fn render_selected_info(
             ui.sidebar_layout[0],
         );
 
-        match &ui.select1 {
+        match &ui.selected_entity {
             Selection::Empty => {},
             Selection::Pending(_, _) => {},
             Selection::Worker(_, _, _, _) => {
@@ -1052,7 +1048,7 @@ fn render_selected_info(
             Selection::Building(_, _, _, _) => {
                 render_status(frame, ui.sidebar_layout[0], &ui.status_data, assets);
             },
-            Selection::Dummy(sx, sy) => {
+            Selection::Dummy(_, _) => {
                 let inner = ui.sidebar_layout[1].inner(Margin::new(2, 2));
                 frame.render_widget(
                     Paragraph::new(concat!(
