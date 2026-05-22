@@ -677,6 +677,17 @@ fn parse_input_keyboard(
                 }
             }
         }
+
+        KeyCode::Delete => {
+            match &ui.selected_entity {
+                Selection::Building(_, _, aid, _) | Selection::Worker(_, _, aid, _) => {
+                    let _ = world_manager.send(WorldManagerMessage::KillEntity(aid.clone()));
+                    ui.selected_entity = Selection::Empty;
+                }
+                _ => {}
+            }
+        }
+
         KeyCode::Char('1') => {
             if let Selection::Dummy(x, y) = &ui.selected_entity {
                 let _ = world_manager.send(WorldManagerMessage::RemoveDummy((*x, *y)));
@@ -952,12 +963,12 @@ fn render(
 
     // return; // don't draw fps
     let time_2 = Instant::now();
-    render_fps(
-        frame,
-        time_1.duration_since(time_0),
-        time_2.duration_since(time_1),
-        fps,
-    );
+    // render_fps(
+    //     frame,
+    //     time_1.duration_since(time_0),
+    //     time_2.duration_since(time_1),
+    //     fps,
+    // );
 }
 
 fn render_buttons(frame: &mut Frame, ui: &Ui) {
