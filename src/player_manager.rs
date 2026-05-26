@@ -434,7 +434,6 @@ fn io_loop(
                     }
                 }
             }
-            ui.main_layout = get_main_layout(&terminal.get_frame().area());
 
             if let Some(val) = get_inputs(
                 &world,
@@ -924,6 +923,10 @@ fn render(
     ])
     .flex(ratatui::layout::Flex::Start)
     .split(frame.area());
+
+    ui.main_layout = get_main_layout(&frame.area());
+    ui.sidebar_layout = get_sidebar_layout(&ui.main_layout[1]);
+    ui.button_layout = get_button_layout(&ui.sidebar_layout[0]);
 
     match &ui.selected_entity {
         Selection::Empty => (),
