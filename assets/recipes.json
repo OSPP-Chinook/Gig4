@@ -11,7 +11,7 @@
         "time": 1000
     },
     {
-        "id": "recipe_mutexium_double",
+        "id": "recipe_semaphorite",
         "inputs": [
             {
                 "id": "mutexium",
@@ -24,6 +24,6 @@
                 "count": 1
             }
         ],
-        "time": 1000
+        "time": 2500
     }
 ]

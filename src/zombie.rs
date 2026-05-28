@@ -22,6 +22,7 @@ pub fn entity_zombie(mailbox: impl IntoIterator<Item = EntityMessage>) {
             EntityMessage::TaskResponse(_) => {}
             EntityMessage::Pause => {}
             EntityMessage::Unpause => {}
+            
 
             EntityMessage::GetInventory(aid) => {
                 let _ = aid.send(EntityMessage::GetInventoryResponse(Err(

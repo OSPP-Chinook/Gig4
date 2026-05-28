@@ -29,9 +29,9 @@ pub fn main(this: AID<GameManagerMessage>, mailbox: mpsc::Receiver<GameManagerMe
     let (task, task_handle) = task_manager::new_joinable(grid.clone());
     let (world, world_handle) = world_manager::new_joinable(grid.clone(), task.clone(), assets.clone());
     let (player, player_handle) =
-        player_manager::new_joinable(grid.clone(), world.clone(), this.clone(), assets.clone());
+        player_manager::new_joinable(grid.clone(), world.clone(), this.clone(), assets);
 
-    demo(&world, &task);
+    //demo(&world, &task);
 
     for msg in mailbox {
         match msg {
@@ -75,13 +75,11 @@ fn demo(world: &AID<WorldManagerMessage>, task: &AID<TaskManagerMessage>) {
 
     let _ = world.send(WorldManagerMessage::SpawnBuilding(
         (3, 5),
-        BuildingId::from("factory"),
-        Task::Idle,
+        BuildingId::from("factory")
     ));
     let _ = world.send(WorldManagerMessage::SpawnBuilding(
         (15, 3),
-        BuildingId::from("factory"),
-        Task::Produce(RecipeId::from("recipe_mutexium")),
+        BuildingId::from("factory")
     ));
 
     let _ = world.send(WorldManagerMessage::SpawnWorker(

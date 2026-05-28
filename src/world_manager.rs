@@ -26,7 +26,7 @@ pub enum WorldManagerMessage {
     SpawnDummy(Pos),
     RemoveDummy(Pos),
     SpawnWorker(Pos, WorkerId),
-    SpawnBuilding(Pos, BuildingId, Task),
+    SpawnBuilding(Pos, BuildingId),
     KillEntity(AID<EntityMessage>),
     Pause,
     Unpause,
@@ -140,19 +140,13 @@ fn main(
                     entity_lookup.insert(aid, pos);
                 }
             }
-            WorldManagerMessage::SpawnBuilding(pos, id, assign_task) => {
+            WorldManagerMessage::SpawnBuilding(pos, id) => {
                 let grid = &mut grid.lock().unwrap();
 
                 if let Some(dest) = get_tile(grid, pos)
                     && let Tile::Empty = *dest
                 {
                     let aid = Building::new(this.clone(), task.clone(), assets.clone(), id.clone());
-                    // temporary until buildings can get tasks some other way
-                    if let Task::Idle = assign_task {
-                        // do nothing
-                    } else {
-                        let _ = aid.send(EntityMessage::TaskResponse(Ok(assign_task)));
-                    }
                     *dest = Tile::Building(aid.clone(), id);
                     entity_lookup.insert(aid, pos);
                 }

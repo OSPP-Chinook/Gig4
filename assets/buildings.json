@@ -12,7 +12,7 @@
         "inventory_size": 100,
         "recipes": [
             "recipe_mutexium",
-            "recipe_mutexium_double"
+            "recipe_semaphorite"
         ],
         "production_speed": 1.0
     }
