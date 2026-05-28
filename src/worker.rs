@@ -202,6 +202,8 @@ impl WorkerCore {
                 return SubTask::Move(target);
             } else {
                 // completely stuck
+                // reset neighbors
+                self.open_neighbors = neighbors(self.current_pos);
                 // wait and hope something moves out of the way
                 return SubTask::Idle;
             }

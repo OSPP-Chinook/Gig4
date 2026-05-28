@@ -105,6 +105,7 @@ impl Ui {
             menu_buttons: vec![
             MenuButtonWidget { last_area: Rect::new(0, 0, 0, 0) }, // build worker button
             MenuButtonWidget { last_area: Rect::new(0, 0, 0, 0) }, // build factory button
+            MenuButtonWidget { last_area: Rect::new(0, 0, 0, 0) }, // build obstacle button
             ],
             show_build_menu: false,
             build_mode: BuildMode { active: false, kind: Placable::None },
@@ -197,6 +198,7 @@ enum Placable {
     None,
     Worker(WorkerId),
     Building(BuildingId),
+    Obstacle
 }
 
 impl Camera {
@@ -778,6 +780,10 @@ fn parse_input_mouse(
                                 Placable::Building(id) => {
                                     _ = world_manager.send(WorldManagerMessage::SpawnBuilding((x, y), id));
                                 }
+                                
+                                Placable::Obstacle => {
+                                    _ = world_manager.send(WorldManagerMessage::SpawnObstacle((x, y)));
+                                }
 
                                 Placable::None => { 
                                     // Shouldnt happen 
@@ -801,14 +807,16 @@ fn parse_input_mouse(
             else if ui.show_build_menu && event.column < 40 {
                 let worker_button = &ui.menu_buttons[0];
                 let building_button = &ui.menu_buttons[1];
+                let obstacle_button = &ui.menu_buttons[2];
                 if worker_button.last_area.contains(Position { x, y }) 
                 {
                     ui.build_mode.kind = Placable::Worker(WorkerId::from("worker"));
                     ui.build_mode.active = true;
-                }
-
-                else if building_button.last_area.contains(Position { x, y }){
+                } else if building_button.last_area.contains(Position { x, y }) {
                     ui.build_mode.kind = Placable::Building(BuildingId::from("factory"));
+                    ui.build_mode.active = true;
+                } else if obstacle_button.last_area.contains(Position { x, y }) {
+                    ui.build_mode.kind = Placable::Obstacle;
                     ui.build_mode.active = true;
                 }
             }
@@ -1428,6 +1436,23 @@ fn render_build_menu(frame: &mut Frame, build_menu_slice: Rect, menu_buttons: &m
         Paragraph::new("200 Semaphorite")
             .block(Block::bordered().title("─ Factory ")), 
         items[1].centered(
+            Constraint::Percentage(100), 
+            Constraint::Percentage(100)
+        ));
+
+    let obstacle_button = &mut menu_buttons[2];
+    obstacle_button.render(
+        items[2].centered(
+            Constraint::Percentage(100), 
+            Constraint::Percentage(100), 
+        ),
+        frame.buffer_mut()
+    );
+
+    frame.render_widget(
+        Paragraph::new("Obstacle")
+            .block(Block::bordered().title("─ Obstacle ")), 
+        items[2].centered(
             Constraint::Percentage(100), 
             Constraint::Percentage(100)
         ));
