@@ -648,6 +648,18 @@ fn parse_input_keyboard(
                 }
             }
         }
+        KeyCode::Backspace | KeyCode::Delete => {
+            match &ui.selected_entity {
+                Selection::Worker(_, _, aid, _) => {
+                    _ = world_manager.send(WorldManagerMessage::KillEntity(aid.clone()));
+                }
+                Selection::Building(_, _, aid, _) => {
+                    _ = world_manager.send(WorldManagerMessage::KillEntity(aid.clone()));
+                }
+                _ => {}
+            }
+        }
+
         KeyCode::Tab => {
             ui.show_build_menu = !ui.show_build_menu;
         }
@@ -988,15 +1000,18 @@ fn render_buttons(frame: &mut Frame, ui: &Ui) {
 fn get_button_text(ui: &Ui, i: usize) -> String {
     let current = &ui.current_recipes[i];
     return format!(
-        "Recipe {}\nInput: {}\nOutput: {}\nRecipe time: {}",
+        "Recipe {}\nInput: {}\nOutput: {}\nRecipe time: {} seconds",
         i + 1,
         get_itemlist_text(&current.inputs),
         get_itemlist_text(&current.outputs),
-        current.time
+        current.time as f32 / 1000.0
     );
 }
 
 fn get_itemlist_text(items: &Vec<ItemStack>) -> String {
+    if items.is_empty() {
+        return String::from("(nothing)");
+    }
     let mut string: String = String::from("");
     for i in 0..items.len() {
         string += &format!("{} ({})", items[i].id, items[i].count);
