@@ -924,7 +924,7 @@ fn render(
     .flex(ratatui::layout::Flex::Start)
     .split(frame.area());
 
-    ui.main_layout = get_main_layout(&frame.area());
+    ui.main_layout = get_main_layout(&world_area);
     ui.sidebar_layout = get_sidebar_layout(&ui.main_layout[1]);
     ui.button_layout = get_button_layout(&ui.sidebar_layout[0]);
 
